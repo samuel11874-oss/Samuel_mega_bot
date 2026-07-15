@@ -1,36 +1,31 @@
 const express = require('express');
 const axios = require('axios');
-const cheerio = require('cheerio');
 const app = express();
 
-app.get('/', (req, res) => res.send('Bot Debug: Inspeção Tríplice'));
+app.get('/', (req, res) => res.send('Bot Debug: Conexão Bruta'));
 app.listen(process.env.PORT || 3000);
 
-const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' };
+const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' };
 
-async function inspecionarSite(nome, url) {
+async function testeConexao(nome, url) {
     try {
-        const { data } = await axios.get(url, { headers: HEADERS });
-        const $ = cheerio.load(data);
-        
-        console.log(`\n--- INSPEÇÃO: ${nome} ---`);
-        // Procura divs que contenham nomes de times (geralmente possuem "x" ou "-" entre nomes)
-        $('div, a, span').each((i, el) => {
-            const texto = $(el).text().trim();
-            if (texto.includes(' x ') || texto.includes(' vs ')) {
-                // Filtramos apenas resultados que parecem confrontos reais
-                if (texto.length < 60) { 
-                    console.log(`Classe: ${$(el).attr('class')} | Conteúdo: ${texto}`);
-                }
-            }
-        });
-        console.log(`--- FIM DA INSPEÇÃO: ${nome} ---\n`);
-    } catch (e) { console.error(`Erro em ${nome}:`, e.message); }
+        const response = await axios.get(url, { headers: HEADERS });
+        console.log(`\n--- RESULTADO: ${nome} ---`);
+        console.log(`Status HTTP: ${response.status}`);
+        console.log(`Tamanho do Conteúdo: ${response.data.length} caracteres`);
+        console.log(`Início do HTML: ${response.data.substring(0, 300)}`);
+        console.log(`--- FIM: ${nome} ---\n`);
+    } catch (e) {
+        console.log(`\n--- ERRO: ${nome} ---`);
+        console.log(`Mensagem: ${e.message}`);
+        if (e.response) console.log(`Status de Erro: ${e.response.status}`);
+        console.log(`--- FIM: ${nome} ---\n`);
+    }
 }
 
 async function rodarDebug() {
-    await inspecionarSite('Wincomparator', 'https://www.wincomparator.com/');
-    await inspecionarSite('BetExplorer', 'https://www.betexplorer.com/');
+    await testeConexao('Wincomparator', 'https://www.wincomparator.com/');
+    await testeConexao('BetExplorer', 'https://www.betexplorer.com/');
 }
 
 rodarDebug();
