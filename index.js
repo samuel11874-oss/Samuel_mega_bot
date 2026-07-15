@@ -3,29 +3,36 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const app = express();
 
-app.get('/', (req, res) => res.send('Bot Debug: Testando Estrutura'));
+app.get('/', (req, res) => res.send('Bot Especialista: Extração Ativa'));
 app.listen(process.env.PORT || 3000);
 
 const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' };
 
-async function debugSite(nome, url) {
+async function extrairDados() {
+    console.log("🔍 [SISTEMA] Extraindo dados...");
+    
     try {
-        const { data } = await axios.get(url, { headers: HEADERS, timeout: 15000 });
+        const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
-        console.log(`--- DEBUG ${nome} ---`);
-        console.log("Título da página:", $('title').text().trim());
-        console.log("Início do HTML (primeiros 300 caracteres):", $.html().substring(0, 300));
-        console.log("----------------------------");
+        
+        const jogos = [];
+        // Seletor padrão para as tabelas de escanteios do WinDrawWin
+        $('table.wtt-table tr').each((i, el) => {
+            const timeCasa = $(el).find('.wtt-home').text().trim();
+            const timeFora = $(el).find('.wtt-away').text().trim();
+            const media = $(el).find('.wtt-stats').text().trim();
+            
+            if (timeCasa && timeFora) {
+                jogos.push({ confronto: `${timeCasa} vs ${timeFora}`, media });
+            }
+        });
+
+        console.log("--- JOGOS ENCONTRADOS ---");
+        console.log(jogos.slice(0, 10)); 
     } catch (e) {
-        console.error(`Erro ao acessar ${nome}: ${e.message}`);
+        console.error("Erro na extração:", e.message);
     }
 }
 
-async function rodarDebug() {
-    await debugSite('WinDrawWin', 'https://www.windrawwin.com/br/estatisticas/escanteios/');
-    await debugSite('Wincomparator', 'https://www.wincomparator.com/');
-    await debugSite('BetExplorer', 'https://www.betexplorer.com/');
-}
-
-setInterval(rodarDebug, 3600000);
-rodarDebug();
+setInterval(extrairDados, 3600000);
+extrairDados();
