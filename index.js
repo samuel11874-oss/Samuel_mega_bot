@@ -1,22 +1,27 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
+const http = require('http');
 
 // --- CONFIGURAÇÃO ---
-const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU'; 
-const CHAT_ID = '8285908313'; 
+const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
+const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
+
+// Servidor fantasma para atender o requisito de porta do Render
+http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Bot de Escanteios Online');
+}).listen(process.env.PORT || 3000);
 
 const alertedGames = new Set(); 
 
 async function monitorarJogos() {
     try {
         console.log("Analisando mercado...");
-        // URL base: Usaremos o WinDrawWin como exemplo
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/');
         const $ = cheerio.load(data);
 
-        // NOTA: Estes seletores dependem do site. Se não alertar, precisamos ajustar.
         $('.table-row').each((i, el) => {
             const timeCasa = $(el).find('.home-team').text().trim();
             const timeFora = $(el).find('.away-team').text().trim();
@@ -24,7 +29,7 @@ async function monitorarJogos() {
             const apCasa = parseInt($(el).find('.ap-home').text());
             const apFora = parseInt($(el).find('.ap-away').text());
             
-            if(!minuto || !apCasa) return; // Pula se não achar dados
+            if(!minuto || isNaN(apCasa)) return; 
 
             const totalAp = apCasa + apFora;
             const apMinuto = (totalAp / minuto).toFixed(2);
@@ -35,7 +40,7 @@ async function monitorarJogos() {
                 if (!alertedGames.has(gameId)) {
                     enviarAlerta(timeCasa, timeFora, minuto, apMinuto);
                     alertedGames.add(gameId);
-                    setTimeout(() => alertedGames.delete(gameId), 3600000); // Reset após 1h
+                    setTimeout(() => alertedGames.delete(gameId), 3600000); 
                 }
             }
         });
@@ -49,9 +54,10 @@ function enviarAlerta(casa, fora, min, ap) {
                 `⚽ *${casa} x ${fora}*\n` +
                 `⏱️ Minuto: ${min}'\n` +
                 `📈 Pressão: ${ap} AP/Min\n\n` +
-                `✅ *Entrar com cautela!*`;
+                `✅ *Analisado pelo Robô Samuel*`;
     bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' });
 }
 
+// Roda a verificação a cada 60 segundos
 setInterval(monitorarJogos, 60000);
 monitorarJogos();
