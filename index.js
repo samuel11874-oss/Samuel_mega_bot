@@ -1,18 +1,17 @@
+const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
-const http = require('http');
 
-// --- CONFIGURAÇÃO ---
+// --- SERVIDOR PARA O RENDER (Obrigatório) ---
+const app = express();
+app.get('/', (req, res) => res.send('Bot de Escanteios Online'));
+app.listen(process.env.PORT || 3000);
+
+// --- CONFIGURAÇÃO DO BOT ---
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
-
-// Servidor fantasma para atender o requisito de porta do Render
-http.createServer((req, res) => {
-    res.writeHead(200);
-    res.end('Bot de Escanteios Online');
-}).listen(process.env.PORT || 3000);
 
 const alertedGames = new Set(); 
 
@@ -35,7 +34,6 @@ async function monitorarJogos() {
             const apMinuto = (totalAp / minuto).toFixed(2);
             const gameId = `${timeCasa}-${timeFora}`;
 
-            // --- FILTROS INTELIGENTES ---
             if (minuto >= 15 && minuto <= 23 && apMinuto >= 1.2) {
                 if (!alertedGames.has(gameId)) {
                     enviarAlerta(timeCasa, timeFora, minuto, apMinuto);
@@ -58,6 +56,5 @@ function enviarAlerta(casa, fora, min, ap) {
     bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' });
 }
 
-// Roda a verificação a cada 60 segundos
 setInterval(monitorarJogos, 60000);
 monitorarJogos();
