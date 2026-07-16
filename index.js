@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Limpeza Ativada'));
+app.get('/', (req, res) => res.send('Bot Ativo - Liga Inclusa'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -28,10 +28,16 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         const elementos = $('div, tr, li, td');
+        let ligaAtual = "Liga não identificada";
 
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
+            if (linha.includes("ESTATÍSTICAS DE ESCANTEIOS")) {
+                ligaAtual = linha.replace("ESTATÍSTICAS DE ESCANTEIOS", "").trim();
+                return;
+            }
+
             if (linha.includes("de julho") && !linha.includes(dataHoje)) {
                 return;
             }
@@ -47,13 +53,13 @@ async function monitorarJogos() {
                         const matchConfronto = linha.match(regexConfronto);
                         
                         if (matchConfronto) {
-                            // Limpeza rigorosa do texto "sujo"
                             let confronto = matchConfronto[0].replace(/(Hoje|minutos|Começa em|estatísticas)/gi, '').trim();
                             
                             if (confronto && !jogosEnviados.has(confronto)) {
                                 jogosEnviados.add(confronto);
                                 
                                 const mensagem = `🔥 *Oportunidade de Hoje*\n` +
+                                                 `🏆 *Liga:* ${ligaAtual}\n` +
                                                  `⚽ *Confronto:* ${confronto}\n` +
                                                  `📊 *Média Total:* ${mediaTotal}`;
 
