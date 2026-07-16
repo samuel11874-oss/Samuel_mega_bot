@@ -5,7 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
 
-const app = WebService = express();
+const app = express();
 app.get('/', (req, res) => res.send('Bot Operacional: Palpites do Dia Ativos'));
 app.listen(process.env.PORT || 3000);
 
@@ -22,7 +22,7 @@ const HEADERS = {
     'Upgrade-Insecure-Requests': '1'
 };
 
-// --- SISTEMA DE ARQUIVO FÍSICO COM VALIDADE DE 3 DIAS PARA EVITAR DUPLICADOS ---
+// --- SISTEMA DE CACHE DIÁRIO ---
 const CACHE_FILE = path.join(__dirname, 'jogos_enviados.json');
 let cacheJogos = carregarCache();
 
@@ -32,9 +32,9 @@ function carregarCache() {
             const dados = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
             const agora = Date.now();
             const cacheLimpo = {};
-            // Mantém no cache apenas jogos enviados nos últimos 3 dias
+            // Mantém no cache apenas jogos enviados nas últimas 24 horas
             for (const [chave, ts] of Object.entries(dados)) {
-                if (agora - ts < 3 * 24 * 60 * 60 * 1000) {
+                if (agora - ts < 24 * 60 * 60 * 1000) {
                     cacheLimpo[chave] = ts;
                 }
             }
@@ -68,10 +68,49 @@ function limparNomeLiga(liga) {
     return nome.trim();
 }
 
+function obterFiltrosHojeEAmanha() {
+    const agora = new Date();
+    
+    // Hoje no Brasil
+    const formatadorHoje = new Intl.DateTimeFormat('pt-BR', { 
+        timeZone: 'America/Sao_Paulo', 
+        day: 'numeric', 
+        month: 'long' 
+    });
+    const hojeTexto = formatadorHoje.format(agora).toLowerCase();
+
+    const formatadorHojeComZero = new Intl.DateTimeFormat('pt-BR', { 
+        timeZone: 'America/Sao_Paulo', 
+        day: '2-digit', 
+        month: 'long' 
+    });
+    const hojeTextoComZero = formatadorHojeComZero.format(agora).toLowerCase();
+
+    // Amanhã no Brasil
+    const amanha = new Date(agora);
+    amanha.setDate(agora.getDate() + 1);
+
+    const formatadorAmanha = new Intl.DateTimeFormat('pt-BR', { 
+        timeZone: 'America/Sao_Paulo', 
+        day: 'numeric', 
+        month: 'long' 
+    });
+    const amanhaTexto = formatadorAmanha.format(amanha).toLowerCase();
+
+    const formatadorAmanhaComZero = new Intl.DateTimeFormat('pt-BR', { 
+        timeZone: 'America/Sao_Paulo', 
+        day: '2-digit', 
+        month: 'long' 
+    });
+    const amanhaTextoComZero = formatadorAmanhaComZero.format(amanha).toLowerCase();
+
+    return { hojeTexto, hojeTextoComZero, amanhaTexto, amanhaTextoComZero };
+}
+
 async function monitorarJogos() {
     try {
         console.log("--------------------------------------------------");
-        console.log("[MONITORANDO JOGOS] Varrendo todas as ligas do WinDrawWin...");
+        console.log("[MONITORANDO JOGOS] Analisando jogos do dia...");
 
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 15000 });
         const $ = cheerio.load(data);
@@ -80,10 +119,8 @@ async function monitorarJogos() {
         let totalDisparados = 0;
         let ligaAtual = "Liga Não Identificada";
 
-        // Recarrega o cache persistente
         cacheJogos = carregarCache();
-
-        // Evita duplicar a mesma linha de HTML na mesma varredura
+        const { hojeTexto, hojeTextoComZero, amanhaTexto, amanhaTextoComZero } = obterFiltrosHojeEAmanha();
         const jogosProcessadosNestaRodada = new Set();
 
         $('.wttr2, [class*="statln"]').each((i, el) => {
@@ -101,54 +138,82 @@ async function monitorarJogos() {
                 const ehCabecalho = textoLimpo.includes('ESTATÍSTICAS') || textoLimpo.includes('Menos/Mais') || textoLimpo.includes('Handicap');
 
                 if (ehJogoReal && !ehCabecalho) {
+                    const textoMinusc = textoLimpo.toLowerCase();
+                    const ligaMinusc = ligaAtual.toLowerCase();
 
-                    // Regex para separar data, times e escanteios
-                    const regexData = /^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|hoje|amanhã)(?:,\s*\d+\s+de\s+[a-z]+\s+de\s+\d{4})?/i;
-                    const matchData = textoLimpo.match(regexData);
-                    
-                    let dataJogo = "Não identificada";
-                    let textoSemData = textoLimpo;
+                    // Validação de Hoje no site
+                    const ehHojeNoSite = textoMinusc.includes('hoje') || 
+                                         textoMinusc.includes(hojeTexto) || 
+                                         textoMinusc.includes(hojeTextoComZero);
 
-                    if (matchData) {
-                        dataJogo = matchData[0].trim();
-                        textoSemData = textoLimpo.substring(dataJogo.length).trim();
-                    }
+                    // Validação de Amanhã no site (para jogos noturnos sul-americanos)
+                    const ehAmanhaNoSite = textoMinusc.includes('amanhã') || 
+                                           textoMinusc.includes(amanhaTexto) || 
+                                           textoMinusc.includes(amanhaTextoComZero);
 
-                    const matchConfronto = textoSemData.match(/(.+?)\s+x\s+([^0-9]+)(\d+)/);
-                    
-                    if (matchConfronto) {
-                        const timeA = matchConfronto[1].trim();
-                        const timeB = matchConfronto[2].trim();
-                        const cantosTotal = parseInt(matchConfronto[3], 10);
+                    const ehLigaSulAmericana = ligaMinusc.includes('brasil') || 
+                                               ligaMinusc.includes('série a') || 
+                                               ligaMinusc.includes('série b') || 
+                                               ligaMinusc.includes('série c') || 
+                                               ligaMinusc.includes('série d') || 
+                                               ligaMinusc.includes('paulista') || 
+                                               ligaMinusc.includes('carioca') || 
+                                               ligaMinusc.includes('gaúcho') || 
+                                               ligaMinusc.includes('mineiro') || 
+                                               ligaMinusc.includes('nordeste') ||
+                                               ligaMinusc.includes('argentina') ||
+                                               ligaMinusc.includes('colômbia') ||
+                                               ligaMinusc.includes('chile') ||
+                                               ligaMinusc.includes('uruguai') ||
+                                               ligaMinusc.includes('libertadores') ||
+                                               ligaMinusc.includes('sudamericana');
 
-                        // Limpeza das datas residuais grudadas no time A
-                        const timeALimpo = timeA
-                            .replace(/^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|hoje|amanhã),?/i, '')
-                            .replace(/^\s*\d*\s*de\s*[a-z]+\s*de\s*\d{4}/i, '')
-                            .trim();
+                    // Só processa se for HOJE ou se for AMANHÃ em liga sul-americana (jogo da noite/madrugada de hoje)
+                    const ehJogoDoDiaNoBrasil = ehHojeNoSite || (ehAmanhaNoSite && ehLigaSulAmericana);
 
-                        const confrontoLimpo = `${timeALimpo} x ${timeB}`;
-                        const chaveJogo = `${confrontoLimpo.toLowerCase()}_${ligaAtual.toLowerCase()}`;
+                    if (ehJogoDoDiaNoBrasil) {
+                        const regexData = /^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|hoje|amanhã)(?:,\s*\d+\s+de\s+[a-z]+\s+de\s+\d{4})?/i;
+                        const matchData = textoLimpo.match(regexData);
+                        let textoSemData = textoLimpo;
 
-                        // PREVENÇÃO DE DUPLICIDADE: Pula se já processamos esse exato jogo nesta varredura
-                        if (jogosProcessadosNestaRodada.has(chaveJogo)) {
-                            return;
+                        if (matchData) {
+                            textoSemData = textoLimpo.substring(matchData[0].length).trim();
                         }
-                        jogosProcessadosNestaRodada.add(chaveJogo);
 
-                        totalAnalisados++;
+                        // Regex inteligente com suporte a times com números e paradas seguras em "Mais/Menos"
+                        let matchConfronto = textoSemData.match(/(.+?)\s+x\s+(.+?)(\d+)(Mais|Menos)/i);
+                        if (!matchConfronto) {
+                            matchConfronto = textoSemData.match(/(.+?)\s+x\s+([^0-9]+)(\d+)/);
+                        }
+                        
+                        if (matchConfronto) {
+                            let timeA = matchConfronto[1].trim();
+                            const timeB = matchConfronto[2].trim();
+                            const cantosTotal = parseInt(matchConfronto[3], 10);
 
-                        // CRITÉRIO: Média acima de 10.5 cantos (Mínimo de 11 total)
-                        if (cantosTotal > 10.5) {
-                            
-                            // Validação de duplicados persistente entre as horas
-                            if (cacheJogos[chaveJogo]) {
-                                console.log(`[IGNORADO - JÁ ENVIADO ANTERIORMENTE] ${confrontoLimpo}`);
-                            } else {
-                                enviarAlerta(ligaAtual, confrontoLimpo, cantosTotal, dataJogo);
-                                cacheJogos[chaveJogo] = Date.now();
-                                salvarCache();
-                                totalDisparados++;
+                            timeA = timeA
+                                .replace(/^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|hoje|amanhã),?/i, '')
+                                .replace(/^\s*\d*\s*de\s*[a-z]+\s*de\s*\d{4}/i, '')
+                                .trim();
+
+                            const confrontoLimpo = `${timeA} x ${timeB}`;
+                            const chaveJogo = `${confrontoLimpo.toLowerCase()}_${ligaAtual.toLowerCase()}`;
+
+                            if (jogosProcessadosNestaRodada.has(chaveJogo)) return;
+                            jogosProcessadosNestaRodada.add(chaveJogo);
+
+                            totalAnalisados++;
+
+                            // CRITÉRIO: Média de escanteios totais estritamente MAIOR que 10 (mínimo 11)
+                            if (cantosTotal > 10) {
+                                if (cacheJogos[chaveJogo]) {
+                                    console.log(`[IGNORADO - JÁ ENVIADO] ${confrontoLimpo}`);
+                                } else {
+                                    enviarAlerta(ligaAtual, confrontoLimpo, cantosTotal);
+                                    cacheJogos[chaveJogo] = Date.now();
+                                    salvarCache();
+                                    totalDisparados++;
+                                }
                             }
                         }
                     }
@@ -157,7 +222,7 @@ async function monitorarJogos() {
         });
 
         console.log(`[VARREDURA CONCLUÍDA]`);
-        console.log(`>> Total de jogos mapeados: ${totalAnalisados}`);
+        console.log(`>> Total de jogos de HOJE mapeados: ${totalAnalisados}`);
         console.log(`>> Alertas enviados nesta rodada: ${totalDisparados}`);
         console.log("--------------------------------------------------");
 
@@ -166,15 +231,13 @@ async function monitorarJogos() {
     }
 }
 
-function enviarAlerta(liga, confronto, cantos, dataJogo) {
+function enviarAlerta(liga, confronto, cantos) {
     const mensagem = `
 🔥 *Palpites do dia para seu bilhete*
 
 ⚽ *Jogo:* ${confronto}
 🌍 *Liga:* ${liga}
-📅 *Data:* ${dataJogo}
-📊 *Média:* ${cantos} Cantos (>10.5 FT)
-⚡ *HT:* Alta chance de +4.5 HT
+📊 *Média:* ${cantos} Cantos
     `;
     
     bot.sendMessage(CHAT_ID, mensagem.trim(), { parse_mode: 'Markdown' })
