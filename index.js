@@ -54,35 +54,34 @@ function salvarCache() {
     }
 }
 
-function obterDataSaoPaulo() {
-    const formatter = new Intl.DateTimeFormat('en-US', {
+function obterDatasBR() {
+    const agora = new Date();
+    
+    // Data atual de São Paulo
+    const formatterHoje = new Intl.DateTimeFormat('en-US', {
         timeZone: 'America/Sao_Paulo',
         year: 'numeric', month: 'numeric', day: 'numeric'
     });
-    const partes = formatter.formatToParts(new Date());
-    const dataSP = {};
-    partes.forEach(({type, value}) => { dataSP[type] = value; });
-    return {
-        ano: parseInt(dataSP.year, 10),
-        mes: parseInt(dataSP.month, 10),
-        dia: parseInt(dataSP.day, 10)
-    };
-}
+    const partesHoje = formatterHoje.formatToParts(agora);
+    const dataHoje = {};
+    partesHoje.forEach(({type, value}) => { dataHoje[type] = value; });
 
-function obterAmanhaSaoPaulo() {
-    const amanha = new Date();
-    amanha.setDate(amanha.getDate() + 1);
-    const formatter = new Intl.DateTimeFormat('en-US', {
+    // Amanhã em São Paulo
+    const amanha = new Date(agora);
+    amanha.setDate(agora.getDate() + 1);
+    const formatterAmanha = new Intl.DateTimeFormat('en-US', {
         timeZone: 'America/Sao_Paulo',
         year: 'numeric', month: 'numeric', day: 'numeric'
     });
-    const partes = formatter.formatToParts(amanha);
-    const dataSP = {};
-    partes.forEach(({type, value}) => { dataSP[type] = value; });
+    const partesAmanha = formatterAmanha.formatToParts(amanha);
+    const dataAmanha = {};
+    partesAmanha.forEach(({type, value}) => { dataAmanha[type] = value; });
+
     return {
-        ano: parseInt(dataSP.year, 10),
-        mes: parseInt(dataSP.month, 10),
-        dia: parseInt(dataSP.day, 10)
+        hojeDia: parseInt(dataHoje.day, 10),
+        hojeMes: parseInt(dataHoje.month, 10),
+        amanhaDia: parseInt(dataAmanha.day, 10),
+        amanhaMes: parseInt(dataAmanha.month, 10)
     };
 }
 
@@ -104,49 +103,41 @@ function ehJogoDeHoje(textoOriginal, liga) {
     const t = textoOriginal.toLowerCase();
     const ligaMinusc = liga.toLowerCase();
     
-    if (t.includes('hoje')) return true;
-    
+    const { hojeDia, hojeMes, amanhaDia, amanhaMes } = obterDatasBR();
+    const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+    const nomeMesHoje = meses[hojeMes - 1];
+    const nomeMesAmanha = meses[amanhaMes - 1];
+
+    const textoHoje1 = `${hojeDia} de ${nomeMesHoje}`;
+    const textoHoje2 = `${hojeDia}/${hojeMes}`;
+    const textoHoje3 = `${hojeDia}/0${hojeMes}`;
+
+    const ehHoje = t.includes('hoje') || t.includes(textoHoje1) || t.includes(textoHoje2) || t.includes(textoHoje3);
+    if (ehHoje) return true;
+
+    // Fuso horário: jogos da noite no Brasil aparecem como "Amanhã" no site da Inglaterra
     const ehLigaSulAmericana = ligaMinusc.includes('brasil') || 
                                ligaMinusc.includes('série') || 
+                               ligaMinusc.includes('copa') ||
                                ligaMinusc.includes('paulista') || 
                                ligaMinusc.includes('carioca') || 
                                ligaMinusc.includes('gaúcho') || 
                                ligaMinusc.includes('mineiro') || 
-                               ligaMinusc.includes('copa') ||
+                               ligaMinusc.includes('sul-americana') ||
                                ligaMinusc.includes('sudamericana') ||
                                ligaMinusc.includes('libertadores') ||
                                ligaMinusc.includes('argentina') ||
                                ligaMinusc.includes('colômbia') ||
-                               ligaMinusc.includes('chile');
-
-    if (t.includes('amanhã') && ehLigaSulAmericana) return true;
-
-    const { dia: hojeDia, mes: hojeMes } = obterDataSaoPaulo();
-    const { dia: amanhaDia, mes: amanhaMes } = obterAmanhaSaoPaulo();
-
-    const mesesPT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-    const nomeMesHoje = mesesPT[hojeMes - 1];
-    const nomeMesAmanha = mesesPT[amanhaMes - 1];
-
-    const matchesHoje = (
-        (t.includes(hojeDia.toString()) && (t.includes(nomeMesHoje) || t.includes(nomeMesHoje.substring(0, 3)))) ||
-        t.includes(`${hojeDia}/${hojeMes}`) ||
-        t.includes(`${hojeDia}/0${hojeMes}`) ||
-        t.includes(`0${hojeDia}/${hojeMes}`) ||
-        t.includes(`0${hojeDia}/0${hojeMes}`)
-    );
-
-    if (matchesHoje) return true;
+                               ligaMinusc.includes('chile') ||
+                               ligaMinusc.includes('uruguai');
 
     if (ehLigaSulAmericana) {
-        const matchesAmanha = (
-            (t.includes(amanhaDia.toString()) && (t.includes(nomeMesAmanha) || t.includes(nomeMesAmanha.substring(0, 3)))) ||
-            t.includes(`${amanhaDia}/${amanhaMes}`) ||
-            t.includes(`${amanhaDia}/0${amanhaMes}`) ||
-            t.includes(`0${amanhaDia}/${amanhaMes}`) ||
-            t.includes(`0${amanhaDia}/0${amanhaMes}`)
-        );
-        if (matchesAmanha) return true;
+        const textoAmanha1 = `${amanhaDia} de ${nomeMesAmanha}`;
+        const textoAmanha2 = `${amanhaDia}/${amanhaMes}`;
+        const textoAmanha3 = `${amanhaDia}/0${amanhaMes}`;
+        
+        const ehAmanha = t.includes('amanhã') || t.includes(textoAmanha1) || t.includes(textoAmanha2) || t.includes(textoAmanha3);
+        if (ehAmanha) return true;
     }
 
     return false;
@@ -167,9 +158,6 @@ async function monitorarJogos() {
         cacheJogos = carregarCache();
         const jogosProcessadosNestaRodada = new Set();
 
-        // Regex para extrair "Quinta-feira, 16 de Julho" ou qualquer variação no início da linha
-        const regexPrefixoData = /^(hoje|amanhã|domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado)(?:,\s*\d+(?:\s+de\s+[a-zà-ú]+)?(?:\s+de\s+\d{4})?)?/i;
-
         $('.wttr2, [class*="statln"]').each((i, el) => {
             const classeOriginal = $(el).attr('class') || '';
             const textoOriginal = $(el).text().trim();
@@ -187,34 +175,50 @@ async function monitorarJogos() {
                 if (ehJogoReal && !ehCabecalho) {
                     if (ehJogoDeHoje(textoLimpo, ligaAtual)) {
                         
-                        // Remove completamente o prefixo de data do início do texto
-                        const textoSemData = textoLimpo.replace(regexPrefixoData, '').trim();
+                        const partes = textoLimpo.split(' x ');
+                        if (partes.length === 2) {
+                            let timeA = partes[0].trim();
+                            
+                            // Remove qualquer prefixo de data do início do Time A
+                            const regexPrefixoData = /^(hoje|amanhã|domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado)(?:,\s*\d+(?:\s+de\s+[a-zà-ú]+)?(?:\s+de\s+\d{4})?)?\s*/i;
+                            timeA = timeA.replace(regexPrefixoData, '').trim();
 
-                        // Captura os times e a média de escanteios (com decimais, ignorando textos residuais no fim)
-                        const matchConfronto = textoSemData.match(/(.+?)\s+x\s+(.+?)\s+(\d+(?:\.\d+)?)(?:\D*)$/);
-                        
-                        if (matchConfronto) {
-                            const timeA = matchConfronto[1].trim();
-                            const timeB = matchConfronto[2].trim();
-                            const cantosTotal = parseFloat(matchConfronto[3]);
+                            let timeB = "";
+                            let cantosTotal = 0;
 
-                            const confrontoLimpo = `${timeA} x ${timeB}`;
-                            const chaveJogo = `${confrontoLimpo.toLowerCase()}_${ligaAtual.toLowerCase()}`;
+                            // Extrai o Time B e a Média de Escanteios usando a porcentagem como âncora
+                            const matchB = partes[1].match(/^(.+?)\s+(\d+(?:\.\d+)?)\s+\d+%/);
+                            if (matchB) {
+                                timeB = matchB[1].trim();
+                                cantosTotal = parseFloat(matchB[2]);
+                            } else {
+                                // Fallback caso não encontre a porcentagem
+                                const matchFallback = partes[1].match(/^([^0-9]+)\s+(\d+(?:\.\d+)?)/);
+                                if (matchFallback) {
+                                    timeB = matchFallback[1].trim();
+                                    cantosTotal = parseFloat(matchFallback[2]);
+                                }
+                            }
 
-                            if (jogosProcessadosNestaRodada.has(chaveJogo)) return;
-                            jogosProcessadosNestaRodada.add(chaveJogo);
+                            if (timeB && cantosTotal > 0) {
+                                const confrontoLimpo = `${timeA} x ${timeB}`;
+                                const chaveJogo = `${confrontoLimpo.toLowerCase()}_${ligaAtual.toLowerCase()}`;
 
-                            totalAnalisados++;
+                                if (jogosProcessadosNestaRodada.has(chaveJogo)) return;
+                                jogosProcessadosNestaRodada.add(chaveJogo);
 
-                            // NOVO CRITÉRIO: Média estritamente maior que 10 escanteios (> 10)
-                            if (cantosTotal > 10) {
-                                if (cacheJogos[chaveJogo]) {
-                                    console.log(`[IGNORADO - JÁ ENVIADO] ${confrontoLimpo}`);
-                                } else {
-                                    enviarAlerta(ligaAtual, confrontoLimpo, cantosTotal);
-                                    cacheJogos[chaveJogo] = Date.now();
-                                    salvarCache();
-                                    totalDisparados++;
+                                totalAnalisados++;
+
+                                // CRITÉRIO EXCLUSIVO: Média de escanteios totais maior que 10 (> 10)
+                                if (cantosTotal > 10) {
+                                    if (cacheJogos[chaveJogo]) {
+                                        console.log(`[IGNORADO - JÁ ENVIADO] ${confrontoLimpo}`);
+                                    } else {
+                                        enviarAlerta(ligaAtual, confrontoLimpo, cantosTotal);
+                                        cacheJogos[chaveJogo] = Date.now();
+                                        salvarCache();
+                                        totalDisparados++;
+                                    }
                                 }
                             }
                         }
