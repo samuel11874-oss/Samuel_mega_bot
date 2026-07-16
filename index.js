@@ -1,10 +1,9 @@
 const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
-const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Modo Investigador Ativo'));
+app.get('/', (req, res) => res.send('Bot Investigador 2.0 Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const MOBILE_HEADERS = {
@@ -15,7 +14,7 @@ const MOBILE_HEADERS = {
 
 async function investigarJogos() {
     console.log("--------------------------------------------------");
-    console.log("[INVESTIGADOR] Lendo estrutura da página...");
+    console.log("[INVESTIGADOR 2.0] Varrendo todos os elementos...");
 
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
@@ -24,18 +23,20 @@ async function investigarJogos() {
         });
 
         const $ = cheerio.load(data);
-        
-        // Vamos imprimir as primeiras 10 linhas que contenham números
-        // Isso vai nos revelar o formato real dos dados
         let contador = 0;
-        $('tr').each((i, el) => {
+
+        // Agora vasculhamos TUDO (tr, div, li, span)
+        $('tr, div, li, span').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
-            if (/\d{1,2}\.\d/.test(linha) && contador < 10) {
-                console.log(`[LINHA ENCONTRADA]: ${linha}`);
+            
+            // Se a linha tiver pelo menos 20 caracteres e contiver números de escanteios (formato XX.X)
+            if (linha.length > 20 && /\d{1,2}\.\d/.test(linha) && contador < 15) {
+                console.log(`[LINHA ENCONTRADA]: ${linha.substring(0, 80)}...`);
                 contador++;
             }
         });
 
+        if (contador === 0) console.log("ALERTA: Nenhuma linha com números foi encontrada em nenhuma tag.");
         console.log(`[FIM] Verifique acima o formato dos dados.`);
         
     } catch (e) {
