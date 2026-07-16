@@ -4,11 +4,11 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional: Mensagem Limpa e Jogos do Dia Ativos'));
+app.get('/', (req, res) => res.send('Bot Operacional: Palpites do Dia Ativos'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
-const CHAT_ID = '8285908313';
+const CHAT_ID = '8285908313'; // Seu ID de destino
 const bot = new TelegramBot(TOKEN, { polling: false });
 
 const HEADERS = {
@@ -20,7 +20,10 @@ const HEADERS = {
     'Upgrade-Insecure-Requests': '1'
 };
 
-// Função para limpar duplicações e sujeiras no nome da Liga
+// --- SISTEMA DE PREVENÇÃO DE DUPLICADOS ---
+const jogosAlertados = new Set();
+let diaDoCache = "";
+
 function limparNomeLiga(liga) {
     let nome = liga.replace(/ESTATÍSTICAS DE ESCANTEIOS/gi, '').trim();
     const palavras = nome.split(' ');
@@ -35,7 +38,6 @@ function limparNomeLiga(liga) {
     return nome.trim();
 }
 
-// Função para obter o dia de hoje em formato brasileiro (America/Sao_Paulo)
 function obterFiltrosHoje() {
     const agora = new Date();
     const formatadorDiaMes = new Intl.DateTimeFormat('pt-BR', { 
@@ -57,7 +59,7 @@ function obterFiltrosHoje() {
 async function monitorarJogos() {
     try {
         console.log("--------------------------------------------------");
-        console.log("[MONITORANDO JOGOS] Buscando apenas jogos de HOJE (Todas as Ligas)...");
+        console.log("[MONITORANDO JOGOS] Analisando jogos de hoje (Todas as Ligas)...");
 
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 15000 });
         const $ = cheerio.load(data);
@@ -67,25 +69,27 @@ async function monitorarJogos() {
         let ligaAtual = "Liga Não Identificada";
 
         const { diaMesTexto, diaSemanaTexto } = obterFiltrosHoje();
-        console.log(`Filtro de data ativo para hoje: "${diaSemanaTexto}, ${diaMesTexto}" ou "Hoje"`);
+
+        // Limpa o cache de duplicados se mudar de dia
+        if (diaDoCache !== diaMesTexto) {
+            jogosAlertados.clear();
+            diaDoCache = diaMesTexto;
+            console.log("[CACHE] Novo dia iniciado. Histórico de alertas resetado.");
+        }
 
         $('.wttr2, [class*="statln"]').each((i, el) => {
             const classeOriginal = $(el).attr('class') || '';
             const textoOriginal = $(el).text().trim();
             const textoLimpo = textoOriginal.replace(/\s+/g, ' ');
 
-            // 1. Atualiza e limpa a liga atual
             if (classeOriginal.includes('wttr2')) {
                 ligaAtual = limparNomeLiga(textoLimpo);
             } 
-            // 2. Processa o jogo
             else if (classeOriginal.includes('statln')) {
                 const ehJogoReal = textoLimpo.includes(' x ');
                 const ehCabecalho = textoLimpo.includes('ESTATÍSTICAS') || textoLimpo.includes('Menos/Mais') || textoLimpo.includes('Handicap');
 
                 if (ehJogoReal && !ehCabecalho) {
-                    
-                    // FILTRO RESTRITO: Somente jogos que acontecem HOJE
                     const textoMinusc = textoLimpo.toLowerCase();
                     const ehDeHoje = textoMinusc.includes('hoje') || 
                                      (textoMinusc.includes(diaMesTexto) && textoMinusc.includes(diaSemanaTexto));
@@ -93,31 +97,38 @@ async function monitorarJogos() {
                     if (ehDeHoje) {
                         totalAnalisados++;
 
-                        // Extração precisa dos dados da partida
                         const partes = textoLimpo.split(' x ');
                         if (partes.length === 2) {
                             let timeA = partes[0].trim();
                             let restoTimeB = partes[1].trim();
 
-                            // Remove datas/Hoje do nome do Time A
-                            timeA = timeA.replace(/^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|hoje),\s*\d*\s*(de\s*[a-z]+\s*de\s*\d{4})?/i, '').trim();
-                            timeA = timeA.replace(/^(Hoje|Amanhã)/i, '').trim();
+                            // Garante a remoção do "Hoje" ou datas mesmo se estiver grudado no time
+                            timeA = timeA
+                                .replace(/^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|hoje|amanhã)/i, '')
+                                .replace(/^\s*\d*\s*(de\s*[a-z]+\s*de\s*\d{4})?/i, '')
+                                .trim();
 
-                            // Extrai o Time B parando antes da numeração de escanteio
                             const matchTimeB = restoTimeB.match(/^([^0-9]+)/);
                             const timeB = matchTimeB ? matchTimeB[1].trim() : restoTimeB;
 
-                            // Extrai a média de escanteios total
                             const restoSemTimeB = restoTimeB.substring(timeB.length).trim();
                             const matchCantos = restoSemTimeB.match(/^(\d+)/);
                             const cantosTotal = matchCantos ? parseInt(matchCantos[1], 10) : 0;
 
                             const confrontoLimpo = `${timeA} x ${timeB}`;
+                            const chaveJogo = `${confrontoLimpo.toLowerCase()}_${ligaAtual.toLowerCase()}`;
 
-                            // Filtro de Média: Mais de 10.5 escanteios total (Mínimo de 11)
+                            // CRITÉRIO: Linha de cantos maior que 10.5 (Mínimo de 11 total)
                             if (cantosTotal > 10.5) {
-                                enviarAlerta(ligaAtual, confrontoLimpo, cantosTotal);
-                                totalDisparados++;
+                                
+                                // Verifica se o jogo já foi enviado hoje para evitar duplicados
+                                if (jogosAlertados.has(chaveJogo)) {
+                                    console.log(`[IGNORADO] Jogo já alertado anteriormente: ${confrontoLimpo}`);
+                                } else {
+                                    enviarAlerta(ligaAtual, confrontoLimpo, cantosTotal);
+                                    jogosAlertados.add(chaveJogo);
+                                    totalDisparados++;
+                                }
                             }
                         }
                     }
@@ -127,7 +138,7 @@ async function monitorarJogos() {
 
         console.log(`[VARREDURA CONCLUÍDA]`);
         console.log(`>> Total de jogos de HOJE analisados: ${totalAnalisados}`);
-        console.log(`>> Alertas disparados: ${totalDisparados}`);
+        console.log(`>> Novos alertas disparados: ${totalDisparados}`);
         console.log("--------------------------------------------------");
 
     } catch (e) {
@@ -136,13 +147,13 @@ async function monitorarJogos() {
 }
 
 function enviarAlerta(liga, confronto, cantos) {
-    // Mensagem ultra-limpa conforme solicitado
     const mensagem = `
-🔥 *Jogos encontrado para fazer sua aposta personalizada*
+🔥 *Palpites do dia para seu bilhete*
 
 ⚽ *Jogo:* ${confronto}
 🌍 *Liga:* ${liga}
-📊 *Média:* ${cantos} Cantos (>10.5)
+📊 *Média:* ${cantos} Cantos (>10.5 FT)
+⚡ *HT:* Alta chance de +4.5 HT
     `;
     
     bot.sendMessage(CHAT_ID, mensagem.trim(), { parse_mode: 'Markdown' })
@@ -150,6 +161,6 @@ function enviarAlerta(liga, confronto, cantos) {
        .catch(err => console.error(`[ERRO TELEGRAM] Falha ao enviar:`, err.message));
 }
 
-// Executa a cada 60 minutos (1 hora)
+// Executa a cada 60 minutos
 setInterval(monitorarJogos, 3600000);
 monitorarJogos();
