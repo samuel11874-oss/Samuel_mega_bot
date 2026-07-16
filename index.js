@@ -1,20 +1,32 @@
 const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Investigador 2.0 Ativo'));
+app.get('/', (req, res) => res.send('Bot de Escanteios Ativo'));
 app.listen(process.env.PORT || 3000);
+
+const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
+const CHAT_ID = '8285908313';
+const bot = new TelegramBot(TOKEN, { polling: false });
 
 const MOBILE_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
     'Referer': 'https://www.google.com/'
 };
 
-async function investigarJogos() {
-    console.log("--------------------------------------------------");
-    console.log("[INVESTIGADOR 2.0] Varrendo todos os elementos...");
+// Controle de memória para não enviar o mesmo jogo 2 vezes
+let jogosEnviados = new Set();
+
+function estaNoHorario() {
+    const agora = new Date().toLocaleString("en-US", {timeZone: "America/Sao_Paulo"});
+    const hora = new Date(agora).getHours();
+    return (hora >= 6 && hora <= 11) || (hora >= 12 && hora <= 20);
+}
+
+async function monitorarJogos() {
+    if (!estaNoHorario()) return;
 
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
@@ -23,26 +35,41 @@ async function investigarJogos() {
         });
 
         const $ = cheerio.load(data);
-        let contador = 0;
-
-        // Agora vasculhamos TUDO (tr, div, li, span)
-        $('tr, div, li, span').each((i, el) => {
+        
+        $('tr, div, li').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Se a linha tiver pelo menos 20 caracteres e contiver números de escanteios (formato XX.X)
-            if (linha.length > 20 && /\d{1,2}\.\d/.test(linha) && contador < 15) {
-                console.log(`[LINHA ENCONTRADA]: ${linha.substring(0, 80)}...`);
-                contador++;
+            // Filtro para ignorar cabeçalhos
+            if (linha.includes('ESTATÍSTICAS DE ESCANTEIOS')) {
+                
+                // Regex para encontrar todos os números no formato X.X
+                const numeros = linha.match(/\d{1,2}\.\d/g);
+                
+                if (numeros && numeros.length >= 3) {
+                    // O último número geralmente é a média total (ex: 5.9, 5.8, 11.7)
+                    const mediaTotal = parseFloat(numeros[numeros.length - 1]);
+                    
+                    if (mediaTotal > 10.5) {
+                        const nomeJogo = linha.split('ESTATÍSTICAS')[0]; // Pega o nome da liga/jogo
+                        
+                        // Verifica duplicidade
+                        if (!jogosEnviados.has(nomeJogo)) {
+                            jogosEnviados.add(nomeJogo);
+                            bot.sendMessage(CHAT_ID, `🔥 *Oportunidade Encontrada!*\n\n${nomeJogo}\n📊 *Média Total:* ${mediaTotal} cantos`).catch(console.error);
+                            console.log(`[ALERTA ENVIADO] ${nomeJogo} -> ${mediaTotal}`);
+                        }
+                    }
+                }
             }
         });
-
-        if (contador === 0) console.log("ALERTA: Nenhuma linha com números foi encontrada em nenhuma tag.");
-        console.log(`[FIM] Verifique acima o formato dos dados.`);
         
     } catch (e) {
         console.error("Erro na leitura:", e.message);
     }
 }
 
-setInterval(investigarJogos, 1200000); 
-investigarJogos();
+// Reseta a lista de duplicados a cada 24h
+setInterval(() => { jogosEnviados.clear(); }, 86400000);
+// Roda a cada 15 minutos
+setInterval(monitorarJogos, 900000); 
+monitorarJogos();
