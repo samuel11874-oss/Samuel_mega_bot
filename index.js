@@ -22,7 +22,6 @@ const HEADERS = {
     'Upgrade-Insecure-Requests': '1'
 };
 
-// --- SISTEMA DE CACHE DIÁRIO ---
 const CACHE_FILE = path.join(__dirname, 'jogos_enviados.json');
 let cacheJogos = carregarCache();
 
@@ -32,7 +31,6 @@ function carregarCache() {
             const dados = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
             const agora = Date.now();
             const cacheLimpo = {};
-            // Mantém no cache apenas jogos enviados nas últimas 24 horas
             for (const [chave, ts] of Object.entries(dados)) {
                 if (agora - ts < 24 * 60 * 60 * 1000) {
                     cacheLimpo[chave] = ts;
@@ -40,49 +38,14 @@ function carregarCache() {
             }
             return cacheLimpo;
         }
-    } catch (e) {
-        console.error("Erro ao carregar cache:", e.message);
-    }
+    } catch (e) {}
     return {};
 }
 
 function salvarCache() {
     try {
         fs.writeFileSync(CACHE_FILE, JSON.stringify(cacheJogos), 'utf8');
-    } catch (e) {
-        console.error("Erro ao salvar cache:", e.message);
-    }
-}
-
-function obterDatasBR() {
-    const agora = new Date();
-    
-    // Data atual de São Paulo
-    const formatterHoje = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Sao_Paulo',
-        year: 'numeric', month: 'numeric', day: 'numeric'
-    });
-    const partesHoje = formatterHoje.formatToParts(agora);
-    const dataHoje = {};
-    partesHoje.forEach(({type, value}) => { dataHoje[type] = value; });
-
-    // Amanhã em São Paulo
-    const amanha = new Date(agora);
-    amanha.setDate(agora.getDate() + 1);
-    const formatterAmanha = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Sao_Paulo',
-        year: 'numeric', month: 'numeric', day: 'numeric'
-    });
-    const partesAmanha = formatterAmanha.formatToParts(amanha);
-    const dataAmanha = {};
-    partesAmanha.forEach(({type, value}) => { dataAmanha[type] = value; });
-
-    return {
-        hojeDia: parseInt(dataHoje.day, 10),
-        hojeMes: parseInt(dataHoje.month, 10),
-        amanhaDia: parseInt(dataAmanha.day, 10),
-        amanhaMes: parseInt(dataAmanha.month, 10)
-    };
+    } catch (e) {}
 }
 
 function limparNomeLiga(liga) {
@@ -92,61 +55,57 @@ function limparNomeLiga(liga) {
     if (palavras.length > 1) {
         const primeiraMetade = palavras.slice(0, metade).join(' ');
         const segundaMetade = palavras.slice(metade).join(' ');
-        if (primeiraMetade === segundaMetade) {
-            nome = primeiraMetade;
-        }
+        if (primeiraMetade === segundaMetade) nome = primeiraMetade;
     }
     return nome.trim();
 }
 
-function ehJogoDeHoje(textoOriginal, liga) {
-    const t = textoOriginal.toLowerCase();
-    const ligaMinusc = liga.toLowerCase();
+// NOVO FILTRO INTELIGENTE: Lista Negra de Dias Futuros
+function ehParaProcessar(texto) {
+    const txt = texto.toLowerCase();
     
-    const { hojeDia, hojeMes, amanhaDia, amanhaMes } = obterDatasBR();
-    const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-    const nomeMesHoje = meses[hojeMes - 1];
-    const nomeMesAmanha = meses[amanhaMes - 1];
+    // Se tiver "hoje" ou "amanhã" (jogos da madrugada/noite sul-americana), aceita.
+    if (txt.includes('hoje')) return true;
+    if (txt.includes('amanhã')) return true;
 
-    const textoHoje1 = `${hojeDia} de ${nomeMesHoje}`;
-    const textoHoje2 = `${hojeDia}/${hojeMes}`;
-    const textoHoje3 = `${hojeDia}/0${hojeMes}`;
+    // Pega o dia da semana atual no Brasil
+    const agora = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Sao_Paulo"}));
+    const diasSemana = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+    const diaSemanaHoje = diasSemana[agora.getDay()];
+    
+    // Se explicitamente diz o dia de hoje (ex: "quinta"), aceita.
+    if (txt.includes(diaSemanaHoje)) return true;
 
-    const ehHoje = t.includes('hoje') || t.includes(textoHoje1) || t.includes(textoHoje2) || t.includes(textoHoje3);
-    if (ehHoje) return true;
-
-    // Fuso horário: jogos da noite no Brasil aparecem como "Amanhã" no site da Inglaterra
-    const ehLigaSulAmericana = ligaMinusc.includes('brasil') || 
-                               ligaMinusc.includes('série') || 
-                               ligaMinusc.includes('copa') ||
-                               ligaMinusc.includes('paulista') || 
-                               ligaMinusc.includes('carioca') || 
-                               ligaMinusc.includes('gaúcho') || 
-                               ligaMinusc.includes('mineiro') || 
-                               ligaMinusc.includes('sul-americana') ||
-                               ligaMinusc.includes('sudamericana') ||
-                               ligaMinusc.includes('libertadores') ||
-                               ligaMinusc.includes('argentina') ||
-                               ligaMinusc.includes('colômbia') ||
-                               ligaMinusc.includes('chile') ||
-                               ligaMinusc.includes('uruguai');
-
-    if (ehLigaSulAmericana) {
-        const textoAmanha1 = `${amanhaDia} de ${nomeMesAmanha}`;
-        const textoAmanha2 = `${amanhaDia}/${amanhaMes}`;
-        const textoAmanha3 = `${amanhaDia}/0${amanhaMes}`;
-        
-        const ehAmanha = t.includes('amanhã') || t.includes(textoAmanha1) || t.includes(textoAmanha2) || t.includes(textoAmanha3);
-        if (ehAmanha) return true;
+    // BLOQUEIO: Se tiver qualquer OUTRO dia da semana na string, é jogo da semana que vem. Bloqueia!
+    for (let d of diasSemana) {
+        if (d !== diaSemanaHoje && txt.includes(d)) return false; 
+    }
+    
+    // BLOQUEIO: Se tiver um mês futuro explicitamente
+    const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const mesHoje = meses[agora.getMonth()];
+    for (let m of meses) {
+        if (m !== mesHoje && txt.includes(`de ${m}`)) return false;
     }
 
-    return false;
+    // Se chegou até aqui (não tem dia futuro explícito), significa que é apenas o horário ou nome do time. Aceita!
+    return true;
+}
+
+// Limpa horários (16:00) e datas coladas no nome do primeiro time
+function limparPrefixo(texto) {
+    let t = texto;
+    t = t.replace(/^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|hoje|amanhã)[^a-z0-9]*/i, '');
+    t = t.replace(/^\d{1,2}\s+de\s+[a-zç]+\s*/i, '');
+    t = t.replace(/^\d{1,2}\/\d{1,2}\s*/, '');
+    t = t.replace(/^\d{2}:\d{2}\s*/, ''); 
+    return t.trim();
 }
 
 async function monitorarJogos() {
     try {
         console.log("--------------------------------------------------");
-        console.log("[MONITORANDO JOGOS] Varrendo todas as ligas do WinDrawWin...");
+        console.log("[MONITORANDO JOGOS] Varrendo ligas - Buscando > 10.5 cantos...");
 
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 15000 });
         const $ = cheerio.load(data);
@@ -173,27 +132,23 @@ async function monitorarJogos() {
                 const ehCabecalho = textoLimpo.includes('ESTATÍSTICAS') || textoLimpo.includes('Menos/Mais') || textoLimpo.includes('Handicap');
 
                 if (ehJogoReal && !ehCabecalho) {
-                    if (ehJogoDeHoje(textoLimpo, ligaAtual)) {
+                    if (ehParaProcessar(textoLimpo)) {
                         
                         const partes = textoLimpo.split(' x ');
-                        if (partes.length === 2) {
-                            let timeA = partes[0].trim();
-                            
-                            // Remove qualquer prefixo de data do início do Time A
-                            const regexPrefixoData = /^(hoje|amanhã|domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado)(?:,\s*\d+(?:\s+de\s+[a-zà-ú]+)?(?:\s+de\s+\d{4})?)?\s*/i;
-                            timeA = timeA.replace(regexPrefixoData, '').trim();
+                        if (partes.length >= 2) {
+                            let timeA = limparPrefixo(partes[0]);
+                            let resto = partes.slice(1).join(' x ').trim();
 
                             let timeB = "";
                             let cantosTotal = 0;
 
-                            // Extrai o Time B e a Média de Escanteios usando a porcentagem como âncora
-                            const matchB = partes[1].match(/^(.+?)\s+(\d+(?:\.\d+)?)\s+\d+%/);
-                            if (matchB) {
-                                timeB = matchB[1].trim();
-                                cantosTotal = parseFloat(matchB[2]);
+                            // Lê o Time B e extrai médias com casas decimais (ex: 11.5)
+                            const matchPadrao = resto.match(/^(.+?)\s+(\d+(?:\.\d+)?)\s*(?:Mais|Menos|%)/i);
+                            if (matchPadrao) {
+                                timeB = matchPadrao[1].trim();
+                                cantosTotal = parseFloat(matchPadrao[2]);
                             } else {
-                                // Fallback caso não encontre a porcentagem
-                                const matchFallback = partes[1].match(/^([^0-9]+)\s+(\d+(?:\.\d+)?)/);
+                                const matchFallback = resto.match(/^(.+?)\s+(\d+(?:\.\d+)?)(?:\s|$)/);
                                 if (matchFallback) {
                                     timeB = matchFallback[1].trim();
                                     cantosTotal = parseFloat(matchFallback[2]);
@@ -209,8 +164,8 @@ async function monitorarJogos() {
 
                                 totalAnalisados++;
 
-                                // CRITÉRIO EXCLUSIVO: Média de escanteios totais maior que 10 (> 10)
-                                if (cantosTotal > 10) {
+                                // CRITÉRIO DEFINITIVO: MAIS DE 10.5 ESCANTEIOS
+                                if (cantosTotal > 10.5) {
                                     if (cacheJogos[chaveJogo]) {
                                         console.log(`[IGNORADO - JÁ ENVIADO] ${confrontoLimpo}`);
                                     } else {
@@ -228,8 +183,8 @@ async function monitorarJogos() {
         });
 
         console.log(`[VARREDURA CONCLUÍDA]`);
-        console.log(`>> Total de jogos de HOJE mapeados: ${totalAnalisados}`);
-        console.log(`>> Alertas enviados nesta rodada: ${totalDisparados}`);
+        console.log(`>> Total de jogos mapeados: ${totalAnalisados}`);
+        console.log(`>> Alertas (>10.5) enviados: ${totalDisparados}`);
         console.log("--------------------------------------------------");
 
     } catch (e) {
