@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional: Sistema Blindado e Corrigido'));
+app.get('/', (req, res) => res.send('Bot Operacional: Leitura Sequencial Ativada'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,7 +20,6 @@ const HEADERS = {
     'Upgrade-Insecure-Requests': '1'
 };
 
-// Sua lista de exigência máxima
 const LIGAS_ELITE = [
     'Premier League', 'Championship', 'La Liga', 'Serie A', 'Bundesliga', 
     'Ligue 1', 'Brasileirão Série A', 'Brasileirão Série B', 'Champions League', 
@@ -30,46 +29,47 @@ const LIGAS_ELITE = [
 async function monitorarJogos() {
     try {
         console.log("--------------------------------------------------");
-        console.log("[MONITORANDO JOGOS...] Iniciando nova varredura profunda...");
+        console.log("[MONITORANDO JOGOS...] Iniciando nova varredura sequencial...");
 
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 15000 });
         const $ = cheerio.load(data);
         
         let totalAnalisados = 0;
         let totalDisparados = 0;
+        let ligaAtual = ""; // O robô memoriza a liga enquanto desce a lista
 
-        $('.wttr2').each((i, el) => {
-            const nomeLiga = $(el).text().trim();
-            
-            // O Segredo: Agora ele desce linha por linha pegando TODOS os jogos da liga
-            let proximoElemento = $(el).next();
-            
-            while (proximoElemento.length > 0 && !proximoElemento.hasClass('wttr2')) {
-                if (proximoElemento.hasClass('statln2')) {
-                    totalAnalisados++; // Conta que o bot leu a linha
-                    const textoJogo = proximoElemento.text().trim();
+        // O Segredo: Varredura linha por linha (<tr>)
+        $('tr').each((i, el) => {
+            const classeOriginal = $(el).attr('class') || '';
+            const textoLinha = $(el).text().trim();
+
+            // Identifica se a linha é o título da liga
+            if (classeOriginal.includes('wttr2')) {
+                ligaAtual = textoLinha;
+            } 
+            // Identifica se a linha é uma partida (captura statln e statln2)
+            else if (classeOriginal.includes('statln')) {
+                totalAnalisados++;
+                
+                // Filtro 1: A liga memorizada é de Elite?
+                if (LIGAS_ELITE.some(liga => ligaAtual.includes(liga))) {
                     
-                    // Filtro 1: Passou na peneira da Liga de Elite?
-                    if (LIGAS_ELITE.some(liga => nomeLiga.includes(liga))) {
+                    // Filtro 2: Possui alta média de cantos?
+                    if (textoLinha.includes('10') || textoLinha.includes('11') || textoLinha.includes('12') || textoLinha.includes('13') || textoLinha.includes('14')) {
+                        const linkBusca = `https://www.google.com/search?q=bet365+${encodeURIComponent(textoLinha)}`;
                         
-                        // Filtro 2: Passou na peneira de Médias Altas (>10 cantos)?
-                        if (textoJogo.includes('10') || textoJogo.includes('11') || textoJogo.includes('12') || textoJogo.includes('13') || textoJogo.includes('14')) {
-                            const linkBusca = `https://www.google.com/search?q=bet365+${encodeURIComponent(textoJogo)}`;
-                            
-                            const mensagem = `
+                        const mensagem = `
 🏆 *Oportunidade de Elite*
-🌍 *Liga:* ${nomeLiga}
-⚽ *Confronto:* [${textoJogo}](${linkBusca})
+🌍 *Liga:* ${ligaAtual}
+⚽ *Confronto:* [${textoLinha}](${linkBusca})
 📈 *Critérios:* Favorito Home | Média >10 Cantos | Potencial Gols
 🔔 *Status:* Jogo filtrado (1ª/2ª Divisão)
-                            `;
-                            
-                            bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' });
-                            totalDisparados++; // Conta que enviou pro Telegram
-                        }
+                        `;
+                        
+                        bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' });
+                        totalDisparados++;
                     }
                 }
-                proximoElemento = proximoElemento.next(); // Avança para a próxima linha
             }
         });
 
