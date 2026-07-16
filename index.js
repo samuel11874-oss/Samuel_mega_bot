@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Escanteios com Horário'));
+app.get('/', (req, res) => res.send('Bot Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -18,6 +18,9 @@ const MOBILE_HEADERS = {
 
 let jogosEnviados = new Set();
 
+// Identificação da data de hoje
+const hoje = new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
+
 async function monitorarJogos() {
     try {
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
@@ -27,30 +30,32 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
 
-        // Varre todos os elementos de texto
         $('div, tr, li').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
-            
-            // Filtro: Precisa ter um confronto " x " e média numérica
+
+            // Filtro de Data: Se a linha contiver um mês mas não for a data de hoje, descarta
+            const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+            const contemMes = meses.some(mes => linha.toLowerCase().includes(mes));
+
+            if (contemMes && !linha.includes(hoje)) {
+                return;
+            }
+
             if (linha.includes(' x ')) {
                 const numeros = linha.match(/\d{1,2}\.\d/g);
                 
                 if (numeros && numeros.length >= 2) {
                     const mediaTotal = parseFloat(numeros[numeros.length - 1]);
-                    
-                    // Critério de 10.5
+
                     if (mediaTotal > 10.5) {
-                        
-                        // Captura do horário (procura formato 15:00, 20:00, etc)
                         const matchHora = linha.match(/\d{2}:\d{2}/);
-                        const horario = matchHora ? matchHora[0] : "Horário não listado";
-                        
-                        // Limpeza do confronto
+                        const horario = matchHora ? matchHora[0] : "N/A";
+
                         const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                         const matchConfronto = linha.match(regexConfronto);
-                        const confronto = matchConfronto ? matchConfronto[0].trim() : "Confronto";
+                        const confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
-                        if (!jogosEnviados.has(confronto)) {
+                        if (confronto && !jogosEnviados.has(confronto)) {
                             jogosEnviados.add(confronto);
                             
                             const mensagem = `🔥 *Oportunidade de Hoje*\n` +
@@ -59,7 +64,6 @@ async function monitorarJogos() {
                                              `📊 *Média Total:* ${mediaTotal}`;
 
                             bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                            console.log(`[ALERTA ENVIADO] ${confronto} às ${horario} -> ${mediaTotal}`);
                         }
                     }
                 }
@@ -70,6 +74,5 @@ async function monitorarJogos() {
     }
 }
 
-// Roda a cada 10 minutos
 setInterval(monitorarJogos, 600000); 
 monitorarJogos();
