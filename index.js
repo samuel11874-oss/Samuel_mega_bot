@@ -18,11 +18,10 @@ const HEADERS = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
     'Referer': 'https://www.google.com/',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1'
+    'Connection': 'keep-alive'
 };
 
-// 1. Ligas de 1ª e 2ª Divisão pelo mundo + 1ª, 2ª e 3ª do Brasil
+// Ligas de 1ª e 2ª Divisão pelo mundo + 1ª, 2ª e 3ª do Brasil
 const LIGAS_PERMITIDAS = [
     'Premier League', 'Championship', // Inglaterra
     'La Liga', 'Segunda Division', // Espanha
@@ -36,54 +35,78 @@ const LIGAS_PERMITIDAS = [
 ];
 
 async function monitorarJogos() {
-    // Log para você visualizar no painel do Render que o bot está ativo
     console.log("--------------------------------------------------");
     console.log(`[MONITORANDO JOGOS...] Iniciando nova varredura em busca de oportunidades...`);
     console.log("--------------------------------------------------");
 
     try {
-        const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 15000 });
+        const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 20000 });
         const $ = cheerio.load(data);
         
         let encontrados = 0;
-        
-        $('table tr').each((i, el) => {
-            const linha = $(el);
-            const nomeLiga = linha.find('.wttr2').text().trim();
-            
-            // Verifica se a liga faz parte do nosso filtro de elite e divisões permitidas
-            const ligaValida = LIGAS_PERMITIDAS.find(liga => nomeLiga.toLowerCase().includes(liga.toLowerCase()));
-            
-            if (ligaValida) {
-                const timeCasa = linha.find('.wtteam1').text().trim();
-                const timeFora = linha.find('.wtteam2').text().trim();
+        let ligaAtual = "";
+
+        // No WinDrawWin, a estrutura de tabelas de estatísticas usa divs com classes específicas ou tabelas sequenciais.
+        // Varremos o container principal de estatísticas para não perder nenhuma linha de jogo.
+        $('tr').each((i, el) => {
+            const elemento = $(el);
+
+            // Verifica se a linha atual define uma Liga/Cabeçalho
+            if (elemento.hasClass('wttr2') || elemento.find('.wttr2').length > 0) {
+                ligaAtual = elemento.text().trim();
+                return; // Pula para a próxima linha para ler os jogos dessa liga
+            }
+
+            // Se já temos uma liga definida, vamos checar os dados das partidas dela
+            if (ligaAtual) {
+                // Valida se a liga atual está na nossa lista de permitidas
+                const ligaValida = LIGAS_PERMITIDAS.find(liga => ligaAtual.toLowerCase().includes(liga.toLowerCase()));
                 
-                // Extrai os valores numéricos das estatísticas do WinDrawWin para FT e HT
-                const mediaFT = parseFloat(linha.find('td').eq(3).text().trim()) || 0;
-                const mediaHT = parseFloat(linha.find('td').eq(4).text().trim()) || 0;
-                
-                if (timeCasa && timeFora) {
-                    const confronto = `${timeCasa} vs ${timeFora}`;
+                if (ligaValida) {
+                    // Seleciona as colunas de dados da linha atual
+                    const colunas = elemento.find('td');
                     
-                    // 2. Critério: Média FT > 10 E 3. Critério: Média HT > 4
-                    if (mediaFT > 10 && mediaHT > 4) {
-                        encontrados++;
-                        const linkBusca = `https://www.google.com/search?q=bet365+${encodeURIComponent(confronto)}`;
+                    if (colunas.length >= 5) {
+                        // O WinDrawWin costuma organizar: Time Casa | Time Fora | Média Casa | Média Fora | Média Geral (FT) | Média HT
+                        // Pegamos os times de forma segura limpando o texto
+                        const timeCasa = colunas.eq(0).text().trim();
+                        const timeFora = colunas.eq(1).text().trim();
                         
-                        const mensagem = `
+                        // Captura as estatísticas com base na posição padrão das colunas do WinDrawWin para cantos
+                        // FT (Geralmente coluna 4 ou 5) e HT (Geralmente a coluna subsequente)
+                        const textoFT = colunas.eq(4).text().trim().replace(',', '.');
+                        const textoHT = colunas.eq(5).text().trim().replace(',', '.');
+
+                        const mediaFT = parseFloat(textoFT) || 0;
+                        const mediaHT = parseFloat(textoHT) || 0;
+
+                        if (timeCasa && timeFora && !timeCasa.toLowerCase().includes('time') && !timeCasa.toLowerCase().includes('média')) {
+                            const confronto = `${timeCasa} vs ${timeFora}`;
+                            
+                            // Log de depuração interna no Render para você ver o bot trabalhando
+                            console.log(`[ANALISANDO] ${ligaValida} -> ${confronto} (FT: ${mediaFT} | HT: ${mediaHT})`);
+
+                            // Filtros atualizados de forma restrita: FT > 10 e HT > 4
+                            if (mediaFT > 10 && mediaHT > 4) {
+                                encontrados++;
+                                const linkBusca = `https://www.google.com/search?q=bet365+${encodeURIComponent(confronto)}`;
+                                
+                                const mensagem = `
 🔥 *ALERTA DE OPORTUNIDADE* 🔥
 
-🌍 *Liga:* ${nomeLiga}
+🌍 *Liga:* ${ligaAtual}
 ⚽ *Confronto:* [${confronto}](${linkBusca})
 
 📈 *Média FT:* \`${mediaFT.toFixed(2)}\` escanteios *(Meta: > 10)*
 ⏱️ *Média HT:* \`${mediaHT.toFixed(2)}\` escanteios *(Meta: > 4)*
 
 🔔 *Status:* Jogo qualificado dentro de todos os parâmetros!
-                        `;
-                        
-                        bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown', disable_web_page_preview: true });
-                        console.log(`[ALERTA ENVIADO] Jogo localizado e enviado ao Telegram: ${confronto}`);
+                                `;
+                                
+                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown', disable_web_page_preview: true });
+                                console.log(`[ALERTA ENVIADO] Jogo qualificado enviado: ${confronto}`);
+                            }
+                        }
                     }
                 }
             }
