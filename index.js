@@ -44,49 +44,66 @@ async function monitorarJogos() {
         const $ = cheerio.load(data);
         
         let encontrados = 0;
-        let ligaAtual = "";
 
-        // No WinDrawWin, a estrutura de tabelas de estatísticas usa divs com classes específicas ou tabelas sequenciais.
-        // Varremos o container principal de estatísticas para não perder nenhuma linha de jogo.
-        $('tr').each((i, el) => {
-            const elemento = $(el);
-
-            // Verifica se a linha atual define uma Liga/Cabeçalho
-            if (elemento.hasClass('wttr2') || elemento.find('.wttr2').length > 0) {
-                ligaAtual = elemento.text().trim();
-                return; // Pula para a próxima linha para ler os jogos dessa liga
+        // No WinDrawWin, cada campeonato geralmente fica dentro de uma div/seção com uma classe de tabela
+        // O nome da liga fica dentro de um cabeçalho que antecede ou rotula a tabela de estatísticas.
+        $('table').each((indexTabela, tabela) => {
+            // Tenta encontrar o título da liga que fica logo antes de cada tabela (geralmente h2, h3, ou uma div .wttr2 anterior)
+            let ligaTexto = "";
+            
+            // Procura nos elementos irmãos anteriores à tabela pelo nome do campeonato
+            let elementoAnterior = $(tabela).prev();
+            while (elementoAnterior.length > 0 && !ligaTexto) {
+                if (elementoAnterior.text().trim() !== "") {
+                    ligaTexto = elementoAnterior.text().trim();
+                }
+                elementoAnterior = elementoAnterior.prev();
             }
 
-            // Se já temos uma liga definida, vamos checar os dados das partidas dela
-            if (ligaAtual) {
-                // Valida se a liga atual está na nossa lista de permitidas
-                const ligaValida = LIGAS_PERMITIDAS.find(liga => ligaAtual.toLowerCase().includes(liga.toLowerCase()));
-                
-                if (ligaValida) {
-                    // Seleciona as colunas de dados da linha atual
-                    const colunas = elemento.find('td');
+            // Se não achou nos irmãos anteriores, procura na linha de cabeçalho interno da tabela
+            if (!ligaTexto) {
+                ligaTexto = $(tabela).find('thead tr th').first().text().trim() || $(tabela).find('.wttr2').text().trim();
+            }
+
+            // Se ainda assim não encontrar, define como Liga Desconhecida para prosseguir
+            if (!ligaTexto) {
+                ligaTexto = "Liga Alternativa";
+            }
+
+            // Valida se a liga atual está na nossa lista de permitidas
+            const ligaValida = LIGAS_PERMITIDAS.find(liga => ligaTexto.toLowerCase().includes(liga.toLowerCase()));
+            
+            if (ligaValida) {
+                // Varre as linhas da tabela de dados desse campeonato
+                $(tabela).find('tr').each((i, el) => {
+                    const colunas = $(el).find('td');
                     
-                    if (colunas.length >= 5) {
-                        // O WinDrawWin costuma organizar: Time Casa | Time Fora | Média Casa | Média Fora | Média Geral (FT) | Média HT
-                        // Pegamos os times de forma segura limpando o texto
+                    // Se a linha tiver pelo menos 4 colunas (Time Casa, Time Fora, Média Total, Média HT)
+                    if (colunas.length >= 4) {
                         const timeCasa = colunas.eq(0).text().trim();
                         const timeFora = colunas.eq(1).text().trim();
                         
-                        // Captura as estatísticas com base na posição padrão das colunas do WinDrawWin para cantos
-                        // FT (Geralmente coluna 4 ou 5) e HT (Geralmente a coluna subsequente)
-                        const textoFT = colunas.eq(4).text().trim().replace(',', '.');
-                        const textoHT = colunas.eq(5).text().trim().replace(',', '.');
+                        // O WinDrawWin exibe:
+                        // Coluna 2 (Índice 2): Média Total do Jogo (FT)
+                        // Coluna 3 (Índice 3): Média no 1º Tempo (HT)
+                        const textoFT = colunas.eq(2).text().trim().replace(',', '.');
+                        const textoHT = colunas.eq(3).text().trim().replace(',', '.');
 
                         const mediaFT = parseFloat(textoFT) || 0;
                         const mediaHT = parseFloat(textoHT) || 0;
 
-                        if (timeCasa && timeFora && !timeCasa.toLowerCase().includes('time') && !timeCasa.toLowerCase().includes('média')) {
+                        // Evita pegar linhas de cabeçalho que possam conter palavras como "Média", "Média Geral" ou "Equipe"
+                        if (timeCasa && timeFora && 
+                            !timeCasa.toLowerCase().includes('time') && 
+                            !timeCasa.toLowerCase().includes('média') &&
+                            !timeCasa.toLowerCase().includes('equipe')) {
+                            
                             const confronto = `${timeCasa} vs ${timeFora}`;
                             
-                            // Log de depuração interna no Render para você ver o bot trabalhando
+                            // LOG DE DEPURAÇÃO: Agora você vai ver cada jogo testado no painel do Render!
                             console.log(`[ANALISANDO] ${ligaValida} -> ${confronto} (FT: ${mediaFT} | HT: ${mediaHT})`);
 
-                            // Filtros atualizados de forma restrita: FT > 10 e HT > 4
+                            // Aplica os filtros: FT > 10 e HT > 4
                             if (mediaFT > 10 && mediaHT > 4) {
                                 encontrados++;
                                 const linkBusca = `https://www.google.com/search?q=bet365+${encodeURIComponent(confronto)}`;
@@ -94,7 +111,7 @@ async function monitorarJogos() {
                                 const mensagem = `
 🔥 *ALERTA DE OPORTUNIDADE* 🔥
 
-🌍 *Liga:* ${ligaAtual}
+🌍 *Liga:* ${ligaTexto}
 ⚽ *Confronto:* [${confronto}](${linkBusca})
 
 📈 *Média FT:* \`${mediaFT.toFixed(2)}\` escanteios *(Meta: > 10)*
@@ -104,11 +121,11 @@ async function monitorarJogos() {
                                 `;
                                 
                                 bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown', disable_web_page_preview: true });
-                                console.log(`[ALERTA ENVIADO] Jogo qualificado enviado: ${confronto}`);
+                                console.log(`[ALERTA ENVIADO] Jogo qualificado enviado ao Telegram: ${confronto}`);
                             }
                         }
                     }
-                }
+                });
             }
         });
         
