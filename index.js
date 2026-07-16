@@ -16,6 +16,14 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
+let jogosEnviados = new Set();
+
+// Identifica a data de hoje para filtrar
+const hoje = new Date();
+const dia = hoje.getDate().toString();
+const mes = hoje.toLocaleString('pt-BR', { month: 'long' });
+const dataHoje = `${dia} de ${mes}`; // Ex: "16 de julho"
+
 async function monitorarJogos() {
     try {
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
@@ -28,33 +36,41 @@ async function monitorarJogos() {
         $('div, tr, li').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Foca apenas onde tem confronto real
+            // FILTRO 1: Data (Só aceita se for hoje ou se não tiver data)
+            if (linha.includes(' de ') && !linha.includes(dataHoje)) {
+                return; // Pula se tiver data e não for hoje
+            }
+
+            // FILTRO 2: Só processa se tiver confronto " x "
             if (linha.includes(' x ')) {
                 
-                // Extração dos dados
+                // Extração dos dados numéricos (médias)
                 const numeros = linha.match(/\d{1,2}\.\d/g);
-                if (numeros && numeros.length >= 3) {
+                
+                // EXTRAÇÃO DO CONFRONTO (A mágica da limpeza)
+                // Procura apenas pelo padrão [Time] x [Time] e ignora o resto
+                const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
+                const matchConfronto = linha.match(regexConfronto);
+
+                if (matchConfronto && numeros && numeros.length >= 3) {
                     const mediaTotal = parseFloat(numeros[numeros.length - 1]);
                     
                     if (mediaTotal > 10.5) {
-                        // Limpeza do nome da Liga e Confronto
-                        const partes = linha.split('ESTATÍSTICAS DE ESCANTEIOS');
-                        const liga = partes[0].trim();
-                        
-                        // Captura o padrão "Time X Time" (limpando o resto do texto sujo)
-                        const regexConfronto = /([A-Za-zÀ-ÿ0-9\s]+)\sx\s([A-Za-zÀ-ÿ0-9\s]+)/;
-                        const matchConfronto = linha.match(regexConfronto);
-                        const confronto = matchConfronto ? matchConfronto[0].trim() : "Confronto não listado";
+                        const confronto = matchConfronto[0].trim(); // Pega apenas "Time x Time"
+                        const liga = linha.split('ESTATÍSTICAS')[0].trim(); // Tenta pegar a liga
 
-                        // Formatação final da mensagem
-                        const mensagem = `
-🔥 *Oportunidade de Cantos*
-🏆 *Liga:* ${liga}
-⚽ *Confronto:* ${confronto}
-📊 *Média Total:* ${mediaTotal}
-`;
+                        // Verifica duplicidade
+                        if (!jogosEnviados.has(confronto)) {
+                            jogosEnviados.add(confronto);
+                            
+                            const mensagem = `🔥 *Oportunidade de Cantos*\n` +
+                                             `🏆 *Liga:* ${liga}\n` +
+                                             `⚽ *Confronto:* ${confronto}\n` +
+                                             `📊 *Média Total:* ${mediaTotal}`;
 
-                        bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                            bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                            console.log(`[ALERTA ENVIADO] ${confronto} -> ${mediaTotal}`);
+                        }
                     }
                 }
             }
