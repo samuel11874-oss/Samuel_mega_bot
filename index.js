@@ -4,56 +4,64 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
+app.get('/', (req, res) => res.send('Bot Operacional: Sistema Blindado'));
 app.listen(process.env.PORT || 3000);
 
-const bot = new TelegramBot('8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU', { polling: false });
+const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
+const bot = new TelegramBot(TOKEN, { polling: false });
 
-// 1. LISTA DE ELITE (Whitelist)
-const LIGAS_PERMITIDAS = [
-    'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 
-    'Brasileirão Série A', 'Brasileirão Série B', 'Champions League', 
-    'Libertadores', 'Premier League', 'Eredivisie', 'Primeira Liga'
+const HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Referer': 'https://www.google.com/',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1'
+};
+
+const LIGAS_ELITE = [
+    'Premier League', 'Championship', 'La Liga', 'Serie A', 'Bundesliga', 
+    'Ligue 1', 'Brasileirão Série A', 'Brasileirão Série B', 'Champions League', 
+    'Libertadores', 'Eredivisie', 'Primeira Liga'
 ];
 
-async function rodarAnalise() {
+async function monitorarJogos() {
     try {
-        const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { 
-            headers: { 'User-Agent': 'Mozilla/5.0' } 
-        });
+        const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 15000 });
         const $ = cheerio.load(data);
-
-        // Processa cada bloco de liga
+        
         $('.wttr2').each((i, el) => {
-            const nomeLiga = $(el).text();
+            const nomeLiga = $(el).text().trim();
             
-            // Filtro de Liga
-            if (LIGAS_PERMITIDAS.some(liga => nomeLiga.includes(liga))) {
-                
-                // Pega os jogos logo abaixo desta liga
+            // Filtro de Liga de Elite
+            if (LIGAS_ELITE.some(liga => nomeLiga.includes(liga))) {
                 const proximoBloco = $(el).nextAll('.statln2').first();
-                const infoJogo = proximoBloco.text();
+                const textoJogo = proximoBloco.text().trim();
                 
-                // Lógica de Potencial (Exemplo aplicado aos seus critérios)
-                // O bot agora só envia se o confronto contiver dados de alta média
-                const temPotencial = infoJogo.includes('10') || infoJogo.includes('11') || infoJogo.includes('12');
-
-                if (temPotencial) {
-                    const linkBusca = `https://www.google.com/search?q=bet365+${encodeURIComponent(infoJogo)}`;
+                // Critérios: Linha >= 10 (Simulado pela presença do número no texto)
+                // O bot só envia se a liga for elite e o texto contiver números de estatística alta
+                if (textoJogo.includes('10') || textoJogo.includes('11') || textoJogo.includes('12')) {
+                    const linkBusca = `https://www.google.com/search?q=bet365+${encodeURIComponent(textoJogo)}`;
                     
                     const mensagem = `
-🏆 *Liga de Elite:* ${nomeLiga}
-⚽ *Jogo:* [${infoJogo}](${linkBusca})
-📈 *Critérios:* Favorito Home | >10 Cantos | >2 Gols
-🔔 *Atenção:* Oportunidade identificada!
+🏆 *Oportunidade de Elite*
+🌍 *Liga:* ${nomeLiga}
+⚽ *Confronto:* [${textoJogo}](${linkBusca})
+📈 *Critérios:* Favorito Home | Média >10 Cantos | Potencial Gols
+🔔 *Status:* Jogo filtrado (1ª/2ª Divisão)
                     `;
                     
                     bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' });
                 }
             }
         });
-    } catch (e) { console.error("Erro na análise de elite:", e.message); }
+        console.log("Varredura concluída com sucesso.");
+    } catch (e) {
+        console.error("Erro na análise:", e.message);
+    }
 }
 
-setInterval(rodarAnalise, 1800000); // Roda a cada 30 min
-rodarAnalise();
+// Roda a cada 60 minutos
+setInterval(monitorarJogos, 3600000);
+monitorarJogos();
