@@ -54,6 +54,38 @@ function salvarCache() {
     }
 }
 
+function obterDataSaoPaulo() {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric', month: 'numeric', day: 'numeric'
+    });
+    const partes = formatter.formatToParts(new Date());
+    const dataSP = {};
+    partes.forEach(({type, value}) => { dataSP[type] = value; });
+    return {
+        ano: parseInt(dataSP.year, 10),
+        mes: parseInt(dataSP.month, 10),
+        dia: parseInt(dataSP.day, 10)
+    };
+}
+
+function obterAmanhaSaoPaulo() {
+    const amanha = new Date();
+    amanha.setDate(amanha.getDate() + 1);
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric', month: 'numeric', day: 'numeric'
+    });
+    const partes = formatter.formatToParts(amanha);
+    const dataSP = {};
+    partes.forEach(({type, value}) => { dataSP[type] = value; });
+    return {
+        ano: parseInt(dataSP.year, 10),
+        mes: parseInt(dataSP.month, 10),
+        dia: parseInt(dataSP.day, 10)
+    };
+}
+
 function limparNomeLiga(liga) {
     let nome = liga.replace(/ESTATÍSTICAS DE ESCANTEIOS/gi, '').trim();
     const palavras = nome.split(' ');
@@ -68,49 +100,62 @@ function limparNomeLiga(liga) {
     return nome.trim();
 }
 
-function obterFiltrosHojeEAmanha() {
-    const agora = new Date();
+function ehJogoDeHoje(textoOriginal, liga) {
+    const t = textoOriginal.toLowerCase();
+    const ligaMinusc = liga.toLowerCase();
     
-    // Hoje no Brasil
-    const formatadorHoje = new Intl.DateTimeFormat('pt-BR', { 
-        timeZone: 'America/Sao_Paulo', 
-        day: 'numeric', 
-        month: 'long' 
-    });
-    const hojeTexto = formatadorHoje.format(agora).toLowerCase();
+    if (t.includes('hoje')) return true;
+    
+    const ehLigaSulAmericana = ligaMinusc.includes('brasil') || 
+                               ligaMinusc.includes('série') || 
+                               ligaMinusc.includes('paulista') || 
+                               ligaMinusc.includes('carioca') || 
+                               ligaMinusc.includes('gaúcho') || 
+                               ligaMinusc.includes('mineiro') || 
+                               ligaMinusc.includes('copa') ||
+                               ligaMinusc.includes('sudamericana') ||
+                               ligaMinusc.includes('libertadores') ||
+                               ligaMinusc.includes('argentina') ||
+                               ligaMinusc.includes('colômbia') ||
+                               ligaMinusc.includes('chile');
 
-    const formatadorHojeComZero = new Intl.DateTimeFormat('pt-BR', { 
-        timeZone: 'America/Sao_Paulo', 
-        day: '2-digit', 
-        month: 'long' 
-    });
-    const hojeTextoComZero = formatadorHojeComZero.format(agora).toLowerCase();
+    if (t.includes('amanhã') && ehLigaSulAmericana) return true;
 
-    // Amanhã no Brasil
-    const amanha = new Date(agora);
-    amanha.setDate(agora.getDate() + 1);
+    const { dia: hojeDia, mes: hojeMes } = obterDataSaoPaulo();
+    const { dia: amanhaDia, mes: amanhaMes } = obterAmanhaSaoPaulo();
 
-    const formatadorAmanha = new Intl.DateTimeFormat('pt-BR', { 
-        timeZone: 'America/Sao_Paulo', 
-        day: 'numeric', 
-        month: 'long' 
-    });
-    const amanhaTexto = formatadorAmanha.format(amanha).toLowerCase();
+    const mesesPT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+    const nomeMesHoje = mesesPT[hojeMes - 1];
+    const nomeMesAmanha = mesesPT[amanhaMes - 1];
 
-    const formatadorAmanhaComZero = new Intl.DateTimeFormat('pt-BR', { 
-        timeZone: 'America/Sao_Paulo', 
-        day: '2-digit', 
-        month: 'long' 
-    });
-    const amanhaTextoComZero = formatadorAmanhaComZero.format(amanha).toLowerCase();
+    const matchesHoje = (
+        (t.includes(hojeDia.toString()) && (t.includes(nomeMesHoje) || t.includes(nomeMesHoje.substring(0, 3)))) ||
+        t.includes(`${hojeDia}/${hojeMes}`) ||
+        t.includes(`${hojeDia}/0${hojeMes}`) ||
+        t.includes(`0${hojeDia}/${hojeMes}`) ||
+        t.includes(`0${hojeDia}/0${hojeMes}`)
+    );
 
-    return { hojeTexto, hojeTextoComZero, amanhaTexto, amanhaTextoComZero };
+    if (matchesHoje) return true;
+
+    if (ehLigaSulAmericana) {
+        const matchesAmanha = (
+            (t.includes(amanhaDia.toString()) && (t.includes(nomeMesAmanha) || t.includes(nomeMesAmanha.substring(0, 3)))) ||
+            t.includes(`${amanhaDia}/${amanhaMes}`) ||
+            t.includes(`${amanhaDia}/0${amanhaMes}`) ||
+            t.includes(`0${amanhaDia}/${amanhaMes}`) ||
+            t.includes(`0${amanhaDia}/0${amanhaMes}`)
+        );
+        if (matchesAmanha) return true;
+    }
+
+    return false;
 }
 
 async function monitorarJogos() {
     try {
         console.log("--------------------------------------------------");
-        console.log("[MONITORANDO JOGOS] Analisando jogos do dia...");
+        console.log("[MONITORANDO JOGOS] Varrendo todas as ligas do WinDrawWin...");
 
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 15000 });
         const $ = cheerio.load(data);
@@ -120,8 +165,10 @@ async function monitorarJogos() {
         let ligaAtual = "Liga Não Identificada";
 
         cacheJogos = carregarCache();
-        const { hojeTexto, hojeTextoComZero, amanhaTexto, amanhaTextoComZero } = obterFiltrosHojeEAmanha();
         const jogosProcessadosNestaRodada = new Set();
+
+        // Regex para extrair "Quinta-feira, 16 de Julho" ou qualquer variação no início da linha
+        const regexPrefixoData = /^(hoje|amanhã|domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado)(?:,\s*\d+(?:\s+de\s+[a-zà-ú]+)?(?:\s+de\s+\d{4})?)?/i;
 
         $('.wttr2, [class*="statln"]').each((i, el) => {
             const classeOriginal = $(el).attr('class') || '';
@@ -138,63 +185,18 @@ async function monitorarJogos() {
                 const ehCabecalho = textoLimpo.includes('ESTATÍSTICAS') || textoLimpo.includes('Menos/Mais') || textoLimpo.includes('Handicap');
 
                 if (ehJogoReal && !ehCabecalho) {
-                    const textoMinusc = textoLimpo.toLowerCase();
-                    const ligaMinusc = ligaAtual.toLowerCase();
+                    if (ehJogoDeHoje(textoLimpo, ligaAtual)) {
+                        
+                        // Remove completamente o prefixo de data do início do texto
+                        const textoSemData = textoLimpo.replace(regexPrefixoData, '').trim();
 
-                    // Validação de Hoje no site
-                    const ehHojeNoSite = textoMinusc.includes('hoje') || 
-                                         textoMinusc.includes(hojeTexto) || 
-                                         textoMinusc.includes(hojeTextoComZero);
-
-                    // Validação de Amanhã no site (para jogos noturnos sul-americanos)
-                    const ehAmanhaNoSite = textoMinusc.includes('amanhã') || 
-                                           textoMinusc.includes(amanhaTexto) || 
-                                           textoMinusc.includes(amanhaTextoComZero);
-
-                    const ehLigaSulAmericana = ligaMinusc.includes('brasil') || 
-                                               ligaMinusc.includes('série a') || 
-                                               ligaMinusc.includes('série b') || 
-                                               ligaMinusc.includes('série c') || 
-                                               ligaMinusc.includes('série d') || 
-                                               ligaMinusc.includes('paulista') || 
-                                               ligaMinusc.includes('carioca') || 
-                                               ligaMinusc.includes('gaúcho') || 
-                                               ligaMinusc.includes('mineiro') || 
-                                               ligaMinusc.includes('nordeste') ||
-                                               ligaMinusc.includes('argentina') ||
-                                               ligaMinusc.includes('colômbia') ||
-                                               ligaMinusc.includes('chile') ||
-                                               ligaMinusc.includes('uruguai') ||
-                                               ligaMinusc.includes('libertadores') ||
-                                               ligaMinusc.includes('sudamericana');
-
-                    // Só processa se for HOJE ou se for AMANHÃ em liga sul-americana (jogo da noite/madrugada de hoje)
-                    const ehJogoDoDiaNoBrasil = ehHojeNoSite || (ehAmanhaNoSite && ehLigaSulAmericana);
-
-                    if (ehJogoDoDiaNoBrasil) {
-                        const regexData = /^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|hoje|amanhã)(?:,\s*\d+\s+de\s+[a-z]+\s+de\s+\d{4})?/i;
-                        const matchData = textoLimpo.match(regexData);
-                        let textoSemData = textoLimpo;
-
-                        if (matchData) {
-                            textoSemData = textoLimpo.substring(matchData[0].length).trim();
-                        }
-
-                        // Regex inteligente com suporte a times com números e paradas seguras em "Mais/Menos"
-                        let matchConfronto = textoSemData.match(/(.+?)\s+x\s+(.+?)(\d+)(Mais|Menos)/i);
-                        if (!matchConfronto) {
-                            matchConfronto = textoSemData.match(/(.+?)\s+x\s+([^0-9]+)(\d+)/);
-                        }
+                        // Captura os times e a média de escanteios (com decimais, ignorando textos residuais no fim)
+                        const matchConfronto = textoSemData.match(/(.+?)\s+x\s+(.+?)\s+(\d+(?:\.\d+)?)(?:\D*)$/);
                         
                         if (matchConfronto) {
-                            let timeA = matchConfronto[1].trim();
+                            const timeA = matchConfronto[1].trim();
                             const timeB = matchConfronto[2].trim();
-                            const cantosTotal = parseInt(matchConfronto[3], 10);
-
-                            timeA = timeA
-                                .replace(/^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|hoje|amanhã),?/i, '')
-                                .replace(/^\s*\d*\s*de\s*[a-z]+\s*de\s*\d{4}/i, '')
-                                .trim();
+                            const cantosTotal = parseFloat(matchConfronto[3]);
 
                             const confrontoLimpo = `${timeA} x ${timeB}`;
                             const chaveJogo = `${confrontoLimpo.toLowerCase()}_${ligaAtual.toLowerCase()}`;
@@ -204,7 +206,7 @@ async function monitorarJogos() {
 
                             totalAnalisados++;
 
-                            // CRITÉRIO: Média de escanteios totais estritamente MAIOR que 10 (mínimo 11)
+                            // NOVO CRITÉRIO: Média estritamente maior que 10 escanteios (> 10)
                             if (cantosTotal > 10) {
                                 if (cacheJogos[chaveJogo]) {
                                     console.log(`[IGNORADO - JÁ ENVIADO] ${confrontoLimpo}`);
