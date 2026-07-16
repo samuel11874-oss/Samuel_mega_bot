@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Escanteios - Modo Diagnóstico'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro Rigoroso'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,11 +17,10 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
-const hoje = new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
+const dataHoje = "16 de julho";
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura no WinDrawWin...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
@@ -29,15 +28,13 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         const elementos = $('div, tr, li, td');
-        
-        console.log(`Página carregada. Elementos encontrados: ${elementos.length}`);
 
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Debug: Se a linha for longa, pode ser um jogo
-            if (linha.length > 50 && linha.includes(' x ')) {
-                console.log(`Linha analisada: ${linha.substring(0, 80)}...`);
+            // Filtro rigoroso: Se tiver data (ex: 18 de julho) e NÃO for hoje, descarta imediatamente
+            if (linha.includes("de julho") && !linha.includes(dataHoje)) {
+                return;
             }
 
             if (linha.includes(' x ')) {
@@ -47,9 +44,6 @@ async function monitorarJogos() {
                     const mediaTotal = parseFloat(numeros[numeros.length - 1]);
 
                     if (mediaTotal > 10.5) {
-                        const matchHora = linha.match(/\d{2}:\d{2}/);
-                        const horario = matchHora ? matchHora[0] : "N/A";
-
                         const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                         const matchConfronto = linha.match(regexConfronto);
                         const confronto = matchConfronto ? matchConfronto[0].trim() : null;
@@ -59,11 +53,9 @@ async function monitorarJogos() {
                             
                             const mensagem = `🔥 *Oportunidade de Hoje*\n` +
                                              `⚽ *Confronto:* ${confronto}\n` +
-                                             `⏰ *Horário:* ${horario}\n` +
                                              `📊 *Média Total:* ${mediaTotal}`;
 
                             bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                            console.log(`[SUCESSO] Alerta enviado: ${confronto}`);
                         }
                     }
                 }
