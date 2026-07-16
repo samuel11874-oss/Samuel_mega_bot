@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional: Leitura Sequencial Ativada'));
+app.get('/', (req, res) => res.send('Bot Operacional: Modo Diagnóstico Ativado'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -29,53 +29,34 @@ const LIGAS_ELITE = [
 async function monitorarJogos() {
     try {
         console.log("--------------------------------------------------");
-        console.log("[MONITORANDO JOGOS...] Iniciando nova varredura sequencial...");
+        console.log("[MONITORANDO JOGOS...] Iniciando Modo Diagnóstico Raio-X...");
 
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 15000 });
         const $ = cheerio.load(data);
         
-        let totalAnalisados = 0;
-        let totalDisparados = 0;
-        let ligaAtual = ""; // O robô memoriza a liga enquanto desce a lista
+        // --- INÍCIO DO RAIO-X ---
+        console.log("=== RESULTADO DO RAIO-X ===");
+        console.log("Título da página recebida: " + $('title').text());
+        console.log("Tamanho do código HTML: " + data.length + " caracteres");
+        console.log("Quantidade de linhas (<tr>) achadas: " + $('tr').length);
+        console.log("===========================");
+        // --- FIM DO RAIO-X ---
 
-        // O Segredo: Varredura linha por linha (<tr>)
+        let totalAnalisados = 0;
+        let ligaAtual = "";
+
         $('tr').each((i, el) => {
             const classeOriginal = $(el).attr('class') || '';
             const textoLinha = $(el).text().trim();
 
-            // Identifica se a linha é o título da liga
             if (classeOriginal.includes('wttr2')) {
                 ligaAtual = textoLinha;
-            } 
-            // Identifica se a linha é uma partida (captura statln e statln2)
-            else if (classeOriginal.includes('statln')) {
+            } else if (classeOriginal.includes('statln')) {
                 totalAnalisados++;
-                
-                // Filtro 1: A liga memorizada é de Elite?
-                if (LIGAS_ELITE.some(liga => ligaAtual.includes(liga))) {
-                    
-                    // Filtro 2: Possui alta média de cantos?
-                    if (textoLinha.includes('10') || textoLinha.includes('11') || textoLinha.includes('12') || textoLinha.includes('13') || textoLinha.includes('14')) {
-                        const linkBusca = `https://www.google.com/search?q=bet365+${encodeURIComponent(textoLinha)}`;
-                        
-                        const mensagem = `
-🏆 *Oportunidade de Elite*
-🌍 *Liga:* ${ligaAtual}
-⚽ *Confronto:* [${textoLinha}](${linkBusca})
-📈 *Critérios:* Favorito Home | Média >10 Cantos | Potencial Gols
-🔔 *Status:* Jogo filtrado (1ª/2ª Divisão)
-                        `;
-                        
-                        bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' });
-                        totalDisparados++;
-                    }
-                }
             }
         });
 
-        console.log(`[VARREDURA CONCLUÍDA] Processo finalizado.`);
-        console.log(`>> Total de jogos lidos e analisados no site: ${totalAnalisados}`);
-        console.log(`>> Total de jogos APROVADOS (Elite + Escanteios >10): ${totalDisparados}`);
+        console.log(`>> Total de jogos lidos na estrutura antiga: ${totalAnalisados}`);
         console.log("--------------------------------------------------");
 
     } catch (e) {
