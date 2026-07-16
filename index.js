@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Diagnóstico Ativo'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Limpeza'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -18,6 +18,19 @@ const MOBILE_HEADERS = {
 
 let jogosEnviados = new Set();
 const dataHoje = "16 de julho";
+
+// Função para limpar nomes repetidos (ex: "Liga X Liga X" vira "Liga X")
+function limparTextoRepetido(texto) {
+    if (!texto) return "Liga Desconhecida";
+    const palavras = texto.split(' ');
+    const metade = Math.floor(palavras.length / 2);
+    const primeiraMetade = palavras.slice(0, metade).join(' ');
+    const segundaMetade = palavras.slice(metade).join(' ');
+    
+    // Se a primeira metade for igual à segunda, remove a repetição
+    if (primeiraMetade === segundaMetade) return primeiraMetade;
+    return texto;
+}
 
 async function monitorarJogos() {
     try {
@@ -34,19 +47,15 @@ async function monitorarJogos() {
         elementos.each((i, el) => {
             const texto = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Tenta detectar a Liga (geralmente aparece antes dos jogos)
+            // Captura a Liga e limpa a poluição
             if (texto.includes("ESTATÍSTICAS DE ESCANTEIOS")) {
-                ligaAtual = texto.replace("ESTATÍSTICAS DE ESCANTEIOS", "").trim();
+                let tempLiga = texto.replace("ESTATÍSTICAS DE ESCANTEIOS", "").trim();
+                ligaAtual = limparTextoRepetido(tempLiga);
             }
 
             if (texto.includes(' x ')) {
-                // Diagnóstico para você ver no log
-                const ehHoje = texto.includes(dataHoje) || texto.includes("Hoje");
-                
-                if (!ehHoje && texto.includes("de julho")) {
-                    // console.log(`[IGNORADO - Data]: ${texto.substring(0, 50)}...`);
-                    return;
-                }
+                // Filtro de data
+                if (texto.includes("de julho") && !texto.includes(dataHoje)) return;
 
                 const numeros = texto.match(/\d{1,2}\.\d/g);
                 if (numeros && numeros.length >= 2) {
@@ -57,7 +66,8 @@ async function monitorarJogos() {
                         const matchConfronto = texto.match(regexConfronto);
                         
                         if (matchConfronto) {
-                            let confronto = matchConfronto[0].replace(/(Hoje|minutos|Começa em|estatísticas)/gi, '').trim();
+                            // Pega apenas o primeiro confronto encontrado na string limpa
+                            let confronto = matchConfronto[0].trim();
                             
                             if (confronto && !jogosEnviados.has(confronto)) {
                                 jogosEnviados.add(confronto);
@@ -68,7 +78,6 @@ async function monitorarJogos() {
                                                  `📊 *Média Total:* ${mediaTotal}`;
 
                                 bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`[ENVIADO] ${confronto} da liga ${ligaAtual}`);
                             }
                         }
                     }
