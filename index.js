@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Liga Inclusa'));
+app.get('/', (req, res) => res.send('Bot de Diagnóstico Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -28,29 +28,33 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         const elementos = $('div, tr, li, td');
-        let ligaAtual = "Liga não identificada";
+        
+        let ligaAtual = "Liga Desconhecida";
 
         elementos.each((i, el) => {
-            const linha = $(el).text().trim().replace(/\s+/g, ' ');
+            const texto = $(el).text().trim().replace(/\s+/g, ' ');
             
-            if (linha.includes("ESTATÍSTICAS DE ESCANTEIOS")) {
-                ligaAtual = linha.replace("ESTATÍSTICAS DE ESCANTEIOS", "").trim();
-                return;
+            // Tenta detectar a Liga (geralmente aparece antes dos jogos)
+            if (texto.includes("ESTATÍSTICAS DE ESCANTEIOS")) {
+                ligaAtual = texto.replace("ESTATÍSTICAS DE ESCANTEIOS", "").trim();
             }
 
-            if (linha.includes("de julho") && !linha.includes(dataHoje)) {
-                return;
-            }
-
-            if (linha.includes(' x ')) {
-                const numeros = linha.match(/\d{1,2}\.\d/g);
+            if (texto.includes(' x ')) {
+                // Diagnóstico para você ver no log
+                const ehHoje = texto.includes(dataHoje) || texto.includes("Hoje");
                 
+                if (!ehHoje && texto.includes("de julho")) {
+                    // console.log(`[IGNORADO - Data]: ${texto.substring(0, 50)}...`);
+                    return;
+                }
+
+                const numeros = texto.match(/\d{1,2}\.\d/g);
                 if (numeros && numeros.length >= 2) {
                     const mediaTotal = parseFloat(numeros[numeros.length - 1]);
 
                     if (mediaTotal > 10.5 && mediaTotal < 50) {
                         const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                        const matchConfronto = linha.match(regexConfronto);
+                        const matchConfronto = texto.match(regexConfronto);
                         
                         if (matchConfronto) {
                             let confronto = matchConfronto[0].replace(/(Hoje|minutos|Começa em|estatísticas)/gi, '').trim();
@@ -64,6 +68,7 @@ async function monitorarJogos() {
                                                  `📊 *Média Total:* ${mediaTotal}`;
 
                                 bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                                console.log(`[ENVIADO] ${confronto} da liga ${ligaAtual}`);
                             }
                         }
                     }
