@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Teste: Todos os Critérios Removidos'));
+app.get('/', (req, res) => res.send('Bot de Teste: Leitura de Divs Ativada'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,7 +23,7 @@ const HEADERS = {
 async function monitorarJogos() {
     try {
         console.log("--------------------------------------------------");
-        console.log("[TESTE ATIVADO] Iniciando varredura sem critérios de liga/cantos...");
+        console.log("[TESTE ATIVADO] Iniciando varredura direta por classes (divs)...");
 
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 15000 });
         const $ = cheerio.load(data);
@@ -33,22 +33,17 @@ async function monitorarJogos() {
         console.log("Título da página: " + $('title').text().trim());
         console.log("Tamanho do HTML: " + data.length + " caracteres");
         
-        // Contagem de elementos para verificar estrutura
-        console.log("Total de tabelas (<table>): " + $('table').length);
-        console.log("Total de linhas (<tr>): " + $('tr').length);
-        console.log("Linhas com classe 'wttr2' (Ligas): " + $('.wttr2').length);
-        console.log("Linhas com classe contendo 'statln' (Jogos): " + $('tr[class*="statln"]').length);
-        
-        // Prévia do texto para identificar bloqueios ocultos (como Cloudflare)
-        const bodyPreview = $('body').text().replace(/\s+/g, ' ').substring(0, 500);
-        console.log("Início do texto do Body: " + bodyPreview);
+        // Contagem direta pelas classes das DIVs
+        console.log("Total de Ligas (.wttr2): " + $('.wttr2').length);
+        console.log("Total de Jogos ([class*='statln']): " + $('[class*="statln"]').length);
         console.log("===========================");
 
         let totalAnalisados = 0;
         let totalDisparados = 0;
         let ligaAtual = "Liga Não Identificada";
 
-        $('tr').each((i, el) => {
+        // Buscamos diretamente as classes na página, independente da tag HTML
+        $('.wttr2, [class*="statln"]').each((i, el) => {
             const classeOriginal = $(el).attr('class') || '';
             const textoLinha = $(el).text().trim().replace(/\s+/g, ' ');
 
@@ -56,11 +51,11 @@ async function monitorarJogos() {
             if (classeOriginal.includes('wttr2')) {
                 ligaAtual = textoLinha;
             } 
-            // Identifica o jogo (captura statln, statln1, statln2)
+            // Identifica o jogo (captura qualquer classe que contenha 'statln')
             else if (classeOriginal.includes('statln')) {
                 totalAnalisados++;
                 
-                // CRITÉRIO DE TESTE: Sem travas! Dispara os primeiros 5 jogos para teste de conexão
+                // CRITÉRIO DE TESTE: Dispara os primeiros 5 jogos encontrados para validar a conexão
                 if (totalDisparados < 5) {
                     const linkBusca = `https://www.google.com/search?q=bet365+${encodeURIComponent(textoLinha)}`;
                     
