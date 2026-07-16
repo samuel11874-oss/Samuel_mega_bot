@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional: Filtros Personalizados Ativos'));
+app.get('/', (req, res) => res.send('Bot Operacional: Mensagem Limpa e Jogos do Dia Ativos'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,33 +20,44 @@ const HEADERS = {
     'Upgrade-Insecure-Requests': '1'
 };
 
-// 1. TODAS AS MELHORES LIGAS DO MUNDO (1ª E 2ª DIVISÃO + BRASILEIRÃO SÉRIE C)
-const LIGAS_ELITE = [
-    // Brasil
-    'Brasileirão Série A', 'Brasileirão Série B', 'Brasileirão Série C',
-    // Inglaterra
-    'Premier League', 'Championship',
-    // Espanha
-    'La Liga', 'Segunda División', 'La Liga 2',
-    // Itália
-    'Serie A', 'Serie B',
-    // Alemanha
-    'Bundesliga', '2. Bundesliga',
-    // França
-    'Ligue 1', 'Ligue 2',
-    // Portugal
-    'Primeira Liga', 'Segunda Liga',
-    // Holanda
-    'Eredivisie', 'Eerste Divisie',
-    // Copas e Torneios de Elite
-    'Champions League', 'Libertadores', 'Sudamericana',
-    'Copa do Brasil', 'Copa do Mundo', 'Mundial de Clubes'
-];
+// Função para limpar duplicações e sujeiras no nome da Liga
+function limparNomeLiga(liga) {
+    let nome = liga.replace(/ESTATÍSTICAS DE ESCANTEIOS/gi, '').trim();
+    const palavras = nome.split(' ');
+    const metade = Math.floor(palavras.length / 2);
+    if (palavras.length > 1) {
+        const primeiraMetade = palavras.slice(0, metade).join(' ');
+        const segundaMetade = palavras.slice(metade).join(' ');
+        if (primeiraMetade === segundaMetade) {
+            nome = primeiraMetade;
+        }
+    }
+    return nome.trim();
+}
+
+// Função para obter o dia de hoje em formato brasileiro (America/Sao_Paulo)
+function obterFiltrosHoje() {
+    const agora = new Date();
+    const formatadorDiaMes = new Intl.DateTimeFormat('pt-BR', { 
+        timeZone: 'America/Sao_Paulo', 
+        day: 'numeric', 
+        month: 'long' 
+    });
+    const diaMesTexto = formatadorDiaMes.format(agora).toLowerCase(); // Ex: "16 de julho"
+
+    const formatadorSemana = new Intl.DateTimeFormat('pt-BR', { 
+        timeZone: 'America/Sao_Paulo', 
+        weekday: 'long' 
+    });
+    const diaSemanaTexto = formatadorSemana.format(agora).toLowerCase(); // Ex: "quinta-feira"
+
+    return { diaMesTexto, diaSemanaTexto };
+}
 
 async function monitorarJogos() {
     try {
         console.log("--------------------------------------------------");
-        console.log("[MONITORANDO JOGOS] Aplicando novos critérios de aposta personalizada...");
+        console.log("[MONITORANDO JOGOS] Buscando apenas jogos de HOJE (Todas as Ligas)...");
 
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 15000 });
         const $ = cheerio.load(data);
@@ -55,41 +66,56 @@ async function monitorarJogos() {
         let totalDisparados = 0;
         let ligaAtual = "Liga Não Identificada";
 
+        const { diaMesTexto, diaSemanaTexto } = obterFiltrosHoje();
+        console.log(`Filtro de data ativo para hoje: "${diaSemanaTexto}, ${diaMesTexto}" ou "Hoje"`);
+
         $('.wttr2, [class*="statln"]').each((i, el) => {
             const classeOriginal = $(el).attr('class') || '';
             const textoOriginal = $(el).text().trim();
             const textoLimpo = textoOriginal.replace(/\s+/g, ' ');
 
-            // Identifica e atualiza a liga atual
+            // 1. Atualiza e limpa a liga atual
             if (classeOriginal.includes('wttr2')) {
-                ligaAtual = textoLimpo;
+                ligaAtual = limparNomeLiga(textoLimpo);
             } 
-            // Identifica se é uma linha de jogo real
+            // 2. Processa o jogo
             else if (classeOriginal.includes('statln')) {
                 const ehJogoReal = textoLimpo.includes(' x ');
                 const ehCabecalho = textoLimpo.includes('ESTATÍSTICAS') || textoLimpo.includes('Menos/Mais') || textoLimpo.includes('Handicap');
 
                 if (ehJogoReal && !ehCabecalho) {
-                    totalAnalisados++;
+                    
+                    // FILTRO RESTRITO: Somente jogos que acontecem HOJE
+                    const textoMinusc = textoLimpo.toLowerCase();
+                    const ehDeHoje = textoMinusc.includes('hoje') || 
+                                     (textoMinusc.includes(diaMesTexto) && textoMinusc.includes(diaSemanaTexto));
 
-                    // Filtro 1: Melhores Ligas (1ª, 2ª div + Série C)
-                    const passaLiga = LIGAS_ELITE.some(liga => ligaAtual.toLowerCase().includes(liga.toLowerCase()));
+                    if (ehDeHoje) {
+                        totalAnalisados++;
 
-                    if (passaLiga) {
-                        // Extração dinâmica de escanteios (Ex: "Corinthians x Remo11Mais..." -> extrai 11)
-                        const partesConfronto = textoLimpo.match(/(.+?)\s*(\d+)Mais/);
-                        
-                        if (partesConfronto) {
-                            const confrontoBruto = partesConfronto[1].trim();
-                            const cantosTotal = parseInt(partesConfronto[2], 10);
+                        // Extração precisa dos dados da partida
+                        const partes = textoLimpo.split(' x ');
+                        if (partes.length === 2) {
+                            let timeA = partes[0].trim();
+                            let restoTimeB = partes[1].trim();
 
-                            // Filtro 2: Mais de 10.5 escanteios total (Mínimo de 11)
+                            // Remove datas/Hoje do nome do Time A
+                            timeA = timeA.replace(/^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|hoje),\s*\d*\s*(de\s*[a-z]+\s*de\s*\d{4})?/i, '').trim();
+                            timeA = timeA.replace(/^(Hoje|Amanhã)/i, '').trim();
+
+                            // Extrai o Time B parando antes da numeração de escanteio
+                            const matchTimeB = restoTimeB.match(/^([^0-9]+)/);
+                            const timeB = matchTimeB ? matchTimeB[1].trim() : restoTimeB;
+
+                            // Extrai a média de escanteios total
+                            const restoSemTimeB = restoTimeB.substring(timeB.length).trim();
+                            const matchCantos = restoSemTimeB.match(/^(\d+)/);
+                            const cantosTotal = matchCantos ? parseInt(matchCantos[1], 10) : 0;
+
+                            const confrontoLimpo = `${timeA} x ${timeB}`;
+
+                            // Filtro de Média: Mais de 10.5 escanteios total (Mínimo de 11)
                             if (cantosTotal > 10.5) {
-                                
-                                // Limpeza fina de datas no texto para deixar o alerta limpo
-                                let confrontoLimpo = confrontoBruto.replace(/^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado),\s*\d+\s+de\s+[a-z]+\s+de\s+\d{4}/i, '').trim();
-                                confrontoLimpo = confrontoLimpo.replace(/^(Hoje|Amanhã)/i, '').trim();
-
                                 enviarAlerta(ligaAtual, confrontoLimpo, cantosTotal);
                                 totalDisparados++;
                             }
@@ -100,8 +126,8 @@ async function monitorarJogos() {
         });
 
         console.log(`[VARREDURA CONCLUÍDA]`);
-        console.log(`>> Total de jogos analisados: ${totalAnalisados}`);
-        console.log(`>> Alertas de aposta personalizada disparados: ${totalDisparados}`);
+        console.log(`>> Total de jogos de HOJE analisados: ${totalAnalisados}`);
+        console.log(`>> Alertas disparados: ${totalDisparados}`);
         console.log("--------------------------------------------------");
 
     } catch (e) {
@@ -110,26 +136,20 @@ async function monitorarJogos() {
 }
 
 function enviarAlerta(liga, confronto, cantos) {
+    // Mensagem ultra-limpa conforme solicitado
     const mensagem = `
 🔥 *Jogos encontrado para fazer sua aposta personalizada*
 
+⚽ *Jogo:* ${confronto}
 🌍 *Liga:* ${liga}
-⚽ *Confronto:* ${confronto}
-📊 *Média de Cantos:* ${cantos} (Mais de 10.5 Total)
-⚡ *Potencial HT:* Alto (+4 Escanteios HT)
-⚽ *Potencial Gols:* Alta chance de +2.5 Gols
+📊 *Média:* ${cantos} Cantos (>10.5)
     `;
     
-    bot.sendMessage(CHAT_ID, messageFormatado(mensagem), { parse_mode: 'Markdown' })
+    bot.sendMessage(CHAT_ID, mensagem.trim(), { parse_mode: 'Markdown' })
        .then(() => console.log(`[SUCESSO] Alerta enviado: ${confronto}`))
        .catch(err => console.error(`[ERRO TELEGRAM] Falha ao enviar:`, err.message));
 }
 
-// Helper para garantir espaçamento ideal no Telegram
-function messageFormatado(msg) {
-    return msg.trim();
-}
-
-// Executa a cada 60 minutos
+// Executa a cada 60 minutos (1 hora)
 setInterval(monitorarJogos, 3600000);
 monitorarJogos();
