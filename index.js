@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Limpeza'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Limpeza Total'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -19,17 +19,17 @@ const MOBILE_HEADERS = {
 let jogosEnviados = new Set();
 const dataHoje = "16 de julho";
 
-// Função para limpar nomes repetidos (ex: "Liga X Liga X" vira "Liga X")
-function limparTextoRepetido(texto) {
-    if (!texto) return "Liga Desconhecida";
-    const palavras = texto.split(' ');
-    const metade = Math.floor(palavras.length / 2);
-    const primeiraMetade = palavras.slice(0, metade).join(' ');
-    const segundaMetade = palavras.slice(metade).join(' ');
-    
-    // Se a primeira metade for igual à segunda, remove a repetição
-    if (primeiraMetade === segundaMetade) return primeiraMetade;
-    return texto;
+// Função para remover o "lixo" da string
+function limparTexto(texto) {
+    return texto
+        .replace(/ESTATÍSTICAS DE ESCANTEIOS/gi, '')
+        .replace(/Mais\s?\d+[\d.]*/gi, '')
+        .replace(/Menos\s?\d+[\d.]*/gi, '')
+        .replace(/Hoje/gi, '')
+        .replace(/Começa em \d+ minutos/gi, '')
+        .replace(/\d{1,2} de [a-zç]+( de \d{4})?/gi, '') // Remove datas
+        .replace(/\s+/g, ' ')
+        .trim();
 }
 
 async function monitorarJogos() {
@@ -40,37 +40,40 @@ async function monitorarJogos() {
         });
 
         const $ = cheerio.load(response.data);
-        const elementos = $('div, tr, li, td');
+        // Foca em elementos que contêm os jogos
+        const elementos = $('tr'); 
         
         let ligaAtual = "Liga Desconhecida";
 
         elementos.each((i, el) => {
-            const texto = $(el).text().trim().replace(/\s+/g, ' ');
+            const linhaBruta = $(el).text().trim();
             
-            // Captura a Liga e limpa a poluição
-            if (texto.includes("ESTATÍSTICAS DE ESCANTEIOS")) {
-                let tempLiga = texto.replace("ESTATÍSTICAS DE ESCANTEIOS", "").trim();
-                ligaAtual = limparTextoRepetido(tempLiga);
+            // Tenta identificar se é uma linha de liga
+            if (linhaBruta.includes("ESTATÍSTICAS DE ESCANTEIOS")) {
+                ligaAtual = linhaBruta.replace("ESTATÍSTICAS DE ESCANTEIOS", "").trim();
+                return;
             }
 
-            if (texto.includes(' x ')) {
-                // Filtro de data
-                if (texto.includes("de julho") && !texto.includes(dataHoje)) return;
+            // Filtro para apenas linhas de jogos
+            if (linhaBruta.includes(' x ')) {
+                // Filtro de data rigoroso (se houver data na linha e não for hoje, pula)
+                if (linhaBruta.includes("de julho") && !linhaBruta.includes("16 de julho")) return;
 
-                const numeros = texto.match(/\d{1,2}\.\d/g);
+                const numeros = linhaBruta.match(/\d{1,2}\.\d/g);
                 if (numeros && numeros.length >= 2) {
                     const mediaTotal = parseFloat(numeros[numeros.length - 1]);
 
                     if (mediaTotal > 10.5 && mediaTotal < 50) {
-                        const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                        const matchConfronto = texto.match(regexConfronto);
+                        const matchConfronto = linhaBruta.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
                         if (matchConfronto) {
-                            // Pega apenas o primeiro confronto encontrado na string limpa
                             let confronto = matchConfronto[0].trim();
                             
-                            if (confronto && !jogosEnviados.has(confronto)) {
-                                jogosEnviados.add(confronto);
+                            // Cria um ID único para o jogo
+                            let chaveUnica = `${ligaAtual}-${confronto}`;
+                            
+                            if (!jogosEnviados.has(chaveUnica)) {
+                                jogosEnviados.add(chaveUnica);
                                 
                                 const mensagem = `🔥 *Oportunidade de Hoje*\n` +
                                                  `🏆 *Liga:* ${ligaAtual}\n` +
