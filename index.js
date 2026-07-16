@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Filtro Rigoroso'));
+app.get('/', (req, res) => res.send('Bot Ativo - Limpeza Ativada'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -32,7 +32,6 @@ async function monitorarJogos() {
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro rigoroso: Se tiver data (ex: 18 de julho) e NÃO for hoje, descarta imediatamente
             if (linha.includes("de julho") && !linha.includes(dataHoje)) {
                 return;
             }
@@ -43,19 +42,23 @@ async function monitorarJogos() {
                 if (numeros && numeros.length >= 2) {
                     const mediaTotal = parseFloat(numeros[numeros.length - 1]);
 
-                    if (mediaTotal > 10.5) {
+                    if (mediaTotal > 10.5 && mediaTotal < 50) {
                         const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                         const matchConfronto = linha.match(regexConfronto);
-                        const confronto = matchConfronto ? matchConfronto[0].trim() : null;
-
-                        if (confronto && !jogosEnviados.has(confronto)) {
-                            jogosEnviados.add(confronto);
+                        
+                        if (matchConfronto) {
+                            // Limpeza rigorosa do texto "sujo"
+                            let confronto = matchConfronto[0].replace(/(Hoje|minutos|Começa em|estatísticas)/gi, '').trim();
                             
-                            const mensagem = `🔥 *Oportunidade de Hoje*\n` +
-                                             `⚽ *Confronto:* ${confronto}\n` +
-                                             `📊 *Média Total:* ${mediaTotal}`;
+                            if (confronto && !jogosEnviados.has(confronto)) {
+                                jogosEnviados.add(confronto);
+                                
+                                const mensagem = `🔥 *Oportunidade de Hoje*\n` +
+                                                 `⚽ *Confronto:* ${confronto}\n` +
+                                                 `📊 *Média Total:* ${mediaTotal}`;
 
-                            bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                            }
                         }
                     }
                 }
