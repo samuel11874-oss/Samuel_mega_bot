@@ -4,10 +4,8 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot em Modo Detetive'));
+app.get('/', (req, res) => res.send('Bot de Escanteios Limpo Ativo'));
 app.listen(process.env.PORT || 3000);
-
-console.log("Bot iniciado com sucesso!");
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
@@ -19,47 +17,53 @@ const MOBILE_HEADERS = {
 };
 
 async function monitorarJogos() {
-    console.log("Iniciando varredura...");
-
     try {
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
         });
 
-        console.log("Página carregada. Analisando conteúdo...");
         const $ = cheerio.load(response.data);
-        let encontrados = 0;
 
-        // Voltamos para div, tr, li para garantir que pegamos tudo
         $('div, tr, li').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro mais abrangente
+            // Foca apenas onde tem confronto real
             if (linha.includes(' x ')) {
-                const numeros = linha.match(/\d{1,2}\.\d/g);
                 
+                // Extração dos dados
+                const numeros = linha.match(/\d{1,2}\.\d/g);
                 if (numeros && numeros.length >= 3) {
                     const mediaTotal = parseFloat(numeros[numeros.length - 1]);
                     
                     if (mediaTotal > 10.5) {
-                        encontrados++;
-                        console.log(`[ALERTA POTENCIAL] Encontrado: ${linha.substring(0, 50)}... | Média: ${mediaTotal}`);
+                        // Limpeza do nome da Liga e Confronto
+                        const partes = linha.split('ESTATÍSTICAS DE ESCANTEIOS');
+                        const liga = partes[0].trim();
                         
-                        // Envio direto para testar
-                        bot.sendMessage(CHAT_ID, `🔥 *Oportunidade:* ${linha.substring(0, 100)}\n📊 *Média:* ${mediaTotal}`).catch(err => console.log("Erro Telegram:", err.message));
+                        // Captura o padrão "Time X Time" (limpando o resto do texto sujo)
+                        const regexConfronto = /([A-Za-zÀ-ÿ0-9\s]+)\sx\s([A-Za-zÀ-ÿ0-9\s]+)/;
+                        const matchConfronto = linha.match(regexConfronto);
+                        const confronto = matchConfronto ? matchConfronto[0].trim() : "Confronto não listado";
+
+                        // Formatação final da mensagem
+                        const mensagem = `
+🔥 *Oportunidade de Cantos*
+🏆 *Liga:* ${liga}
+⚽ *Confronto:* ${confronto}
+📊 *Média Total:* ${mediaTotal}
+`;
+
+                        bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
                     }
                 }
             }
         });
-
-        console.log(`Varredura concluída. Total de jogos > 10.5 encontrados: ${encontrados}`);
-        
     } catch (e) {
-        console.error("ERRO CRÍTICO NA VARREDURA:", e.message);
+        console.error("Erro na varredura:", e.message);
     }
 }
 
-// Roda imediatamente e depois a cada 15 minutos
-monitorarJogos();
+// Roda a cada 15 minutos
 setInterval(monitorarJogos, 900000); 
+monitorarJogos();
