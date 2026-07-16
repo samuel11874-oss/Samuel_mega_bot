@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Limpeza Total'));
+app.get('/', (req, res) => res.send('Bot de Diagnóstico Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,76 +17,51 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
-const dataHoje = "16 de julho";
-
-// Função para remover o "lixo" da string
-function limparTexto(texto) {
-    return texto
-        .replace(/ESTATÍSTICAS DE ESCANTEIOS/gi, '')
-        .replace(/Mais\s?\d+[\d.]*/gi, '')
-        .replace(/Menos\s?\d+[\d.]*/gi, '')
-        .replace(/Hoje/gi, '')
-        .replace(/Começa em \d+ minutos/gi, '')
-        .replace(/\d{1,2} de [a-zç]+( de \d{4})?/gi, '') // Remove datas
-        .replace(/\s+/g, ' ')
-        .trim();
-}
+const dataHoje = "16 de julho"; // Ajuste conforme o site exibir (ex: 16 Jul)
 
 async function monitorarJogos() {
     try {
+        console.log("--- Iniciando Varredura ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
         });
 
         const $ = cheerio.load(response.data);
-        // Foca em elementos que contêm os jogos
-        const elementos = $('tr'); 
         
-        let ligaAtual = "Liga Desconhecida";
-
-        elementos.each((i, el) => {
-            const linhaBruta = $(el).text().trim();
+        // Vamos ler tudo que parecer um bloco de jogo
+        $('tr').each((i, el) => {
+            const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Tenta identificar se é uma linha de liga
-            if (linhaBruta.includes("ESTATÍSTICAS DE ESCANTEIOS")) {
-                ligaAtual = linhaBruta.replace("ESTATÍSTICAS DE ESCANTEIOS", "").trim();
-                return;
-            }
+            // Log para você ver o que o bot está lendo
+            if (linha.includes(' x ')) {
+                console.log(`Lendo linha: ${linha.substring(0, 60)}...`);
+                
+                // Validação de Data (Flexível)
+                const ehHoje = linha.toLowerCase().includes("hoje") || linha.includes("16");
+                
+                if (!ehHoje) {
+                    console.log(`-> Pulado (Data não é hoje): ${linha.substring(0, 30)}`);
+                    return;
+                }
 
-            // Filtro para apenas linhas de jogos
-            if (linhaBruta.includes(' x ')) {
-                // Filtro de data rigoroso (se houver data na linha e não for hoje, pula)
-                if (linhaBruta.includes("de julho") && !linhaBruta.includes("16 de julho")) return;
-
-                const numeros = linhaBruta.match(/\d{1,2}\.\d/g);
-                if (numeros && numeros.length >= 2) {
-                    const mediaTotal = parseFloat(numeros[numeros.length - 1]);
-
-                    if (mediaTotal > 10.5 && mediaTotal < 50) {
-                        const matchConfronto = linhaBruta.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                // Tenta extrair a média
+                const numeros = linha.match(/\d{1,2}\.\d/g);
+                if (numeros) {
+                    const media = parseFloat(numeros[numeros.length - 1]);
+                    if (media > 10.5) {
+                        console.log(`-> JOGO ENCONTRADO! Média ${media}`);
                         
-                        if (matchConfronto) {
-                            let confronto = matchConfronto[0].trim();
-                            
-                            // Cria um ID único para o jogo
-                            let chaveUnica = `${ligaAtual}-${confronto}`;
-                            
-                            if (!jogosEnviados.has(chaveUnica)) {
-                                jogosEnviados.add(chaveUnica);
-                                
-                                const mensagem = `🔥 *Oportunidade de Hoje*\n` +
-                                                 `🏆 *Liga:* ${ligaAtual}\n` +
-                                                 `⚽ *Confronto:* ${confronto}\n` +
-                                                 `📊 *Média Total:* ${mediaTotal}`;
-
-                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                            }
-                        }
+                        // Envio simples para testar
+                        const msg = `🔥 Oportunidade: ${linha.substring(0, 50)} | Média: ${media}`;
+                        bot.sendMessage(CHAT_ID, msg).catch(console.error);
+                    } else {
+                        console.log(`-> Média muito baixa: ${media}`);
                     }
                 }
             }
         });
+        console.log("--- Fim da Varredura ---");
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
