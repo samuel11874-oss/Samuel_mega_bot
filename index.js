@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ajustado - Varrendo Divs'));
+app.get('/', (req, res) => res.send('Bot Ajustado - Varredura Limpa'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,9 +16,10 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
+let jogosEnviados = new Set();
+
 async function monitorarJogos() {
     try {
-        console.log("--- Iniciando Varredura (Modo Divs) ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
@@ -26,28 +27,35 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Agora vamos varrer todos os 'divs' que costumam conter informações de jogos
         $('div').each((i, el) => {
             const texto = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro para buscar linhas que tenham o padrão de jogo (Time A x Time B)
-            if (texto.includes(' x ') && texto.length < 200) { 
+            // Filtro: ignora cabeçalhos, precisa ter ' x ' e tamanho controlado
+            if (texto.includes(' x ') && !texto.includes('ESTATÍSTICAS DE ESCANTEIOS') && texto.length < 150) {
                 
-                // Extração da média de escanteios
                 const numeros = texto.match(/\d{1,2}\.\d/g);
                 if (numeros) {
                     const media = parseFloat(numeros[numeros.length - 1]);
                     
-                    if (media > 10.5) {
-                        console.log(`[JOGO ENCONTRADO]: ${texto.substring(0, 60)} | Média: ${media}`);
+                    // Filtro de média realista (entre 10.5 e 16.0)
+                    if (media > 10.5 && media < 16.0) {
                         
-                        const msg = `🔥 Oportunidade: ${texto.split('x')[0].trim()} x ${texto.split('x')[1].split(/[0-9]/)[0].trim()}\n📊 Média: ${media}`;
-                        bot.sendMessage(CHAT_ID, msg).catch(console.error);
+                        // Extrai apenas o confronto (limpeza extra)
+                        const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                        if (matchConfronto) {
+                            const confronto = matchConfronto[0].trim();
+                            
+                            if (!jogosEnviados.has(confronto)) {
+                                jogosEnviados.add(confronto);
+                                
+                                const msg = `🔥 *Oportunidade:* ${confronto}\n📊 *Média:* ${media}`;
+                                bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
+                            }
+                        }
                     }
                 }
             }
         });
-        console.log("--- Fim da Varredura ---");
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
