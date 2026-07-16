@@ -5,7 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
 
-const app = express();
+const app = WebService = express();
 app.get('/', (req, res) => res.send('Bot Operacional: Palpites do Dia Ativos'));
 app.listen(process.env.PORT || 3000);
 
@@ -80,17 +80,20 @@ async function monitorarJogos() {
         let totalDisparados = 0;
         let ligaAtual = "Liga Não Identificada";
 
-        // Recarrega o cache para garantir sincronia
+        // Recarrega o cache persistente
         cacheJogos = carregarCache();
 
-        $('.wttr2, tr[class*="statln"]').each((i, el) => {
+        // Evita duplicar a mesma linha de HTML na mesma varredura
+        const jogosProcessadosNestaRodada = new Set();
+
+        $('.wttr2, [class*="statln"]').each((i, el) => {
             const classeOriginal = $(el).attr('class') || '';
             const textoOriginal = $(el).text().trim();
             const textoLimpo = textoOriginal.replace(/\s+/g, ' ');
 
             if (classeOriginal.includes('wttr2')) {
                 const elClonado = $(el).clone();
-                elClonado.find('tr[class*="statln"]').remove();
+                elClonado.find('[class*="statln"]').remove();
                 ligaAtual = limparNomeLiga(elClonado.text().trim());
             } 
             else if (classeOriginal.includes('statln')) {
@@ -98,7 +101,6 @@ async function monitorarJogos() {
                 const ehCabecalho = textoLimpo.includes('ESTATÍSTICAS') || textoLimpo.includes('Menos/Mais') || textoLimpo.includes('Handicap');
 
                 if (ehJogoReal && !ehCabecalho) {
-                    totalAnalisados++;
 
                     // Regex para separar data, times e escanteios
                     const regexData = /^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|hoje|amanhã)(?:,\s*\d+\s+de\s+[a-z]+\s+de\s+\d{4})?/i;
@@ -119,15 +121,29 @@ async function monitorarJogos() {
                         const timeB = matchConfronto[2].trim();
                         const cantosTotal = parseInt(matchConfronto[3], 10);
 
-                        const confrontoLimpo = `${timeA} x ${timeB}`;
+                        // Limpeza das datas residuais grudadas no time A
+                        const timeALimpo = timeA
+                            .replace(/^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|hoje|amanhã),?/i, '')
+                            .replace(/^\s*\d*\s*de\s*[a-z]+\s*de\s*\d{4}/i, '')
+                            .trim();
+
+                        const confrontoLimpo = `${timeALimpo} x ${timeB}`;
                         const chaveJogo = `${confrontoLimpo.toLowerCase()}_${ligaAtual.toLowerCase()}`;
+
+                        // PREVENÇÃO DE DUPLICIDADE: Pula se já processamos esse exato jogo nesta varredura
+                        if (jogosProcessadosNestaRodada.has(chaveJogo)) {
+                            return;
+                        }
+                        jogosProcessadosNestaRodada.add(chaveJogo);
+
+                        totalAnalisados++;
 
                         // CRITÉRIO: Média acima de 10.5 cantos (Mínimo de 11 total)
                         if (cantosTotal > 10.5) {
                             
-                            // Validação de Duplicados persistente
+                            // Validação de duplicados persistente entre as horas
                             if (cacheJogos[chaveJogo]) {
-                                console.log(`[IGNORADO - JÁ ENVIADO] ${confrontoLimpo}`);
+                                console.log(`[IGNORADO - JÁ ENVIADO ANTERIORMENTE] ${confrontoLimpo}`);
                             } else {
                                 enviarAlerta(ligaAtual, confrontoLimpo, cantosTotal, dataJogo);
                                 cacheJogos[chaveJogo] = Date.now();
