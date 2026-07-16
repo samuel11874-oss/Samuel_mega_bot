@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo'));
+app.get('/', (req, res) => res.send('Bot de Escanteios - Modo Diagnóstico'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,28 +17,27 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
-
-// Identificação da data de hoje
 const hoje = new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
 
 async function monitorarJogos() {
     try {
+        console.log("Iniciando varredura no WinDrawWin...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
         });
 
         const $ = cheerio.load(response.data);
+        const elementos = $('div, tr, li, td');
+        
+        console.log(`Página carregada. Elementos encontrados: ${elementos.length}`);
 
-        $('div, tr, li').each((i, el) => {
+        elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
-
-            // Filtro de Data: Se a linha contiver um mês mas não for a data de hoje, descarta
-            const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-            const contemMes = meses.some(mes => linha.toLowerCase().includes(mes));
-
-            if (contemMes && !linha.includes(hoje)) {
-                return;
+            
+            // Debug: Se a linha for longa, pode ser um jogo
+            if (linha.length > 50 && linha.includes(' x ')) {
+                console.log(`Linha analisada: ${linha.substring(0, 80)}...`);
             }
 
             if (linha.includes(' x ')) {
@@ -64,6 +63,7 @@ async function monitorarJogos() {
                                              `📊 *Média Total:* ${mediaTotal}`;
 
                             bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                            console.log(`[SUCESSO] Alerta enviado: ${confronto}`);
                         }
                     }
                 }
