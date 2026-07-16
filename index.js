@@ -16,9 +16,6 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-let jogosEnviados = new Set();
-const dataHoje = "16 de julho"; // Ajuste conforme o site exibir (ex: 16 Jul)
-
 async function monitorarJogos() {
     try {
         console.log("--- Iniciando Varredura ---");
@@ -27,40 +24,28 @@ async function monitorarJogos() {
             timeout: 15000
         });
 
+        console.log("Página carregada. Tamanho do conteúdo:", response.data.length, "bytes");
+
         const $ = cheerio.load(response.data);
         
-        // Vamos ler tudo que parecer um bloco de jogo
+        // Debug: Vamos ver quantas linhas ele encontra
+        const totalLinhas = $('tr').length;
+        console.log("Total de linhas (tr) encontradas:", totalLinhas);
+
+        if (totalLinhas === 0) {
+             // Debug extra: O que tem na página então?
+             console.log("Nenhuma linha encontrada. O site pode estar usando divs ou o bot foi bloqueado.");
+             // Imprime um pedaço do HTML para análise
+             console.log("HTML inicial:", response.data.substring(0, 500));
+        }
+
         $('tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
-            
-            // Log para você ver o que o bot está lendo
             if (linha.includes(' x ')) {
-                console.log(`Lendo linha: ${linha.substring(0, 60)}...`);
-                
-                // Validação de Data (Flexível)
-                const ehHoje = linha.toLowerCase().includes("hoje") || linha.includes("16");
-                
-                if (!ehHoje) {
-                    console.log(`-> Pulado (Data não é hoje): ${linha.substring(0, 30)}`);
-                    return;
-                }
-
-                // Tenta extrair a média
-                const numeros = linha.match(/\d{1,2}\.\d/g);
-                if (numeros) {
-                    const media = parseFloat(numeros[numeros.length - 1]);
-                    if (media > 10.5) {
-                        console.log(`-> JOGO ENCONTRADO! Média ${media}`);
-                        
-                        // Envio simples para testar
-                        const msg = `🔥 Oportunidade: ${linha.substring(0, 50)} | Média: ${media}`;
-                        bot.sendMessage(CHAT_ID, msg).catch(console.error);
-                    } else {
-                        console.log(`-> Média muito baixa: ${media}`);
-                    }
-                }
+                console.log(`Linha encontrada: ${linha.substring(0, 50)}...`);
             }
         });
+
         console.log("--- Fim da Varredura ---");
     } catch (e) {
         console.error("Erro na busca:", e.message);
