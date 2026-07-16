@@ -4,8 +4,10 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Escanteios Otimizado'));
+app.get('/', (req, res) => res.send('Bot em Modo Detetive'));
 app.listen(process.env.PORT || 3000);
+
+console.log("Bot iniciado com sucesso!");
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
@@ -16,59 +18,48 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-let jogosEnviados = new Set();
-
-function estaNoHorario() {
-    const agora = new Date().toLocaleString("en-US", {timeZone: "America/Sao_Paulo"});
-    const hora = new Date(agora).getHours();
-    return (hora >= 6 && hora <= 11) || (hora >= 12 && hora <= 20);
-}
-
 async function monitorarJogos() {
-    if (!estaNoHorario()) return;
+    console.log("Iniciando varredura...");
 
     try {
-        const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
+        const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
         });
 
-        const $ = cheerio.load(data);
-        
-        // Foco apenas nas linhas que contêm um confronto " x "
-        $('tr').each((i, el) => {
+        console.log("Página carregada. Analisando conteúdo...");
+        const $ = cheerio.load(response.data);
+        let encontrados = 0;
+
+        // Voltamos para div, tr, li para garantir que pegamos tudo
+        $('div, tr, li').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
+            // Filtro mais abrangente
             if (linha.includes(' x ')) {
-                // Extrai o confronto: Busca o padrão "NomeTime x NomeTime"
-                // O regex abaixo captura [Letras/Espaços] x [Letras/Espaços]
-                const regexConfronto = /([A-Za-zÀ-ÿ0-9\s]+)\sx\s([A-Za-zÀ-ÿ0-9\s]+)/;
-                const matchConfronto = linha.match(regexConfronto);
-                
-                // Extrai números para calcular a média
                 const numeros = linha.match(/\d{1,2}\.\d/g);
                 
-                if (matchConfronto && numeros && numeros.length >= 3) {
-                    const nomeDoJogo = matchConfronto[0].trim(); // Ex: "Viking FK x Sandefjord"
+                if (numeros && numeros.length >= 3) {
                     const mediaTotal = parseFloat(numeros[numeros.length - 1]);
                     
                     if (mediaTotal > 10.5) {
-                        // Verifica duplicidade usando o nome do jogo como chave
-                        if (!jogosEnviados.has(nomeDoJogo)) {
-                            jogosEnviados.add(nomeDoJogo);
-                            bot.sendMessage(CHAT_ID, `🔥 *Oportunidade:* ${nomeDoJogo}\n📊 *Média:* ${mediaTotal} cantos`).catch(console.error);
-                            console.log(`[ALERTA ENVIADO] ${nomeDoJogo} -> ${mediaTotal}`);
-                        }
+                        encontrados++;
+                        console.log(`[ALERTA POTENCIAL] Encontrado: ${linha.substring(0, 50)}... | Média: ${mediaTotal}`);
+                        
+                        // Envio direto para testar
+                        bot.sendMessage(CHAT_ID, `🔥 *Oportunidade:* ${linha.substring(0, 100)}\n📊 *Média:* ${mediaTotal}`).catch(err => console.log("Erro Telegram:", err.message));
                     }
                 }
             }
         });
+
+        console.log(`Varredura concluída. Total de jogos > 10.5 encontrados: ${encontrados}`);
         
     } catch (e) {
-        console.error("Erro na leitura:", e.message);
+        console.error("ERRO CRÍTICO NA VARREDURA:", e.message);
     }
 }
 
-setInterval(() => { jogosEnviados.clear(); }, 86400000);
-setInterval(monitorarJogos, 900000); 
+// Roda imediatamente e depois a cada 15 minutos
 monitorarJogos();
+setInterval(monitorarJogos, 900000); 
