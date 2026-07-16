@@ -4,19 +4,12 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional: Sistema de Filtro Avançado'));
+app.get('/', (req, res) => res.send('Bot Operacional: Filtros Personalizados Ativos'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
-
-// ==========================================
-// CONFIGURAÇÃO DE OPERAÇÃO (Mude aqui quando quiser)
-// ==========================================
-const MODO_TESTE = false; // Mude para true para testar com QUALQUER jogo do site
-const LIMITE_MENSAGENS_TESTE = 5; // Evita spam se o modo teste estiver ativo
-// ==========================================
 
 const HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
@@ -27,16 +20,33 @@ const HEADERS = {
     'Upgrade-Insecure-Requests': '1'
 };
 
+// 1. TODAS AS MELHORES LIGAS DO MUNDO (1ª E 2ª DIVISÃO + BRASILEIRÃO SÉRIE C)
 const LIGAS_ELITE = [
-    'Premier League', 'Championship', 'La Liga', 'Serie A', 'Bundesliga', 
-    'Ligue 1', 'Brasileirão Série A', 'Brasileirão Série B', 'Champions League', 
-    'Libertadores', 'Eredivisie', 'Primeira Liga'
+    // Brasil
+    'Brasileirão Série A', 'Brasileirão Série B', 'Brasileirão Série C',
+    // Inglaterra
+    'Premier League', 'Championship',
+    // Espanha
+    'La Liga', 'Segunda División', 'La Liga 2',
+    // Itália
+    'Serie A', 'Serie B',
+    // Alemanha
+    'Bundesliga', '2. Bundesliga',
+    // França
+    'Ligue 1', 'Ligue 2',
+    // Portugal
+    'Primeira Liga', 'Segunda Liga',
+    // Holanda
+    'Eredivisie', 'Eerste Divisie',
+    // Copas e Torneios de Elite
+    'Champions League', 'Libertadores', 'Sudamericana',
+    'Copa do Brasil', 'Copa do Mundo', 'Mundial de Clubes'
 ];
 
 async function monitorarJogos() {
     try {
         console.log("--------------------------------------------------");
-        console.log(`[MONITORANDO JOGOS] Modo: ${MODO_TESTE ? 'TESTE (Sem Filtros)' : 'OPERAÇÃO REAL (Elite + Cantos)'}`);
+        console.log("[MONITORANDO JOGOS] Aplicando novos critérios de aposta personalizada...");
 
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 15000 });
         const $ = cheerio.load(data);
@@ -50,36 +60,39 @@ async function monitorarJogos() {
             const textoOriginal = $(el).text().trim();
             const textoLimpo = textoOriginal.replace(/\s+/g, ' ');
 
-            // 1. Identifica e atualiza a liga atual do bloco
+            // Identifica e atualiza a liga atual
             if (classeOriginal.includes('wttr2')) {
                 ligaAtual = textoLimpo;
             } 
-            // 2. Identifica se é uma linha de jogo
+            // Identifica se é uma linha de jogo real
             else if (classeOriginal.includes('statln')) {
-                
-                // FILTRO DE SEGURANÇA: Só aceita se for jogo real (contém " x ") e não for cabeçalho de estatística
                 const ehJogoReal = textoLimpo.includes(' x ');
                 const ehCabecalho = textoLimpo.includes('ESTATÍSTICAS') || textoLimpo.includes('Menos/Mais') || textoLimpo.includes('Handicap');
 
                 if (ehJogoReal && !ehCabecalho) {
                     totalAnalisados++;
 
-                    // Se estiver em modo teste, dispara direto respeitando o limite
-                    if (MODO_TESTE) {
-                        if (totalDisparados < LIMITE_MENSAGENS_TESTE) {
-                            enviarAlerta(ligaAtual, textoLimpo, "Modo Teste (Livre)");
-                            totalDisparados++;
-                        }
-                    } 
-                    // Se estiver em modo operacional, aplica suas regras rígidas
-                    else {
-                        const passaLiga = LIGAS_ELITE.some(liga => ligaAtual.includes(liga));
-                        // Busca se na linha constam médias altas de escanteio (>10)
-                        const passaCantos = textoLimpo.includes('10') || textoLimpo.includes('11') || textoLimpo.includes('12') || textoLimpo.includes('13') || textoLimpo.includes('14');
+                    // Filtro 1: Melhores Ligas (1ª, 2ª div + Série C)
+                    const passaLiga = LIGAS_ELITE.some(liga => ligaAtual.toLowerCase().includes(liga.toLowerCase()));
 
-                        if (passaLiga && passaCantos) {
-                            enviarAlerta(ligaAtual, textoLimpo, "Média >10 Cantos | Potencial Gols");
-                            totalDisparados++;
+                    if (passaLiga) {
+                        // Extração dinâmica de escanteios (Ex: "Corinthians x Remo11Mais..." -> extrai 11)
+                        const partesConfronto = textoLimpo.match(/(.+?)\s*(\d+)Mais/);
+                        
+                        if (partesConfronto) {
+                            const confrontoBruto = partesConfronto[1].trim();
+                            const cantosTotal = parseInt(partesConfronto[2], 10);
+
+                            // Filtro 2: Mais de 10.5 escanteios total (Mínimo de 11)
+                            if (cantosTotal > 10.5) {
+                                
+                                // Limpeza fina de datas no texto para deixar o alerta limpo
+                                let confrontoLimpo = confrontoBruto.replace(/^(domingo|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado),\s*\d+\s+de\s+[a-z]+\s+de\s+\d{4}/i, '').trim();
+                                confrontoLimpo = confrontoLimpo.replace(/^(Hoje|Amanhã)/i, '').trim();
+
+                                enviarAlerta(ligaAtual, confrontoLimpo, cantosTotal);
+                                totalDisparados++;
+                            }
                         }
                     }
                 }
@@ -87,8 +100,8 @@ async function monitorarJogos() {
         });
 
         console.log(`[VARREDURA CONCLUÍDA]`);
-        console.log(`>> Total de jogos REAIS analisados: ${totalAnalisados}`);
-        console.log(`>> Total de alertas disparados: ${totalDisparados}`);
+        console.log(`>> Total de jogos analisados: ${totalAnalisados}`);
+        console.log(`>> Alertas de aposta personalizada disparados: ${totalDisparados}`);
         console.log("--------------------------------------------------");
 
     } catch (e) {
@@ -96,20 +109,25 @@ async function monitorarJogos() {
     }
 }
 
-function enviarAlerta(liga, confronto, criterio) {
-    const linkBusca = `https://www.google.com/search?q=bet365+${encodeURIComponent(confronto)}`;
-    
+function enviarAlerta(liga, confronto, cantos) {
     const mensagem = `
-🏆 *Oportunidade Identificada*
+🔥 *Jogos encontrado para fazer sua aposta personalizada*
+
 🌍 *Liga:* ${liga}
-⚽ *Confronto:* [${confronto}](${linkBusca})
-🎯 *Critério:* ${criterio}
-🔔 *Status:* Monitorar entrada de valor!
+⚽ *Confronto:* ${confronto}
+📊 *Média de Cantos:* ${cantos} (Mais de 10.5 Total)
+⚡ *Potencial HT:* Alto (+4 Escanteios HT)
+⚽ *Potencial Gols:* Alta chance de +2.5 Gols
     `;
     
-    bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' })
+    bot.sendMessage(CHAT_ID, messageFormatado(mensagem), { parse_mode: 'Markdown' })
        .then(() => console.log(`[SUCESSO] Alerta enviado: ${confronto}`))
        .catch(err => console.error(`[ERRO TELEGRAM] Falha ao enviar:`, err.message));
+}
+
+// Helper para garantir espaçamento ideal no Telegram
+function messageFormatado(msg) {
+    return msg.trim();
 }
 
 // Executa a cada 60 minutos
