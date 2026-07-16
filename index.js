@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Diagnóstico Ativo'));
+app.get('/', (req, res) => res.send('Bot Ajustado - Varrendo Divs'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -18,34 +18,35 @@ const MOBILE_HEADERS = {
 
 async function monitorarJogos() {
     try {
-        console.log("--- Iniciando Varredura ---");
+        console.log("--- Iniciando Varredura (Modo Divs) ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
         });
 
-        console.log("Página carregada. Tamanho do conteúdo:", response.data.length, "bytes");
-
         const $ = cheerio.load(response.data);
         
-        // Debug: Vamos ver quantas linhas ele encontra
-        const totalLinhas = $('tr').length;
-        console.log("Total de linhas (tr) encontradas:", totalLinhas);
-
-        if (totalLinhas === 0) {
-             // Debug extra: O que tem na página então?
-             console.log("Nenhuma linha encontrada. O site pode estar usando divs ou o bot foi bloqueado.");
-             // Imprime um pedaço do HTML para análise
-             console.log("HTML inicial:", response.data.substring(0, 500));
-        }
-
-        $('tr').each((i, el) => {
-            const linha = $(el).text().trim().replace(/\s+/g, ' ');
-            if (linha.includes(' x ')) {
-                console.log(`Linha encontrada: ${linha.substring(0, 50)}...`);
+        // Agora vamos varrer todos os 'divs' que costumam conter informações de jogos
+        $('div').each((i, el) => {
+            const texto = $(el).text().trim().replace(/\s+/g, ' ');
+            
+            // Filtro para buscar linhas que tenham o padrão de jogo (Time A x Time B)
+            if (texto.includes(' x ') && texto.length < 200) { 
+                
+                // Extração da média de escanteios
+                const numeros = texto.match(/\d{1,2}\.\d/g);
+                if (numeros) {
+                    const media = parseFloat(numeros[numeros.length - 1]);
+                    
+                    if (media > 10.5) {
+                        console.log(`[JOGO ENCONTRADO]: ${texto.substring(0, 60)} | Média: ${media}`);
+                        
+                        const msg = `🔥 Oportunidade: ${texto.split('x')[0].trim()} x ${texto.split('x')[1].split(/[0-9]/)[0].trim()}\n📊 Média: ${media}`;
+                        bot.sendMessage(CHAT_ID, msg).catch(console.error);
+                    }
+                }
             }
         });
-
         console.log("--- Fim da Varredura ---");
     } catch (e) {
         console.error("Erro na busca:", e.message);
