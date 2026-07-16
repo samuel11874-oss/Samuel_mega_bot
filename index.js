@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional: Modo Diagnóstico Ativado'));
+app.get('/', (req, res) => res.send('Bot de Teste: Todos os Critérios Removidos'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,47 +20,74 @@ const HEADERS = {
     'Upgrade-Insecure-Requests': '1'
 };
 
-const LIGAS_ELITE = [
-    'Premier League', 'Championship', 'La Liga', 'Serie A', 'Bundesliga', 
-    'Ligue 1', 'Brasileirão Série A', 'Brasileirão Série B', 'Champions League', 
-    'Libertadores', 'Eredivisie', 'Primeira Liga'
-];
-
 async function monitorarJogos() {
     try {
         console.log("--------------------------------------------------");
-        console.log("[MONITORANDO JOGOS...] Iniciando Modo Diagnóstico Raio-X...");
+        console.log("[TESTE ATIVADO] Iniciando varredura sem critérios de liga/cantos...");
 
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS, timeout: 15000 });
         const $ = cheerio.load(data);
         
-        // --- INÍCIO DO RAIO-X ---
-        console.log("=== RESULTADO DO RAIO-X ===");
-        console.log("Título da página recebida: " + $('title').text());
-        console.log("Tamanho do código HTML: " + data.length + " caracteres");
-        console.log("Quantidade de linhas (<tr>) achadas: " + $('tr').length);
+        // --- DIAGNÓSTICO DETALHADO (RAIO-X) ---
+        console.log("=== DIAGNÓSTICO DO HTML ===");
+        console.log("Título da página: " + $('title').text().trim());
+        console.log("Tamanho do HTML: " + data.length + " caracteres");
+        
+        // Contagem de elementos para verificar estrutura
+        console.log("Total de tabelas (<table>): " + $('table').length);
+        console.log("Total de linhas (<tr>): " + $('tr').length);
+        console.log("Linhas com classe 'wttr2' (Ligas): " + $('.wttr2').length);
+        console.log("Linhas com classe contendo 'statln' (Jogos): " + $('tr[class*="statln"]').length);
+        
+        // Prévia do texto para identificar bloqueios ocultos (como Cloudflare)
+        const bodyPreview = $('body').text().replace(/\s+/g, ' ').substring(0, 500);
+        console.log("Início do texto do Body: " + bodyPreview);
         console.log("===========================");
-        // --- FIM DO RAIO-X ---
 
         let totalAnalisados = 0;
-        let ligaAtual = "";
+        let totalDisparados = 0;
+        let ligaAtual = "Liga Não Identificada";
 
         $('tr').each((i, el) => {
             const classeOriginal = $(el).attr('class') || '';
-            const textoLinha = $(el).text().trim();
+            const textoLinha = $(el).text().trim().replace(/\s+/g, ' ');
 
+            // Identifica a liga
             if (classeOriginal.includes('wttr2')) {
                 ligaAtual = textoLinha;
-            } else if (classeOriginal.includes('statln')) {
+            } 
+            // Identifica o jogo (captura statln, statln1, statln2)
+            else if (classeOriginal.includes('statln')) {
                 totalAnalisados++;
+                
+                // CRITÉRIO DE TESTE: Sem travas! Dispara os primeiros 5 jogos para teste de conexão
+                if (totalDisparados < 5) {
+                    const linkBusca = `https://www.google.com/search?q=bet365+${encodeURIComponent(textoLinha)}`;
+                    
+                    const mensagem = `
+🧪 *TESTE DE FUNCIONAMENTO*
+🌍 *Liga:* ${ligaAtual}
+⚽ *Confronto:* [${textoLinha}](${linkBusca})
+🎯 *Filtro:* Potencial mais de 0.5 Gols (Geral)
+🔔 *Status:* Disparado para teste de conexão!
+                    `;
+                    
+                    bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' })
+                       .then(() => console.log(`[SUCESSO] Mensagem enviada para o jogo: ${textoLinha}`))
+                       .catch(err => console.error(`[ERRO TELEGRAM] Falha ao enviar:`, err.message));
+                    
+                    totalDisparados++;
+                }
             }
         });
 
-        console.log(`>> Total de jogos lidos na estrutura antiga: ${totalAnalisados}`);
+        console.log(`[VARREDURA CONCLUÍDA]`);
+        console.log(`>> Total de jogos lidos: ${totalAnalisados}`);
+        console.log(`>> Total de jogos disparados para o Telegram: ${totalDisparados}`);
         console.log("--------------------------------------------------");
 
     } catch (e) {
-        console.error("Erro na análise profunda:", e.message);
+        console.error("Erro na varredura de teste:", e.message);
     }
 }
 
