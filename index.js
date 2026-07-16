@@ -16,7 +16,6 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-// Controle de memória para não enviar o mesmo jogo 2 vezes
 let jogosEnviados = new Set();
 
 function estaNoHorario() {
@@ -39,24 +38,28 @@ async function monitorarJogos() {
         $('tr, div, li').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro para ignorar cabeçalhos
+            // Procura pela estrutura da linha
             if (linha.includes('ESTATÍSTICAS DE ESCANTEIOS')) {
                 
-                // Regex para encontrar todos os números no formato X.X
+                // Pega tudo que vem DEPOIS da palavra "ESCANTEIOS"
+                const partes = linha.split('ESTATÍSTICAS DE ESCANTEIOS');
+                let infoBruta = partes[1] || "";
+                
+                // Extrai números para calcular a média
                 const numeros = linha.match(/\d{1,2}\.\d/g);
                 
                 if (numeros && numeros.length >= 3) {
-                    // O último número geralmente é a média total (ex: 5.9, 5.8, 11.7)
                     const mediaTotal = parseFloat(numeros[numeros.length - 1]);
                     
                     if (mediaTotal > 10.5) {
-                        const nomeJogo = linha.split('ESTATÍSTICAS')[0]; // Pega o nome da liga/jogo
+                        // Limpa o nome do jogo: remove os números do final
+                        let nomeDoJogo = infoBruta.replace(/[\d\.]+/g, '').trim();
                         
                         // Verifica duplicidade
-                        if (!jogosEnviados.has(nomeJogo)) {
-                            jogosEnviados.add(nomeJogo);
-                            bot.sendMessage(CHAT_ID, `🔥 *Oportunidade Encontrada!*\n\n${nomeJogo}\n📊 *Média Total:* ${mediaTotal} cantos`).catch(console.error);
-                            console.log(`[ALERTA ENVIADO] ${nomeJogo} -> ${mediaTotal}`);
+                        if (!jogosEnviados.has(nomeDoJogo)) {
+                            jogosEnviados.add(nomeDoJogo);
+                            bot.sendMessage(CHAT_ID, `🔥 *Oportunidade:* ${nomeDoJogo}\n📊 *Média Total:* ${mediaTotal} cantos`).catch(console.error);
+                            console.log(`[ALERTA ENVIADO] ${nomeDoJogo} -> ${mediaTotal}`);
                         }
                     }
                 }
@@ -68,8 +71,6 @@ async function monitorarJogos() {
     }
 }
 
-// Reseta a lista de duplicados a cada 24h
 setInterval(() => { jogosEnviados.clear(); }, 86400000);
-// Roda a cada 15 minutos
 setInterval(monitorarJogos, 900000); 
 monitorarJogos();
