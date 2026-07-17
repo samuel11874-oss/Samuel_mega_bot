@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Clean'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo 17/07 - Monitoramento Total'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -19,6 +19,7 @@ const MOBILE_HEADERS = {
 let jogosEnviados = new Set();
 const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
+// Função que gera a data automaticamente baseada no dia de hoje
 function getDataHoje() {
     const agora = new Date();
     return `${agora.getDate()} de ${meses[agora.getMonth()]}`;
@@ -38,7 +39,7 @@ async function monitorarJogos() {
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro rigoroso: apenas jogos de hoje
+            // O bot filtra automaticamente para a data atual (17 de julho)
             if (linha.includes("de julho") && !linha.includes(dataHoje)) {
                 return;
             }
@@ -47,6 +48,7 @@ async function monitorarJogos() {
                 const numeros = linha.match(/\d{1,2}\.\d/g);
                 
                 if (numeros && numeros.length >= 2) {
+                    // Filtra apenas números de médias (2.0 a 9.0) para somar
                     const mediasPossiveis = numeros
                         .map(n => parseFloat(n))
                         .filter(n => n >= 2.0 && n <= 9.0);
@@ -62,7 +64,6 @@ async function monitorarJogos() {
                             if (confronto && !jogosEnviados.has(confronto)) {
                                 jogosEnviados.add(confronto);
                                 
-                                // Card limpo, apenas dados técnicos
                                 const mensagem = `⚽ ${confronto}\n` +
                                                  `📊 Soma: ${soma.toFixed(1)} (${mediasPossiveis[0]} + ${mediasPossiveis[1]})`;
 
@@ -78,6 +79,7 @@ async function monitorarJogos() {
     }
 }
 
+// Reseta a lista de jogos enviados a cada 24 horas
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 setInterval(monitorarJogos, 600000); 
 monitorarJogos();
