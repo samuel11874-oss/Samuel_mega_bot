@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Monitoramento Completo'));
+app.get('/', (req, res) => res.send('Bot Ativo - Layout Limpo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,7 +16,6 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-// Armazena os confrontos já enviados para não repetir
 let jogosEnviados = new Set();
 const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
@@ -39,37 +38,33 @@ async function monitorarJogos() {
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro de data: ignora o que não é de hoje
+            // O bot continua filtrando internamente pela data de hoje, 
+            // mas sem exibir no card
             if (linha.includes("de julho") && !linha.includes(dataHoje)) {
                 return;
             }
 
             if (linha.includes(' x ')) {
-                // Captura todos os números decimais da linha
                 const numeros = linha.match(/\d{1,2}\.\d/g);
                 
                 if (numeros && numeros.length >= 2) {
-                    // Filtra números que são estatisticamente possíveis para médias de escanteio (2.0 a 9.0)
                     const mediasPossiveis = numeros
                         .map(n => parseFloat(n))
                         .filter(n => n >= 2.0 && n <= 9.0);
 
-                    // Pega os dois primeiros valores encontrados e soma
                     if (mediasPossiveis.length >= 2) {
                         const soma = mediasPossiveis[0] + mediasPossiveis[1];
 
-                        // Critério de soma
                         if (soma > 10.5) {
                             const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                             const matchConfronto = linha.match(regexConfronto);
                             const confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
-                            // Verifica se já não enviamos esse confronto
                             if (confronto && !jogosEnviados.has(confronto)) {
                                 jogosEnviados.add(confronto);
                                 
+                                // Card simplificado (sem a data)
                                 const mensagem = `🔥 *Oportunidade (Soma > 10.5)*\n` +
-                                                 `📅 *Data:* ${dataHoje}\n` +
                                                  `⚽ *Confronto:* ${confronto}\n` +
                                                  `📊 *Soma das Médias:* ${soma.toFixed(1)} ` +
                                                  `(${mediasPossiveis[0]} + ${mediasPossiveis[1]})`;
@@ -86,8 +81,7 @@ async function monitorarJogos() {
     }
 }
 
-// Reseta a lista de jogos enviados a cada 24 horas (meia-noite)
+// Limpa cache diariamente
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-// Roda a busca a cada 10 minutos
 setInterval(monitorarJogos, 600000); 
 monitorarJogos();
