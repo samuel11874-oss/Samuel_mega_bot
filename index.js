@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura 10.5+'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro Média > 11 FT'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,51 +17,59 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
+const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+function getDataHoje() {
+    const agora = new Date();
+    return `${agora.getDate()} de ${meses[agora.getMonth()]}`;
+}
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura...");
+        const dataHoje = getDataHoje();
+        console.log(`Verificando jogos para: ${dataHoje}`);
+        
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 30000
+            timeout: 20000
         });
 
         const $ = cheerio.load(response.data);
-        
-        // Vamos varrer parágrafos, tabelas e divs para garantir que pegamos tudo
-        const elementos = $('tr, div, p'); 
+        const elementos = $('tr'); // Foca nas linhas de tabela
 
         elementos.each((i, el) => {
-            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
+            const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro para achar jogos
-            if (linhaTexto.includes(' x ')) {
-                // Converte vírgula para ponto e captura números como 10.6, 11.2, 10,5 etc
-                const textoLimpo = linhaTexto.replace(',', '.');
-                const matchNumeros = textoLimpo.match(/(\d{2}\.\d)/g);
+            // Verifica se é jogo de hoje
+            if (linha.includes("de julho") && !linha.includes(dataHoje)) {
+                return;
+            }
+
+            if (linha.includes(' x ')) {
+                // Captura números (ponto ou vírgula)
+                const textoLimpo = linha.replace(',', '.');
+                const numeros = textoLimpo.match(/(\d{1,2}\.\d)/g);
                 
-                if (matchNumeros) {
-                    for (let n of matchNumeros) {
-                        const valor = parseFloat(n);
-                        
-                        // DEBUG: Se o valor for próximo de 10, veremos no log
-                        if (valor > 10.0) {
-                            console.log(`Debug: Encontrei valor ${valor} na linha: ${linhaTexto.substring(0, 30)}...`);
-                        }
+                if (numeros && numeros.length >= 2) {
+                    const medias = numeros.map(n => parseFloat(n));
+                    
+                    // Soma as duas primeiras médias encontradas na linha
+                    const soma = medias[0] + medias[1];
 
-                        // CRITÉRIO FINAL: Acima de 10.5
-                        if (valor > 10.5 && valor < 15.0) {
-                            const confrontoMatch = linhaTexto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
-                            const confronto = confrontoMatch ? confrontoMatch[0].trim() : null;
+                    // Critério: Soma > 11.0
+                    if (soma > 11.0) {
+                        const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
+                        const matchConfronto = linha.match(regexConfronto);
+                        const confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
-                            if (confronto && !jogosEnviados.has(confronto)) {
-                                jogosEnviados.add(confronto);
-                                
-                                const mensagem = `⚽ *${confronto}*\n📊 Média FT: ${valor}`;
-                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`✅ Jogo enviado: ${confronto} com média ${valor}`);
-                            }
-                            break; 
+                        if (confronto && !jogosEnviados.has(confronto)) {
+                            jogosEnviados.add(confronto);
+                            
+                            const mensagem = `⚽ ${confronto}\n` +
+                                             `📊 Média FT: ${soma.toFixed(1)} (${medias[0]} + ${medias[1]})`;
+
+                            bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                            console.log(`✅ Enviado: ${confronto} | Soma: ${soma}`);
                         }
                     }
                 }
@@ -72,6 +80,8 @@ async function monitorarJogos() {
     }
 }
 
+// Reseta lista de envios a cada 24h
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-setInterval(monitorarJogos, 300000); 
+// Busca a cada 10 minutos
+setInterval(monitorarJogos, 600000); 
 monitorarJogos();
