@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro > 11 e Card Limpo'));
+app.get('/', (req, res) => res.send('Bot Operacional - Monitorando Amanhã'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,7 +20,7 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("--- Varredura Ativa (Filtro > 11) ---");
+        console.log("--- Varredura Ativa (Filtro Amanhã > 11) ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
@@ -31,10 +31,9 @@ async function monitorarJogos() {
         $('div').each((i, el) => {
             const texto = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro: Tem que ter "Hoje" e o confronto " x "
-            if (texto.includes('Hoje') && texto.includes(' x ')) {
+            // FILTRO: Busca por "Amanhã" e confronto
+            if (texto.includes('Amanhã') && texto.includes(' x ')) {
                 
-                // Extração da média (padrão decimal)
                 const matchNumeros = texto.match(/(\d{1,2}\.?\d?)/);
                 
                 if (matchNumeros) {
@@ -43,7 +42,6 @@ async function monitorarJogos() {
                     // Critério: Média > 11
                     if (media > 11 && media <= 25) { 
                         
-                        // Extração apenas dos times (sem a liga)
                         const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
                         if (matchConfronto) {
@@ -52,13 +50,13 @@ async function monitorarJogos() {
                             if (!jogosEnviados.has(confronto)) {
                                 jogosEnviados.add(confronto);
                                 
-                                const msg = `⚽ *JOGO DO DIA*\n\n` +
+                                const msg = `⚽ *JOGO DE AMANHÃ*\n\n` +
                                             `⚔️ *Confronto:* ${confronto}\n` +
                                             `📊 *Média de Escanteios:* ${media}\n\n` +
                                             `🚀 _Samuel Mega Bot_`;
                                             
                                 bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`✅ Jogo enviado: ${confronto} | Média: ${media}`);
+                                console.log(`✅ Jogo de amanhã enviado: ${confronto} | Média: ${media}`);
                             }
                         }
                     }
@@ -71,5 +69,6 @@ async function monitorarJogos() {
     }
 }
 
+// Rodar a cada 10 minutos
 setInterval(monitorarJogos, 600000); 
 monitorarJogos();
