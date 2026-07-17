@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Versão Estável'));
+app.get('/', (req, res) => res.send('Bot Ativo - Versão Funcional'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -26,21 +26,24 @@ async function monitorarJogos() {
         });
 
         const $ = cheerio.load(response.data);
-        
-        // Focando apenas nas linhas de tabela
-        $('tr').each((i, el) => {
+
+        // O segredo para não agrupar é iterar especificamente nas linhas de corpo de tabela (tbody tr)
+        $('tbody tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
-            // Filtro original: contém "Hoje" e o sinal de confronto " x "
+            // Verifica se a linha contém "Hoje" e o formato de confronto " x "
             if (linha.includes('Hoje') && linha.includes(' x ')) {
                 
+                // Extrai apenas o confronto usando Regex
                 const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                 const matchConfronto = linha.match(regexConfronto);
                 let confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
                 if (confronto) {
+                    // Remove a palavra "Hoje" do confronto
                     confronto = confronto.replace(/^Hoje\s*/i, '').trim();
 
+                    // Evita envio duplicado do mesmo jogo
                     if (!jogosEnviados.has(confronto)) {
                         jogosEnviados.add(confronto);
 
@@ -58,7 +61,11 @@ async function monitorarJogos() {
     }
 }
 
+// Limpa cache diariamente
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+
+// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
+// Primeira execução
 monitorarJogos();
