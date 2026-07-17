@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Apenas Jogos de Hoje'));
+app.get('/', (req, res) => res.send('Bot Ativo - Jogos de Hoje Limpo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,21 +20,19 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura focada nos jogos de hoje...");
+        console.log("Iniciando varredura limpa (Jogos de Hoje)...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 20000
         });
 
         const $ = cheerio.load(response.data);
-        
-        // Voltando para o seletor que trouxe todos os dados com sucesso
         const elementos = $('div, tr, li, td');
 
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
-            // FILTRO DE DATA: O site cola a palavra "Hoje" nos jogos do dia atual
+            // Filtro de "Hoje" e presença de " x "
             if (linha.includes(' x ') && linha.includes('Hoje')) {
                 
                 const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
@@ -42,22 +40,18 @@ async function monitorarJogos() {
                 let confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
                 if (confronto) {
-                    // Remove o texto "Hoje" do início do confronto para o envio ficar bonito
+                    // Remove o prefixo "Hoje" para o nome ficar limpo
                     confronto = confronto.replace(/^Hoje\s*/i, '').trim();
-
-                    // Pega a média de escanteios (sem aplicar filtro de valor mínimo)
-                    const numeros = linha.match(/\d{1,2}\.\d/g);
-                    const valor = numeros ? numeros[0] : "N/A";
 
                     if (!jogosEnviados.has(confronto)) {
                         jogosEnviados.add(confronto);
 
+                        // Mensagem sem média
                         const mensagem = `⚽ *Jogo de Hoje*\n` +
-                                         `*Confronto:* ${confronto}\n` +
-                                         `📊 *Média:* ${valor}`;
+                                         `*Confronto:* ${confronto}`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado: ${confronto} | Média: ${valor}`);
+                        console.log(`✅ Enviado: ${confronto}`);
                     }
                 }
             }
@@ -67,11 +61,11 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa cache diariamente
+// Limpeza de cache diária
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 
-// Varredura a cada 5 minutos
+// Monitoramento a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
-// Primeira execução imediata
+// Execução imediata
 monitorarJogos();
