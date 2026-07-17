@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Bloqueio de Datas'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Corte Exato'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -27,29 +27,28 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        let podeEnviar = false;
+        // Convertemos as linhas em um array para controlar o fluxo de leitura
+        const rows = $('tr').toArray();
+        let capturando = false;
 
-        // Itera sobre todos os elementos que podem ser cabeçalhos ou linhas de jogo
-        // Buscamos h3 (títulos de data) e tr (linhas de tabela)
-        $('h1, h2, h3, tr').each((i, el) => {
-            const texto = $(el).text().trim().toLowerCase();
+        for (let el of rows) {
+            const linhaTexto = $(el).text().trim().toLowerCase();
 
-            // 1. Detecta o cabeçalho "Hoje"
-            if (texto.includes('hoje')) {
-                podeEnviar = true;
-                return;
+            // 1. Início: Quando encontrar "hoje", ativamos a captura
+            if (linhaTexto.includes('hoje')) {
+                capturando = true;
+                continue; // Pula a linha do cabeçalho
             }
 
-            // 2. Detecta QUALQUER outra data ou palavra de bloqueio
-            // Isso garante que assim que o site mostrar "amanhã" ou outra data, o bot PARA
-            if (podeEnviar && (texto.includes('amanhã') || texto.includes('próximos') || /\d{2}\/\d{2}/.test(texto))) {
-                podeEnviar = false;
-                return;
+            // 2. Fim: Se estivermos capturando e encontrar qualquer outra data, paramos imediatamente
+            if (capturando && (linhaTexto.includes('amanhã') || linhaTexto.includes('próximo') || linhaTexto.includes('/') || linhaTexto.includes('segunda') || linhaTexto.includes('terça') || linhaTexto.includes('quarta') || linhaTexto.includes('quinta') || linhaTexto.includes('sexta') || linhaTexto.includes('sábado') || linhaTexto.includes('domingo'))) {
+                capturando = false;
+                break; // Sai do loop, não lê mais nada
             }
 
-            // 3. Se estiver na zona de envio ("Hoje"), processa apenas as linhas de jogo (tr)
-            if (podeEnviar && $(el).is('tr') && texto.includes(' x ')) {
-                const match = texto.match(/([a-zà-ÿ\s]{3,})\sx\s([a-zà-ÿ\s]{3,})/);
+            // 3. Processamento: Apenas se estiver na zona "Hoje" e tiver jogo
+            if (capturando && linhaTexto.includes(' x ')) {
+                const match = $(el).text().trim().match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                 
                 if (match) {
                     const confronto = match[0].trim();
@@ -63,11 +62,11 @@ async function monitorarJogos() {
                                          `━━━━━━━━━━━━━━`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado (Hoje): ${confronto}`);
+                        console.log(`✅ Enviado: ${confronto}`);
                     }
                 }
             }
-        });
+        }
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
