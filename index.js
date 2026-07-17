@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Soma das Médias > 10.5'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro 11.0 FT'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,65 +17,39 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
-const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-
-function getDataHoje() {
-    const agora = new Date();
-    return `${agora.getDate()} de ${meses[agora.getMonth()]}`;
-}
 
 async function monitorarJogos() {
     try {
-        const dataHoje = getDataHoje();
+        console.log("Varrendo lista para jogos com Média > 11.0...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 20000
+            timeout: 30000
         });
 
         const $ = cheerio.load(response.data);
-        const elementos = $('div, tr, li, td');
-
-        elementos.each((i, el) => {
+        
+        $('tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro de Data
-            if (linha.includes("de julho") && !linha.includes(dataHoje)) {
-                return;
-            }
+            // Procura por números no formato XX.X ou XX,X
+            const textoLimpo = linha.replace(',', '.');
+            const numeros = textoLimpo.match(/(\d{2}\.\d)/g);
+            
+            if (numeros && numeros.length >= 2 && linha.includes(' x ')) {
+                const medias = numeros.map(n => parseFloat(n));
+                const soma = medias[0] + medias[1];
 
-            if (linha.includes(' x ')) {
-                // Regex busca todos os números decimais da linha
-                const numeros = linha.match(/\d{1,2}\.\d/g);
-                
-                if (numeros && numeros.length >= 2) {
-                    // Filtra apenas números que fazem sentido para escanteios (ex: 2.0 a 9.0 por time)
-                    // Isso exclui minutos de jogo (ex: 89.9) ou odds altas
-                    const mediasPossiveis = numeros
-                        .map(n => parseFloat(n))
-                        .filter(n => n >= 2.0 && n <= 9.0);
+                // CRITÉRIO: Maior que 11.0
+                if (soma > 11.0) {
+                    const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
+                    const matchConfronto = linha.match(regexConfronto);
+                    const confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
-                    if (mediasPossiveis.length >= 2) {
-                        const soma = mediasPossiveis[0] + mediasPossiveis[1];
-
-                        // CRITÉRIO: SOMA > 10.5
-                        if (soma > 10.5) {
-                            const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                            const matchConfronto = linha.match(regexConfronto);
-                            const confronto = matchConfronto ? matchConfronto[0].trim() : null;
-
-                            if (confronto && !jogosEnviados.has(confronto)) {
-                                jogosEnviados.add(confronto);
-                                
-                                const mensagem = `🔥 *Oportunidade - Soma > 10.5*\n` +
-                                                 `📅 *Data:* ${dataHoje}\n` +
-                                                 `⚽ *Confronto:* ${confronto}\n` +
-                                                 `📊 *Soma das Médias:* ${soma.toFixed(1)} ` +
-                                                 `(${mediasPossiveis[0]} + ${mediasPossiveis[1]})`;
-
-                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`✅ Enviado: ${confronto} | Soma: ${soma}`);
-                            }
-                        }
+                    if (confronto && !jogosEnviados.has(confronto)) {
+                        jogosEnviados.add(confronto);
+                        
+                        bot.sendMessage(CHAT_ID, `⚽ ${confronto}\n📊 *Soma:* ${soma.toFixed(1)}`, { parse_mode: 'Markdown' });
+                        console.log(`✅ Enviado: ${confronto} | Soma: ${soma.toFixed(1)}`);
                     }
                 }
             }
@@ -85,6 +59,10 @@ async function monitorarJogos() {
     }
 }
 
+// Reseta o cache de jogos a cada 24 horas
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-setInterval(monitorarJogos, 600000); 
+
+// Varredura a cada 5 minutos
+setInterval(monitorarJogos, 300000); 
+
 monitorarJogos();
