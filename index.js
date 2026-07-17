@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Debug'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Estrutural'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -27,33 +27,38 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Vamos logar todas as linhas que contêm " x " para você ver o que o bot encontra
-        $('tr').each((i, el) => {
-            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
-            
-            if (linhaTexto.includes(' x ')) {
-                // Log importante: Isso aparecerá nos logs do seu Render
-                console.log("Linha encontrada:", linhaTexto);
+        // Lógica de Tabela: Procuramos cada tabela da página
+        $('table').each((i, table) => {
+            const conteudoTabela = $(table).text().toLowerCase();
 
-                // Regex para capturar o confronto
-                const match = linhaTexto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+            // Só processamos a tabela se ela contiver a palavra "hoje"
+            if (conteudoTabela.includes('hoje')) {
                 
-                if (match) {
-                    const confronto = match[0].trim();
+                // Dentro dessa tabela, pegamos apenas as linhas (tr)
+                $(table).find('tr').each((j, row) => {
+                    const linhaTexto = $(row).text().trim().replace(/\s+/g, ' ');
 
-                    // Verifica se já enviamos (apenas para evitar spam)
-                    if (!jogosEnviados.has(confronto)) {
-                        jogosEnviados.add(confronto);
+                    // Se a linha tiver um confronto " x "
+                    if (linhaTexto.includes(' x ')) {
+                        const match = linhaTexto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                        
+                        if (match) {
+                            const confronto = match[0].trim();
 
-                        const mensagem = `⚽ *JOGO ENCONTRADO*\n` +
-                                         `━━━━━━━━━━━━━━\n` +
-                                         `*Partida:* ${confronto}\n` +
-                                         `━━━━━━━━━━━━━━`;
+                            if (!jogosEnviados.has(confronto)) {
+                                jogosEnviados.add(confronto);
 
-                        bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado: ${confronto}`);
+                                const mensagem = `⚽ *JOGO DE HOJE*\n` +
+                                                 `━━━━━━━━━━━━━━\n` +
+                                                 `*Partida:* ${confronto}\n` +
+                                                 `━━━━━━━━━━━━━━`;
+
+                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                                console.log(`✅ Enviado da Tabela Hoje: ${confronto}`);
+                            }
+                        }
                     }
-                }
+                });
             }
         });
     } catch (e) {
@@ -61,9 +66,7 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa cache diário
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
 monitorarJogos();
