@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Todos os Jogos de Hoje'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Estável'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,7 +20,6 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura geral (Todos os jogos de hoje)...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 20000
@@ -28,11 +27,13 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Usando o seletor 'tr' para pegar cada linha de jogo separadamente
-        $('tr').each((i, el) => {
+        // Mantendo o seletor amplo que funcionou desde o início
+        const elementos = $('div, tr, li, td');
+
+        elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
-            // Filtra apenas o que tem " x " e a palavra "Hoje"
+            // Filtro de "Hoje" e presença de " x "
             if (linha.includes(' x ') && linha.includes('Hoje')) {
                 
                 const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
@@ -40,12 +41,13 @@ async function monitorarJogos() {
                 let confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
                 if (confronto) {
-                    // Limpa o nome do confronto removendo a palavra "Hoje"
+                    // Remove o prefixo "Hoje" para o nome ficar limpo
                     confronto = confronto.replace(/^Hoje\s*/i, '').trim();
 
                     if (!jogosEnviados.has(confronto)) {
                         jogosEnviados.add(confronto);
 
+                        // Mensagem sem média
                         const mensagem = `⚽ *Jogo de Hoje*\n` +
                                          `*Confronto:* ${confronto}`;
 
@@ -60,11 +62,7 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa cache diariamente
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-
-// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
-// Primeira execução
 monitorarJogos();
