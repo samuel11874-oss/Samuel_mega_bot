@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Somente Hoje'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Hoje (17 de julho)'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,7 +20,7 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura filtrada por data (17 de julho)...");
+        console.log("Iniciando varredura filtrada (Apenas 17 de julho)...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 30000
@@ -28,30 +28,32 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        let lendoHoje = false; // Chave que controla se estamos na data correta
+        let lendoJogosDeHoje = false; // Chave de segurança
 
-        // Varremos a tabela procurando por datas e depois por jogos
+        // Varremos todas as linhas da tabela
         $('tr').each((i, el) => {
-            const linha = $(el).text().trim().replace(/\s+/g, ' ');
-            const textoLower = linha.toLowerCase();
+            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
+            const textoLower = linhaTexto.toLowerCase();
 
-            // 1. Verifica se encontramos um cabeçalho de data
-            // Se encontrar "17" e "julho", ligamos a captura
-            if (textoLower.includes('julho')) {
-                if (textoLower.includes('17')) {
-                    lendoHoje = true; // Achamos hoje, liga a chave
-                    console.log("-> Seção de hoje (17 de julho) ativada.");
-                } else {
-                    // Se encontrar outra data de julho (ex: 18 de julho), desliga a captura
-                    lendoHoje = false; 
-                }
+            // 1. Detectar se é o cabeçalho de hoje
+            // Se a linha contiver "17" e "jul", ligamos a captura
+            if (textoLower.includes('jul') && textoLower.includes('17')) {
+                lendoJogosDeHoje = true;
+                return; // Pula a linha do cabeçalho
+            }
+            
+            // 2. Detectar se é um cabeçalho de outra data (amanhã ou depois)
+            // Se encontrar "jul" e não for 17, desligamos a captura
+            if (textoLower.includes('jul') && !textoLower.includes('17')) {
+                lendoJogosDeHoje = false;
+                return;
             }
 
-            // 2. Se estivermos na seção de hoje e for uma linha de jogo (contém ' x ')
-            if (lendoHoje && linha.includes(' x ') && linha.length < 150) {
-                const confronto = linha.trim();
+            // 3. Se a chave estiver ligada (é hoje) e for um jogo (tem " x ")
+            if (lendoJogosDeHoje && linhaTexto.includes(' x ')) {
+                const confronto = linhaTexto.trim();
 
-                if (!jogosEnviados.has(confronto)) {
+                if (confronto.length > 10 && !jogosEnviados.has(confronto)) {
                     jogosEnviados.add(confronto);
                     
                     bot.sendMessage(CHAT_ID, `⚽ ${confronto}`).catch(console.error);
@@ -70,5 +72,5 @@ setInterval(() => { jogosEnviados.clear(); }, 86400000);
 // Varredura a cada 10 minutos
 setInterval(monitorarJogos, 600000); 
 
-// Primeira execução ao ligar
+// Primeira execução
 monitorarJogos();
