@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Monitorando Todos os Jogos > 10.5'));
+app.get('/', (req, res) => res.send('Bot Ativo - Monitoramento Completo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,6 +16,7 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
+// Armazena os confrontos já enviados para não repetir
 let jogosEnviados = new Set();
 const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
@@ -38,7 +39,7 @@ async function monitorarJogos() {
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro rigoroso: apenas hoje
+            // Filtro de data: ignora o que não é de hoje
             if (linha.includes("de julho") && !linha.includes(dataHoje)) {
                 return;
             }
@@ -57,19 +58,20 @@ async function monitorarJogos() {
                     if (mediasPossiveis.length >= 2) {
                         const soma = mediasPossiveis[0] + mediasPossiveis[1];
 
-                        // CRITÉRIO FINAL: SOMA > 10.5
+                        // Critério de soma
                         if (soma > 10.5) {
                             const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                             const matchConfronto = linha.match(regexConfronto);
                             const confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
+                            // Verifica se já não enviamos esse confronto
                             if (confronto && !jogosEnviados.has(confronto)) {
                                 jogosEnviados.add(confronto);
                                 
                                 const mensagem = `🔥 *Oportunidade (Soma > 10.5)*\n` +
                                                  `📅 *Data:* ${dataHoje}\n` +
                                                  `⚽ *Confronto:* ${confronto}\n` +
-                                                 `📊 *Soma:* ${soma.toFixed(1)} ` +
+                                                 `📊 *Soma das Médias:* ${soma.toFixed(1)} ` +
                                                  `(${mediasPossiveis[0]} + ${mediasPossiveis[1]})`;
 
                                 bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
@@ -84,7 +86,8 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa cache diariamente para resetar a monitoria
+// Reseta a lista de jogos enviados a cada 24 horas (meia-noite)
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+// Roda a busca a cada 10 minutos
 setInterval(monitorarJogos, 600000); 
 monitorarJogos();
