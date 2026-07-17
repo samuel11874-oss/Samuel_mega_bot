@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Melhores Ligas & Jogos de Hoje'));
+app.get('/', (req, res) => res.send('Bot Ativo - Todos os Jogos de Hoje'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,14 +16,11 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-// Lista de Ligas monitoradas (Você pode adicionar ou remover nomes aqui)
-const ligasMonitoradas = ["Brasileirão", "Série A", "Série B", "Libertadores", "Copa do Brasil", "Premier League", "La Liga", "Champions League", "Bundesliga", "Serie A"];
-
 let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura: Jogos de Hoje + Melhores Ligas...");
+        console.log("Iniciando varredura geral (Todos os jogos de hoje)...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 20000
@@ -31,27 +28,25 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Seleciona apenas linhas de tabela (tr) para evitar agrupar jogos
+        // Usando o seletor 'tr' para pegar cada linha de jogo separadamente
         $('tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
-            // Critérios: Hoje + Contém " x " + É uma das ligas selecionadas
-            const eHoje = linha.includes('Hoje');
-            const eLigaBoa = ligasMonitoradas.some(liga => linha.includes(liga));
-
-            if (eHoje && linha.includes(' x ') && eLigaBoa) {
+            // Filtra apenas o que tem " x " e a palavra "Hoje"
+            if (linha.includes(' x ') && linha.includes('Hoje')) {
                 
                 const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                 const matchConfronto = linha.match(regexConfronto);
                 let confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
                 if (confronto) {
+                    // Limpa o nome do confronto removendo a palavra "Hoje"
                     confronto = confronto.replace(/^Hoje\s*/i, '').trim();
 
                     if (!jogosEnviados.has(confronto)) {
                         jogosEnviados.add(confronto);
 
-                        const mensagem = `⚽ *Oportunidade (Liga de Elite)*\n` +
+                        const mensagem = `⚽ *Jogo de Hoje*\n` +
                                          `*Confronto:* ${confronto}`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
@@ -65,6 +60,11 @@ async function monitorarJogos() {
     }
 }
 
+// Limpa cache diariamente
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+
+// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
+
+// Primeira execução
 monitorarJogos();
