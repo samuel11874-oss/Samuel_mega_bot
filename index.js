@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Filtro Rígido'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Links Individuais'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -27,27 +27,14 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        let podeEnviar = false;
+        // Estratégia infalível: buscamos apenas os links (<a>) que contêm " x "
+        // Isso isola cada jogo individualmente, pois cada link é um jogo único
+        $('a').each((i, el) => {
+            const textoLink = $(el).text().trim();
 
-        $('tr').each((i, el) => {
-            const linhaTexto = $(el).text().trim();
-            const linhaNormalizada = linhaTexto.toLowerCase();
-
-            // 1. Detecta início do bloco "Hoje"
-            if (linhaNormalizada.includes('hoje')) {
-                podeEnviar = true;
-                return;
-            }
-
-            // 2. Trava o envio se detectar data futura (Amanhã ou nomes de meses/dias)
-            if (linhaNormalizada.includes('amanhã') || linhaNormalizada.includes('segunda') || linhaNormalizada.includes('terça') || linhaNormalizada.includes('quarta') || linhaNormalizada.includes('quinta') || linhaNormalizada.includes('sexta') || linhaNormalizada.includes('sábado') || linhaNormalizada.includes('domingo')) {
-                podeEnviar = false;
-                return;
-            }
-
-            // 3. Se estiver no bloco de "Hoje" e for uma linha de jogo (" x "), envia
-            if (podeEnviar && linhaTexto.includes(' x ')) {
-                const match = linhaTexto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+            if (textoLink.includes(' x ')) {
+                // Regex para garantir que pegamos o formato "Time x Time"
+                const match = textoLink.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                 
                 if (match) {
                     const confronto = match[0].trim();
@@ -56,9 +43,7 @@ async function monitorarJogos() {
                         jogosEnviados.add(confronto);
 
                         const mensagem = `⚽ *JOGO DE HOJE*\n` +
-                                         `━━━━━━━━━━━━━━\n` +
-                                         `*Partida:* ${confronto}\n` +
-                                         `━━━━━━━━━━━━━━`;
+                                         `*Confronto:* ${confronto}`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
                         console.log(`✅ Enviado: ${confronto}`);
@@ -71,7 +56,10 @@ async function monitorarJogos() {
     }
 }
 
+// Limpa o cache diário
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+
+// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
 monitorarJogos();
