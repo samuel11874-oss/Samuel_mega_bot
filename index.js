@@ -4,14 +4,13 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Precisão'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Precisão Corrigido'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-// Pausa para evitar erro 429
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const MOBILE_HEADERS = {
@@ -23,30 +22,26 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("--- Varredura com Filtro de Precisão ---");
+        console.log("--- Varredura com Filtro de Precisão (Corrigido) ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
         });
 
         const $ = cheerio.load(response.data);
-        
-        // Seleciona os elementos que contêm os jogos
         const elementos = $('div'); 
 
         for (let i = 0; i < elementos.length; i++) {
-            const texto = $(elementlementos[i]).text().trim().replace(/\s+/g, ' ');
+            // CORREÇÃO: Variável 'elementos' escrita corretamente
+            const texto = $(elementos[i]).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro: Apenas "Amanhã"
             if (texto.includes('Amanhã') && texto.includes(' x ')) {
                 
-                // CRÍTICO: Busca apenas números com formato decimal (ex: 10.5, 12.1)
                 const matchMedia = texto.match(/(\d{1,2}\.\d{1,2})/);
                 
                 if (matchMedia) {
                     const media = parseFloat(matchMedia[0]);
                     
-                    // Validação: Média entre 10.1 e 15.0
                     if (media > 10.0 && media <= 15.0) {
                         
                         const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
@@ -65,7 +60,6 @@ async function monitorarJogos() {
                                 bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
                                 console.log(`✅ Enviado: ${confronto} | Média: ${media}`);
                                 
-                                // Pausa de 3 segundos para evitar erro 429
                                 await wait(3000);
                             }
                         }
