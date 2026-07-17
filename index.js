@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Escanteios - Filtro Hoje'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro Média > 11'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,7 +20,7 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("--- Iniciando Varredura (Somente Hoje) ---");
+        console.log("--- Iniciando Varredura (Geral > 11) ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
@@ -31,33 +31,33 @@ async function monitorarJogos() {
         $('div').each((i, el) => {
             const texto = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // 1. Filtro: Deve conter "Hoje", " x " e não ser cabeçalho
-            if (texto.includes('Hoje') && texto.includes(' x ') && !texto.includes('ESTATÍSTICAS')) {
+            // Filtro: Tem que ter " x " e não ser cabeçalho
+            if (texto.includes(' x ') && !texto.includes('ESTATÍSTICAS')) {
                 
-                // 2. Extração: Procura um número decimal (ex: 10.5)
-                const matchMedia = texto.match(/(\d{1,2}\.\d)/);
+                // Busca o número da média (padrão de 2 dígitos, ex: 11, 12, 18)
+                const matchNumeros = texto.match(/(\d{2})/);
                 
-                if (matchMedia) {
-                    const media = parseFloat(matchMedia[0]);
+                if (matchNumeros) {
+                    const media = parseInt(matchNumeros[0]);
                     
-                    // 3. Filtro de Média > 11
-                    if (media > 11) {
-                        const matchConfronto = texto.match(/Hoje([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/i);
+                    // Filtro de Média > 11
+                    if (media > 11 && media <= 25) { // 25 é um teto seguro para evitar erros de leitura
+                        const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
                         if (matchConfronto) {
-                            const confronto = matchConfronto[0].replace('Hoje', '').trim();
+                            const confronto = matchConfronto[0].trim();
                             
+                            // Evita enviar o mesmo jogo várias vezes na mesma execução
                             if (!jogosEnviados.has(confronto)) {
                                 jogosEnviados.add(confronto);
                                 
-                                // Card Organizado
-                                const msg = `⚽ *JOGO DO DIA*\n\n` +
+                                const msg = `⚽ *ALERTA DE ESCANTEIOS*\n\n` +
                                             `⚔️ *Confronto:* ${confronto}\n` +
-                                            `📊 *Média de Escanteios:* ${media}\n\n` +
-                                            `🚀 _Análise enviada via Samuel Mega Bot_`;
+                                            `📊 *Média Detectada:* ${media}\n\n` +
+                                            `🚀 _Samuel Mega Bot_`;
                                             
                                 bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`✅ Enviado: ${confronto} | Média: ${media}`);
+                                console.log(`✅ Jogo enviado: ${confronto} | Média: ${media}`);
                             }
                         }
                     }
@@ -70,5 +70,6 @@ async function monitorarJogos() {
     }
 }
 
+// Verifica a cada 10 minutos
 setInterval(monitorarJogos, 600000); 
 monitorarJogos();
