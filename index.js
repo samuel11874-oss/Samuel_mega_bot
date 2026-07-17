@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Soma das Médias > 10.5'));
+app.get('/', (req, res) => res.send('Bot Ativo - Monitorando Todos os Jogos > 10.5'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -38,26 +38,26 @@ async function monitorarJogos() {
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro de Data
+            // Filtro rigoroso: apenas hoje
             if (linha.includes("de julho") && !linha.includes(dataHoje)) {
                 return;
             }
 
             if (linha.includes(' x ')) {
-                // Regex busca todos os números decimais da linha
+                // Captura todos os números decimais da linha
                 const numeros = linha.match(/\d{1,2}\.\d/g);
                 
                 if (numeros && numeros.length >= 2) {
-                    // Filtra apenas números que fazem sentido para escanteios (ex: 2.0 a 9.0 por time)
-                    // Isso exclui minutos de jogo (ex: 89.9) ou odds altas
+                    // Filtra números que são estatisticamente possíveis para médias de escanteio (2.0 a 9.0)
                     const mediasPossiveis = numeros
                         .map(n => parseFloat(n))
                         .filter(n => n >= 2.0 && n <= 9.0);
 
+                    // Pega os dois primeiros valores encontrados e soma
                     if (mediasPossiveis.length >= 2) {
                         const soma = mediasPossiveis[0] + mediasPossiveis[1];
 
-                        // CRITÉRIO: SOMA > 10.5
+                        // CRITÉRIO FINAL: SOMA > 10.5
                         if (soma > 10.5) {
                             const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                             const matchConfronto = linha.match(regexConfronto);
@@ -66,14 +66,13 @@ async function monitorarJogos() {
                             if (confronto && !jogosEnviados.has(confronto)) {
                                 jogosEnviados.add(confronto);
                                 
-                                const mensagem = `🔥 *Oportunidade - Soma > 10.5*\n` +
+                                const mensagem = `🔥 *Oportunidade (Soma > 10.5)*\n` +
                                                  `📅 *Data:* ${dataHoje}\n` +
                                                  `⚽ *Confronto:* ${confronto}\n` +
-                                                 `📊 *Soma das Médias:* ${soma.toFixed(1)} ` +
+                                                 `📊 *Soma:* ${soma.toFixed(1)} ` +
                                                  `(${mediasPossiveis[0]} + ${mediasPossiveis[1]})`;
 
                                 bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`✅ Enviado: ${confronto} | Soma: ${soma}`);
                             }
                         }
                     }
@@ -85,6 +84,7 @@ async function monitorarJogos() {
     }
 }
 
+// Limpa cache diariamente para resetar a monitoria
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 setInterval(monitorarJogos, 600000); 
 monitorarJogos();
