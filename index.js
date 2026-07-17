@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Precisão Corrigido'));
+app.get('/', (req, res) => res.send('Bot Operacional - Estrutura de Tabela Ativa'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -22,29 +22,34 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("--- Varredura com Filtro de Precisão (Corrigido) ---");
+        console.log("--- Varredura Profunda em Tabelas Iniciada ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
         });
 
         const $ = cheerio.load(response.data);
-        const elementos = $('div'); 
-
-        for (let i = 0; i < elementos.length; i++) {
-            // CORREÇÃO: Variável 'elementos' escrita corretamente
-            const texto = $(elementos[i]).text().trim().replace(/\s+/g, ' ');
+        
+        // Agora buscamos cada linha de tabela (tr), que é onde os jogos realmente ficam
+        $('table tr').each(async (i, el) => {
+            const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            if (texto.includes('Amanhã') && texto.includes(' x ')) {
+            // Log de Debug: Se quiser ver tudo o que ele lê, descomente a linha abaixo
+            // console.log(`Linha ${i}: ${linha.substring(0, 50)}`);
+
+            // Filtro: Tem que ter "Amanhã" e ter um confronto " x "
+            if (linha.includes('Amanhã') && linha.includes(' x ')) {
                 
-                const matchMedia = texto.match(/(\d{1,2}\.\d{1,2})/);
+                // Busca média decimal (ex: 10.5)
+                const matchMedia = linha.match(/(\d{1,2}\.\d{1,2})/);
                 
                 if (matchMedia) {
                     const media = parseFloat(matchMedia[0]);
                     
-                    if (media > 10.0 && media <= 15.0) {
+                    // Critério: Média > 11
+                    if (media > 11.0) {
                         
-                        const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                        const matchConfronto = linha.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
                         if (matchConfronto) {
                             const confronto = matchConfronto[0].trim();
@@ -54,19 +59,18 @@ async function monitorarJogos() {
                                 
                                 const msg = `⚽ *JOGO DE AMANHÃ*\n\n` +
                                             `⚔️ *Confronto:* ${confronto}\n` +
-                                            `📊 *Média Real:* ${media}\n\n` +
+                                            `📊 *Média de Escanteios:* ${media}\n\n` +
                                             `🚀 _Samuel Mega Bot_`;
                                             
-                                bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`✅ Enviado: ${confronto} | Média: ${media}`);
-                                
-                                await wait(3000);
+                                await bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' });
+                                console.log(`✅ Jogo enviado: ${confronto} | Média: ${media}`);
+                                await wait(3000); // Anti-bloqueio
                             }
                         }
                     }
                 }
             }
-        }
+        });
         console.log("--- Varredura Finalizada ---");
     } catch (e) {
         console.error("Erro na busca:", e.message);
