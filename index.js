@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro > 10'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro > 11 e Card Limpo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,7 +20,7 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("--- Varredura Ativa (Filtro > 10) ---");
+        console.log("--- Varredura Ativa (Filtro > 11) ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
@@ -31,17 +31,19 @@ async function monitorarJogos() {
         $('div').each((i, el) => {
             const texto = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Verifica se tem confronto e se não é cabeçalho de menu
-            if (texto.includes(' x ') && texto.length < 200 && !texto.includes('Tendência')) {
+            // Filtro: Tem que ter "Hoje" e o confronto " x "
+            if (texto.includes('Hoje') && texto.includes(' x ')) {
                 
-                // Extração: Busca números (decimal ou inteiro)
+                // Extração da média (padrão decimal)
                 const matchNumeros = texto.match(/(\d{1,2}\.?\d?)/);
                 
                 if (matchNumeros) {
                     const media = parseFloat(matchNumeros[0]);
                     
-                    // Critério: Média > 10 e <= 15 (para evitar números de ID ou Odds errados)
-                    if (media > 10 && media <= 15) {
+                    // Critério: Média > 11
+                    if (media > 11 && media <= 25) { 
+                        
+                        // Extração apenas dos times (sem a liga)
                         const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
                         if (matchConfronto) {
@@ -50,7 +52,7 @@ async function monitorarJogos() {
                             if (!jogosEnviados.has(confronto)) {
                                 jogosEnviados.add(confronto);
                                 
-                                const msg = `🔥 *Oportunidade de Escanteios*\n\n` +
+                                const msg = `⚽ *JOGO DO DIA*\n\n` +
                                             `⚔️ *Confronto:* ${confronto}\n` +
                                             `📊 *Média de Escanteios:* ${media}\n\n` +
                                             `🚀 _Samuel Mega Bot_`;
