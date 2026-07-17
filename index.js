@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Escanteios - Versão Liga/Data Corrigida'));
+app.get('/', (req, res) => res.send('Bot de Escanteios - Extração Real Ativa'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,10 +17,11 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
+const dataHoje = new Date().toLocaleDateString('pt-BR');
 
 async function monitorarJogos() {
     try {
-        console.log("--- Iniciando Varredura Diária ---");
+        console.log("--- Iniciando Varredura com Filtro Real ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
@@ -28,44 +29,37 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Vamos percorrer os elementos que contêm os jogos
         $('div').each((i, el) => {
             const texto = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro rigoroso: Tem que ter "Hoje", tem que ter " x "
-            if (texto.includes('Hoje') && texto.includes(' x ')) {
+            // Filtro: Precisa ter " x " e não ser cabeçalho
+            if (texto.includes(' x ') && !texto.includes('ESTATÍSTICAS')) {
                 
-                // Extração da Média (busca um número de 2 dígitos)
-                const matchNumeros = texto.match(/(\d{2})/);
-                if (matchNumeros) {
-                    const media = parseInt(matchNumeros[0]);
+                // Extração: Busca APENAS números decimais (ex: 10.5)
+                const matchMedia = texto.match(/(\d{1,2}\.\d{1,2})/);
+                
+                if (matchMedia) {
+                    const media = parseFloat(matchMedia[0]);
                     
-                    if (media > 10 && media < 30) {
-                        // Limpeza: Extrai a liga e os times
-                        // Padrão esperado no texto: "Hoje [Liga] [Time A] x [Time B]"
-                        const partes = texto.split('Hoje')[1];
+                    // Critério: Média real (entre 10.1 e 15.0)
+                    if (media > 10.0 && media <= 15.0) {
                         
-                        // Regex para separar Liga e Confronto
-                        // Exemplo: "Campeonato Brasileiro Palmeiras x Flamengo"
-                        const matchConfronto = partes.match(/(.+?)\s([A-Za-zÀ-ÿ\s]+)\sx\s([A-Za-zÀ-ÿ\s]+)/);
+                        // Extração do nome dos times (simplificado)
+                        const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
                         if (matchConfronto) {
-                            const liga = matchConfronto[1].trim();
-                            const timeA = matchConfronto[2].trim();
-                            const timeB = matchConfronto[3].trim();
-                            const confronto = `${timeA} x ${timeB}`;
+                            const confronto = matchConfronto[0].trim();
                             
                             if (!jogosEnviados.has(confronto)) {
                                 jogosEnviados.add(confronto);
                                 
-                                const msg = `⚽ *JOGO DO DIA* (16/07/2026)\n\n` +
-                                            `🏆 *Liga:* ${liga}\n` +
+                                const msg = `⚽ *JOGO DO DIA* (${dataHoje})\n\n` +
                                             `⚔️ *Confronto:* ${confronto}\n` +
-                                            `📊 *Média de Escanteios:* ${media}\n\n` +
+                                            `📊 *Média Real:* ${media}\n\n` +
                                             `🚀 _Samuel Mega Bot_`;
                                             
                                 bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`✅ Enviado: ${liga} | ${confronto} | Média: ${media}`);
+                                console.log(`✅ Jogo enviado: ${confronto} | Média Real: ${media}`);
                             }
                         }
                     }
@@ -78,6 +72,5 @@ async function monitorarJogos() {
     }
 }
 
-// O bot roda a cada 10 minutos para garantir que, se um jogo aparecer no site, ele pegue
 setInterval(monitorarJogos, 600000); 
 monitorarJogos();
