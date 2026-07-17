@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Total (Sem Filtros)'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Total'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,30 +20,28 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura bruta...");
+        console.log("Iniciando varredura bruta na página...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 20000
+            timeout: 30000
         });
 
         const $ = cheerio.load(response.data);
         
-        // Seleciona todas as linhas de tabela (onde costumam ficar os jogos)
-        const elementos = $('tr');
-
-        elementos.each((i, el) => {
-            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
-
-            // REGRA ÚNICA: Tem " x " ? É jogo.
-            if (linhaTexto.includes(' x ')) {
+        // Procura por qualquer texto que tenha ' x ' (formato universal de jogo)
+        $('div, tr, span, td').each((i, el) => {
+            const texto = $(el).text().trim();
+            
+            // Critério Único: Deve conter ' x ' e ser curto (tamanho de nome de jogo)
+            if (texto.includes(' x ') && texto.length > 10 && texto.length < 150) {
                 
-                // Remove caracteres estranhos e limpa
-                const confronto = linhaTexto.trim();
+                // Limpeza para evitar repetição de lixo visual
+                const confronto = texto.replace(/\s+/g, ' ');
 
-                // Verifica se já enviamos para não floodar o Telegram
-                if (confronto.length > 5 && !jogosEnviados.has(confronto)) {
+                if (!jogosEnviados.has(confronto)) {
                     jogosEnviados.add(confronto);
                     
+                    // Dispara para o Telegram
                     bot.sendMessage(CHAT_ID, `⚽ ${confronto}`).catch(console.error);
                     console.log(`✅ Enviado: ${confronto}`);
                 }
@@ -54,8 +52,11 @@ async function monitorarJogos() {
     }
 }
 
-// Reseta a lista de enviados a cada 24 horas
+// Reseta o cache de jogos a cada 24 horas para não encher a memória
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-// Verifica a cada 5 minutos
-setInterval(monitorarJogos, 300000); 
+
+// Varredura a cada 10 minutos
+setInterval(monitorarJogos, 600000); 
+
+// Primeira execução ao ligar
 monitorarJogos();
