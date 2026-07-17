@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Filtro Rígido de Datas'));
+app.get('/', (req, res) => res.send('Bot Ativo - Versão Base Funcional'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -26,29 +26,16 @@ async function monitorarJogos() {
         });
 
         const $ = cheerio.load(response.data);
-        
-        let podeEnviar = false;
 
-        // Buscamos todas as linhas (tr) e cabeçalhos (th) da tabela
-        $('tr, th').each((i, el) => {
+        // Acessa cada linha da tabela individualmente
+        $('tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
-            // 1. Detecta o início da seção "Hoje"
-            if (linha.toLowerCase().includes('hoje')) {
-                podeEnviar = true;
-                return; // Pula a linha do título "Hoje"
-            }
-
-            // 2. Detecta se mudou de data (Amanhã, ou qualquer data como 18/07)
-            // Se encontrar outra data, o bot para de enviar imediatamente
-            if (podeEnviar && (linha.toLowerCase().includes('amanhã') || /\d{1,2}\/\d{1,2}/.test(linha))) {
-                podeEnviar = false;
-                return;
-            }
-
-            // 3. Se estiver na zona de envio, busca apenas jogos com " x "
-            if (podeEnviar && linha.includes(' x ')) {
-                const match = linha.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+            // Verifica se a linha contém "Hoje" e o sinal de confronto " x "
+            if (linha.includes('Hoje') && linha.includes(' x ')) {
+                
+                const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
+                const match = linha.match(regexConfronto);
                 
                 if (match) {
                     const confronto = match[0].trim();
@@ -57,12 +44,10 @@ async function monitorarJogos() {
                         jogosEnviados.add(confronto);
 
                         const mensagem = `⚽ *JOGO DE HOJE*\n` +
-                                         `━━━━━━━━━━━━━━\n` +
-                                         `*Partida:* ${confronto}\n` +
-                                         `━━━━━━━━━━━━━━`;
+                                         `*Confronto:* ${confronto}`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado com sucesso: ${confronto}`);
+                        console.log(`✅ Enviado: ${confronto}`);
                     }
                 }
             }
@@ -72,10 +57,7 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa o cache diário
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-
-// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
 monitorarJogos();
