@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Todos os Jogos > 10.5'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Total'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,16 +17,9 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
-const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-
-function getDataHoje() {
-    const agora = new Date();
-    return `${agora.getDate()} de ${meses[agora.getMonth()]}`;
-}
 
 async function monitorarJogos() {
     try {
-        const dataHoje = getDataHoje();
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 20000
@@ -37,39 +30,26 @@ async function monitorarJogos() {
 
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
-            
-            // Filtro de Data: Só olha o dia de hoje
-            if (linha.includes("de julho") && !linha.includes(dataHoje)) {
-                return;
-            }
 
             if (linha.includes(' x ')) {
-                // Regex busca qualquer número com decimal (ex: 10.5, 89.9)
+                // Regex para capturar o confronto
+                const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
+                const matchConfronto = linha.match(regexConfronto);
+                const confronto = matchConfronto ? matchConfronto[0].trim() : null;
+
+                // Captura a média (se existir), mas NÃO filtra mais
                 const numeros = linha.match(/\d{1,2}\.\d/g);
-                
-                if (numeros) {
-                    for(let num of numeros) {
-                        let valor = parseFloat(num);
-                        
-                        // APENAS FILTRO DE PISO: > 10.5
-                        if (valor > 10.5) {
-                            const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                            const matchConfronto = linha.match(regexConfronto);
-                            const confronto = matchConfronto ? matchConfronto[0].trim() : null;
+                const valor = numeros ? numeros[0] : "N/A";
 
-                            if (confronto && !jogosEnviados.has(confronto)) {
-                                jogosEnviados.add(confronto);
-                                
-                                const mensagem = `🔥 *Oportunidade - ${dataHoje}*\n` +
-                                                 `⚽ *Confronto:* ${confronto}\n` +
-                                                 `📊 *Média de Escanteios:* ${valor}`;
+                if (confronto && !jogosEnviados.has(confronto)) {
+                    jogosEnviados.add(confronto);
 
-                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`✅ Enviado: ${confronto} | Média: ${valor}`);
-                            }
-                            break; 
-                        }
-                    }
+                    const mensagem = `⚽ *Jogo Capturado*\n` +
+                                     `*Confronto:* ${confronto}\n` +
+                                     `📊 *Média:* ${valor}`;
+
+                    bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                    console.log(`✅ Enviado: ${confronto} | Média: ${valor}`);
                 }
             }
         });
@@ -80,5 +60,9 @@ async function monitorarJogos() {
 
 // Limpa cache diariamente
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-setInterval(monitorarJogos, 600000); 
+
+// Varredura a cada 5 minutos
+setInterval(monitorarJogos, 300000); 
+
+// Primeira execução
 monitorarJogos();
