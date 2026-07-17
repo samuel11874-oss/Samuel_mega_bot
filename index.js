@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Data Exata 17/07'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Filtro de Data Flexível'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -27,25 +27,30 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        let dataAtual = ""; // Armazena a data que o bot está lendo no momento
+        let dataPermitida = false;
 
-        // Percorre tudo o que pode ser um cabeçalho ou linha
+        // Itera sobre cabeçalhos (para definir a data) e linhas de jogo
         $('h1, h2, h3, tr').each((i, el) => {
             const texto = $(el).text().trim();
+            const textoLower = texto.toLowerCase();
+
+            // 1. Deteção de Data: Procura por 17 de Julho ou 17/07
+            if (textoLower.includes('17') && (textoLower.includes('jul') || textoLower.includes('/07'))) {
+                dataPermitida = true;
+                return;
+            }
             
-            // 1. Detecção de Data: Verifica se a linha contém "17/07"
-            if (texto.includes('17/07')) {
-                dataAtual = "17/07";
-                return; // Pula a linha do cabeçalho
-            } 
-            // Se encontrar outra data (ex: 18/07, 16/07), muda o ponteiro e para de capturar
-            else if (/\d{2}\/\d{2}/.test(texto) && !texto.includes('17/07')) {
-                dataAtual = "OUTRA_DATA";
+            // 2. Bloqueio: Se encontrar qualquer outra data numérica (tipo 18/07 ou 16/07) ou dias da semana, trava
+            if (dataPermitida && (
+                (textoLower.includes('/') && !textoLower.includes('17/07')) ||
+                (textoLower.includes('18') || textoLower.includes('16') || textoLower.includes('19'))
+            )) {
+                dataPermitida = false;
                 return;
             }
 
-            // 2. Captura: Só captura se a data for 17/07 e for uma linha de jogo
-            if (dataAtual === "17/07" && $(el).is('tr') && texto.includes(' x ')) {
+            // 3. Captura: Se dataPermitida for true e for uma linha de jogo
+            if (dataPermitida && $(el).is('tr') && texto.includes(' x ')) {
                 const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                 
                 if (match) {
@@ -60,7 +65,7 @@ async function monitorarJogos() {
                                          `━━━━━━━━━━━━━━`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado (17/07): ${confronto}`);
+                        console.log(`✅ Enviado (Data Confirmada): ${confronto}`);
                     }
                 }
             }
@@ -70,7 +75,9 @@ async function monitorarJogos() {
     }
 }
 
+// Limpa cache diário
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
 monitorarJogos();
