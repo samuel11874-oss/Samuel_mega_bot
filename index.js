@@ -1,10 +1,10 @@
-const express = require('express');
+express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Automático'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro Rigoroso'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,11 +17,7 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
-
-// Cálculo automático da data
-const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-const hoje = new Date();
-const dataFormatadaHoje = `${hoje.getDate()} de ${meses[hoje.getMonth()]}`;
+const dataHoje = "16 de julho";
 
 async function monitorarJogos() {
     try {
@@ -36,9 +32,8 @@ async function monitorarJogos() {
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro dinâmico: Aceita a data de hoje
-            // Se você quiser incluir amanhã, o código entende "de julho" e filtra o que não for interesse
-            if (linha.includes("de julho") && !linha.includes(dataFormatadaHoje)) {
+            // Filtro rigoroso: Se tiver data (ex: 18 de julho) e NÃO for hoje, descarta imediatamente
+            if (linha.includes("de julho") && !linha.includes(dataHoje)) {
                 return;
             }
 
@@ -56,7 +51,7 @@ async function monitorarJogos() {
                         if (confronto && !jogosEnviados.has(confronto)) {
                             jogosEnviados.add(confronto);
                             
-                            const mensagem = `🔥 *Oportunidade de ${dataFormatadaHoje}*\n` +
+                            const mensagem = `🔥 *Oportunidade de Hoje*\n` +
                                              `⚽ *Confronto:* ${confronto}\n` +
                                              `📊 *Média Total:* ${mediaTotal}`;
 
@@ -70,9 +65,6 @@ async function monitorarJogos() {
         console.error("Erro na busca:", e.message);
     }
 }
-
-// Limpa o cache todo dia à meia-noite para evitar que jogos antigos fiquem bloqueados
-setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 
 setInterval(monitorarJogos, 600000); 
 monitorarJogos();
