@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Total'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro de Data Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -26,30 +26,35 @@ async function monitorarJogos() {
         });
 
         const $ = cheerio.load(response.data);
-        const elementos = $('div, tr, li, td');
-
-        elementos.each((i, el) => {
+        
+        // Focando nas linhas de tabela
+        $('tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
-            if (linha.includes(' x ')) {
+            // --- FILTRO DE DATA ---
+            // Só processa se a linha contiver "Hoje" ou a data de hoje "17 de julho"
+            const eHoje = linha.includes("Hoje") || linha.includes("17 de julho");
+            
+            if (eHoje && linha.includes(' x ')) {
+                
                 // Regex para capturar o confronto
                 const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                 const matchConfronto = linha.match(regexConfronto);
                 const confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
-                // Captura a média (se existir), mas NÃO filtra mais
+                // Captura a média numérica (independente de valor)
                 const numeros = linha.match(/\d{1,2}\.\d/g);
                 const valor = numeros ? numeros[0] : "N/A";
 
                 if (confronto && !jogosEnviados.has(confronto)) {
                     jogosEnviados.add(confronto);
 
-                    const mensagem = `⚽ *Jogo Capturado*\n` +
+                    const mensagem = `⚽ *Jogo de Hoje*\n` +
                                      `*Confronto:* ${confronto}\n` +
                                      `📊 *Média:* ${valor}`;
 
                     bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                    console.log(`✅ Enviado: ${confronto} | Média: ${valor}`);
+                    console.log(`✅ Enviado (Hoje): ${confronto} | Média: ${valor}`);
                 }
             }
         });
