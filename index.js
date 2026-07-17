@@ -20,26 +20,28 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("Varredura iniciada...");
+        console.log("Iniciando varredura bruta...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 30000
+            timeout: 20000
         });
 
         const $ = cheerio.load(response.data);
         
-        // Procura todas as linhas da tabela
-        $('tr').each((i, el) => {
+        // Seleciona todas as linhas de tabela (onde costumam ficar os jogos)
+        const elementos = $('tr');
+
+        elementos.each((i, el) => {
             const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
-            
-            // Critério: Se tiver " x " entre dois times, é um jogo.
-            // Removemos qualquer filtro de data ou número.
+
+            // REGRA ÚNICA: Tem " x " ? É jogo.
             if (linhaTexto.includes(' x ')) {
                 
-                // Limpeza básica do texto do jogo
+                // Remove caracteres estranhos e limpa
                 const confronto = linhaTexto.trim();
 
-                if (confronto.length > 10 && !jogosEnviados.has(confronto)) {
+                // Verifica se já enviamos para não floodar o Telegram
+                if (confronto.length > 5 && !jogosEnviados.has(confronto)) {
                     jogosEnviados.add(confronto);
                     
                     bot.sendMessage(CHAT_ID, `⚽ ${confronto}`).catch(console.error);
@@ -52,11 +54,8 @@ async function monitorarJogos() {
     }
 }
 
-// Reseta a lista de jogos enviados a cada 24 horas
+// Reseta a lista de enviados a cada 24 horas
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-
 // Verifica a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
-
-// Execução inicial
 monitorarJogos();
