@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Links Individuais'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro 10.5 Cantos'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -27,26 +27,57 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Estratégia infalível: buscamos apenas os links (<a>) que contêm " x "
-        // Isso isola cada jogo individualmente, pois cada link é um jogo único
-        $('a').each((i, el) => {
-            const textoLink = $(el).text().trim();
+        let podeProcessar = false;
 
-            if (textoLink.includes(' x ')) {
-                // Regex para garantir que pegamos o formato "Time x Time"
-                const match = textoLink.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
-                
-                if (match) {
-                    const confronto = match[0].trim();
+        // Varredura por linhas da tabela
+        $('tr').each((i, el) => {
+            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
+            const textoLower = linhaTexto.toLowerCase();
 
-                    if (!jogosEnviados.has(confronto)) {
-                        jogosEnviados.add(confronto);
+            // 1. ATIVAÇÃO: Só processa o que estiver abaixo do cabeçalho "Hoje"
+            if (textoLower.includes('hoje')) {
+                podeProcessar = true;
+                return;
+            }
 
-                        const mensagem = `⚽ *JOGO DE HOJE*\n` +
-                                         `*Confronto:* ${confronto}`;
+            // 2. BLOQUEIO: Se o site citar outras datas, para a leitura
+            if (podeProcessar && (textoLower.includes('amanhã') || /\d{2}\/\d{2}/.test(textoLower))) {
+                podeProcessar = false;
+                return;
+            }
 
-                        bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado: ${confronto}`);
+            // 3. FILTRO DE JOGO E MÉDIA:
+            if (podeProcessar && textoLower.includes(' x ')) {
+                // Regex para encontrar números de média (ex: 10.6, 11.2)
+                // Procura por números no formato "XX.X" ou "XX,X"
+                const statsMatch = linhaTexto.match(/(\d{2}[.,]\d)/);
+
+                if (statsMatch) {
+                    const media = parseFloat(statsMatch[0].replace(',', '.'));
+
+                    // FILTRO RÍGIDO: Só envia se a média for > 10.5
+                    if (media > 10.5) {
+                        const matchConfronto = linhaTexto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                        
+                        if (matchConfronto) {
+                            const confronto = matchConfronto[0].trim();
+
+                            if (!jogosEnviados.has(confronto)) {
+                                jogosEnviados.add(confronto);
+
+                                const mensagem = 
+`⚽ *OPORTUNIDADE DE CANTOS*\n` +
+`━━━━━━━━━━━━━━━━━━\n` +
+`⚔️ *Partida:* ${confronto}\n` +
+`📈 *Média FT:* ${media.toFixed(1)}\n` +
+`📅 *Data:* Hoje (17/07/2026)\n` +
+`━━━━━━━━━━━━━━━━━━\n` +
+`🔗 _Análise validada pelo robô_`;
+
+                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                                console.log(`✅ Enviado: ${confronto} (Média: ${media})`);
+                            }
+                        }
                     }
                 }
             }
@@ -56,10 +87,7 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa o cache diário
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-
-// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
 monitorarJogos();
