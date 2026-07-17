@@ -18,6 +18,9 @@ const MOBILE_HEADERS = {
 
 let jogosEnviados = new Set();
 
+// Mensagem para confirmar que o bot ligou e conectou ao Telegram
+bot.sendMessage(CHAT_ID, "🤖 *Samuel Mega Bot Ativado!*\nEstou monitorando os jogos de *Amanhã* com média de escanteios *maior que 11*.", { parse_mode: 'Markdown' }).catch(console.error);
+
 async function monitorarJogos() {
     try {
         console.log("--- Varredura Ativa (Filtro Amanhã > 11) ---");
@@ -31,7 +34,6 @@ async function monitorarJogos() {
         $('div').each((i, el) => {
             const texto = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // FILTRO: Busca por "Amanhã" e confronto
             if (texto.includes('Amanhã') && texto.includes(' x ')) {
                 
                 const matchNumeros = texto.match(/(\d{1,2}\.?\d?)/);
@@ -39,7 +41,6 @@ async function monitorarJogos() {
                 if (matchNumeros) {
                     const media = parseFloat(matchNumeros[0]);
                     
-                    // Critério: Média > 11
                     if (media > 11 && media <= 25) { 
                         
                         const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
