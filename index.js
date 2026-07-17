@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Com Filtro de Segurança'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro 10.5+'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -38,22 +38,24 @@ async function monitorarJogos() {
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
+            // Filtro de data mantido
             if (linha.includes("de julho") && !linha.includes(dataHoje)) {
                 return;
             }
 
             if (linha.includes(' x ')) {
-                // Captura números com decimais (ex: 10.5, 11.2)
+                // Regex para capturar números decimais
                 const numeros = linha.match(/\d{2}\.\d/g);
                 
                 if (numeros) {
-                    // FILTRO DE SEGURANÇA: Só aceita média entre 9.0 e 15.5
                     let mediaValida = 0;
+                    
                     for(let num of numeros) {
                         let valor = parseFloat(num);
-                        if (valor > 9.0 && valor <= 15.5) {
+                        // FILTRO RIGOROSO: > 10.5 e <= 16.0 (Ignora minutos 89.9 ou 59.7)
+                        if (valor > 10.5 && valor <= 16.0) {
                             mediaValida = valor;
-                            break;
+                            break; 
                         }
                     }
 
