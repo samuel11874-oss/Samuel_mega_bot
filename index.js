@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Filtro Média > 11 FT'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Total (Sem Filtros)'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,61 +17,33 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
-const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-
-function getDataHoje() {
-    const agora = new Date();
-    return `${agora.getDate()} de ${meses[agora.getMonth()]}`;
-}
 
 async function monitorarJogos() {
     try {
-        const dataHoje = getDataHoje();
-        console.log(`Verificando jogos para: ${dataHoje}`);
-        
+        console.log("Varredura iniciada...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 20000
+            timeout: 30000
         });
 
         const $ = cheerio.load(response.data);
-        const elementos = $('tr'); // Foca nas linhas de tabela
-
-        elementos.each((i, el) => {
-            const linha = $(el).text().trim().replace(/\s+/g, ' ');
+        
+        // Procura todas as linhas da tabela
+        $('tr').each((i, el) => {
+            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Verifica se é jogo de hoje
-            if (linha.includes("de julho") && !linha.includes(dataHoje)) {
-                return;
-            }
-
-            if (linha.includes(' x ')) {
-                // Captura números (ponto ou vírgula)
-                const textoLimpo = linha.replace(',', '.');
-                const numeros = textoLimpo.match(/(\d{1,2}\.\d)/g);
+            // Critério: Se tiver " x " entre dois times, é um jogo.
+            // Removemos qualquer filtro de data ou número.
+            if (linhaTexto.includes(' x ')) {
                 
-                if (numeros && numeros.length >= 2) {
-                    const medias = numeros.map(n => parseFloat(n));
+                // Limpeza básica do texto do jogo
+                const confronto = linhaTexto.trim();
+
+                if (confronto.length > 10 && !jogosEnviados.has(confronto)) {
+                    jogosEnviados.add(confronto);
                     
-                    // Soma as duas primeiras médias encontradas na linha
-                    const soma = medias[0] + medias[1];
-
-                    // Critério: Soma > 11.0
-                    if (soma > 11.0) {
-                        const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                        const matchConfronto = linha.match(regexConfronto);
-                        const confronto = matchConfronto ? matchConfronto[0].trim() : null;
-
-                        if (confronto && !jogosEnviados.has(confronto)) {
-                            jogosEnviados.add(confronto);
-                            
-                            const mensagem = `⚽ ${confronto}\n` +
-                                             `📊 Média FT: ${soma.toFixed(1)} (${medias[0]} + ${medias[1]})`;
-
-                            bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                            console.log(`✅ Enviado: ${confronto} | Soma: ${soma}`);
-                        }
-                    }
+                    bot.sendMessage(CHAT_ID, `⚽ ${confronto}`).catch(console.error);
+                    console.log(`✅ Enviado: ${confronto}`);
                 }
             }
         });
@@ -80,8 +52,11 @@ async function monitorarJogos() {
     }
 }
 
-// Reseta lista de envios a cada 24h
+// Reseta a lista de jogos enviados a cada 24 horas
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-// Busca a cada 10 minutos
-setInterval(monitorarJogos, 600000); 
+
+// Verifica a cada 5 minutos
+setInterval(monitorarJogos, 300000); 
+
+// Execução inicial
 monitorarJogos();
