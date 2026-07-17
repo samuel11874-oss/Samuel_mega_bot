@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Layout Limpo'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Clean'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -38,8 +38,7 @@ async function monitorarJogos() {
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // O bot continua filtrando internamente pela data de hoje, 
-            // mas sem exibir no card
+            // Filtro rigoroso: apenas jogos de hoje
             if (linha.includes("de julho") && !linha.includes(dataHoje)) {
                 return;
             }
@@ -63,11 +62,9 @@ async function monitorarJogos() {
                             if (confronto && !jogosEnviados.has(confronto)) {
                                 jogosEnviados.add(confronto);
                                 
-                                // Card simplificado (sem a data)
-                                const mensagem = `🔥 *Oportunidade (Soma > 10.5)*\n` +
-                                                 `⚽ *Confronto:* ${confronto}\n` +
-                                                 `📊 *Soma das Médias:* ${soma.toFixed(1)} ` +
-                                                 `(${mediasPossiveis[0]} + ${mediasPossiveis[1]})`;
+                                // Card limpo, apenas dados técnicos
+                                const mensagem = `⚽ ${confronto}\n` +
+                                                 `📊 Soma: ${soma.toFixed(1)} (${mediasPossiveis[0]} + ${mediasPossiveis[1]})`;
 
                                 bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
                             }
@@ -81,7 +78,6 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa cache diariamente
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 setInterval(monitorarJogos, 600000); 
 monitorarJogos();
