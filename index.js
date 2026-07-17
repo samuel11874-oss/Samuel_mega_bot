@@ -16,37 +16,42 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
+// Cache para não enviar o mesmo jogo várias vezes
 let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura total sem critérios...");
+        console.log("Iniciando varredura no site...");
+        
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 20000
+            timeout: 30000
         });
 
         const $ = cheerio.load(response.data);
-        const elementos = $('tr'); // Foca nas linhas da tabela
-
-        elementos.each((i, el) => {
+        
+        // Vamos procurar apenas linhas de tabela (tr) que contenham " x "
+        $('tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Critério Único: Identificar se é um jogo pelo " x "
+            // FILTRO ÚNICO: Identificar o confronto
+            // Qualquer linha que contenha " x " é considerada um jogo válido
             if (linha.includes(' x ')) {
                 
-                // Extrai apenas o nome dos times
-                const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                const matchConfronto = linha.match(regexConfronto);
-                const confronto = matchConfronto ? matchConfronto[0].trim() : null;
-
-                if (confronto && !jogosEnviados.has(confronto)) {
-                    jogosEnviados.add(confronto);
+                // Regex simples para capturar os nomes dos times antes e depois do "x"
+                const regexConfronto = /([A-Za-zÀ-ÿ0-9\s.-]+)\sx\s([A-Za-zÀ-ÿ0-9\s.-]+)/;
+                const match = linha.match(regexConfronto);
+                
+                if (match) {
+                    const confronto = match[0].trim();
                     
-                    const mensagem = `⚽ *Jogo Encontrado:*\n${confronto}`;
-                    
-                    bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                    console.log(`✅ Enviado: ${confronto}`);
+                    if (!jogosEnviados.has(confronto)) {
+                        jogosEnviados.add(confronto);
+                        
+                        // Envio para o Telegram
+                        bot.sendMessage(CHAT_ID, `⚽ Jogo encontrado:\n${confronto}`).catch(console.error);
+                        console.log(`✅ Enviado: ${confronto}`);
+                    }
                 }
             }
         });
@@ -55,10 +60,14 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa cache diariamente
-setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+// Limpa a memória de jogos enviados a cada 24 horas para recomeçar o monitoramento
+setInterval(() => { 
+    jogosEnviados.clear(); 
+    console.log("Cache limpo.");
+}, 86400000); 
+
 // Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
-// Execução imediata
+// Primeira execução ao ligar
 monitorarJogos();
