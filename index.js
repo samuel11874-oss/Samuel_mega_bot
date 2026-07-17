@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Versão Base Funcional'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Data Bloqueada'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -26,14 +26,27 @@ async function monitorarJogos() {
         });
 
         const $ = cheerio.load(response.data);
+        
+        let isToday = false;
 
-        // Acessa cada linha da tabela individualmente
+        // Agora percorremos as linhas (tr) e não os links (a)
         $('tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
-            // Verifica se a linha contém "Hoje" e o sinal de confronto " x "
-            if (linha.includes('Hoje') && linha.includes(' x ')) {
-                
+            // 1. Detecta o cabeçalho de "Hoje"
+            if (linha.toLowerCase().includes('hoje')) {
+                isToday = true;
+                return;
+            }
+
+            // 2. Detecta se a data mudou (Amanhã ou datas como 18/07)
+            if (linha.toLowerCase().includes('amanhã') || /\d{1,2}\/\d{1,2}/.test(linha)) {
+                isToday = false;
+                return;
+            }
+
+            // 3. Se estiver na seção "Hoje" e for um jogo (contém " x "), enviamos
+            if (isToday && linha.includes(' x ')) {
                 const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                 const match = linha.match(regexConfronto);
                 
@@ -47,7 +60,7 @@ async function monitorarJogos() {
                                          `*Confronto:* ${confronto}`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado: ${confronto}`);
+                        console.log(`✅ Enviado (Data Bloqueada Hoje): ${confronto}`);
                     }
                 }
             }
@@ -57,7 +70,10 @@ async function monitorarJogos() {
     }
 }
 
+// Limpa cache diariamente
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+
+// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
 monitorarJogos();
