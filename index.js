@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Apenas Hoje'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Hoje (17 de julho)'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,12 +17,10 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
-// Data de hoje fixa para o filtro
-const DATA_HOJE = "17 de julho"; 
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura para jogos de hoje...");
+        console.log("Iniciando varredura filtrada por data (17 de julho)...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 30000
@@ -30,20 +28,27 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Vamos procurar nas linhas da tabela (tr)
-        $('tr').each((i, el) => {
-            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
+        // Esta variável controla se estamos lendo jogos de "hoje" ou não
+        let lendoHoje = false;
 
-            // FILTRO DE DATA: Só processa se a linha contiver "17 de julho" OU
-            // se o bot já estiver "dentro" da seção de hoje. 
-            // Como sites mudam, vamos focar em verificar se a linha tem o confronto e a data
-            const contemConfronto = linhaTexto.includes(' x ');
-            const ehHoje = linhaTexto.toLowerCase().includes(DATA_HOJE.toLowerCase());
+        // Iteramos sobre todos os elementos que podem ser cabeçalhos ou linhas de jogo
+        $('h1, h2, h3, h4, tr').each((i, el) => {
+            const texto = $(el).text().trim();
+            const textoLower = texto.toLowerCase();
 
-            // Se for um jogo e for de hoje
-            if (contemConfronto && ehHoje) {
-                
-                const confronto = linhaTexto.trim();
+            // 1. Verifica se encontramos um cabeçalho de data
+            if (textoLower.includes('julho')) {
+                if (textoLower.includes('17')) {
+                    lendoHoje = true; // Achamos hoje, liga a captura
+                    console.log("-> Seção de hoje (17 de julho) encontrada.");
+                } else {
+                    lendoHoje = false; // Achamos outra data, desliga a captura
+                }
+            }
+
+            // 2. Se estivermos na seção de hoje e for uma linha de jogo (tr)
+            if (lendoHoje && $(el).is('tr') && texto.includes(' x ')) {
+                const confronto = texto.replace(/\s+/g, ' ');
 
                 if (confronto.length > 10 && !jogosEnviados.has(confronto)) {
                     jogosEnviados.add(confronto);
@@ -58,11 +63,11 @@ async function monitorarJogos() {
     }
 }
 
-// Reseta o cache a cada 24 horas
+// Reseta o cache de jogos a cada 24 horas
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 
 // Varredura a cada 10 minutos
 setInterval(monitorarJogos, 600000); 
 
-// Execução inicial
+// Primeira execução ao ligar
 monitorarJogos();
