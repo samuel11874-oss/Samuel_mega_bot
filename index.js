@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Filtro 11.0 FT'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro 10.5 FT'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,7 +20,7 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("Varrendo lista para jogos com Média > 11.0...");
+        console.log("Varrendo lista para jogos com Média > 10.5...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 30000
@@ -31,31 +31,38 @@ async function monitorarJogos() {
         $('tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Procura por números no formato XX.X ou XX,X
-            const textoLimpo = linha.replace(',', '.');
-            const numeros = textoLimpo.match(/(\d{2}\.\d)/g);
-            
-            if (numeros && numeros.length >= 2 && linha.includes(' x ')) {
-                const medias = numeros.map(n => parseFloat(n));
-                const soma = medias[0] + medias[1];
+            // Só processa linhas que indicam um confronto
+            if (linha.includes(' x ')) {
+                // Normaliza para ponto (substitui vírgula se existir)
+                const textoLimpo = linha.replace(',', '.');
+                
+                // Busca números decimais no texto (ex: 5.4, 6.2)
+                const numeros = textoLimpo.match(/(\d{1,2}\.\d)/g);
+                
+                if (numeros && numeros.length >= 2) {
+                    const medias = numeros.map(n => parseFloat(n));
+                    const soma = medias[0] + medias[1];
 
-                // CRITÉRIO: Maior que 11.0
-                if (soma > 11.0) {
-                    const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                    const matchConfronto = linha.match(regexConfronto);
-                    const confronto = matchConfronto ? matchConfronto[0].trim() : null;
+                    // CRITÉRIO: Média FT > 10.5
+                    if (soma > 10.5) {
+                        const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
+                        const matchConfronto = linha.match(regexConfronto);
+                        const confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
-                    if (confronto && !jogosEnviados.has(confronto)) {
-                        jogosEnviados.add(confronto);
-                        
-                        bot.sendMessage(CHAT_ID, `⚽ ${confronto}\n📊 *Soma:* ${soma.toFixed(1)}`, { parse_mode: 'Markdown' });
-                        console.log(`✅ Enviado: ${confronto} | Soma: ${soma.toFixed(1)}`);
+                        if (confronto && !jogosEnviados.has(confronto)) {
+                            jogosEnviados.add(confronto);
+                            
+                            const mensagem = `⚽ *${confronto}*\n📊 Média FT: ${soma.toFixed(1)} (${medias[0]} + ${medias[1]})`;
+                            
+                            bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                            console.log(`✅ Enviado: ${confronto} | Soma: ${soma.toFixed(1)}`);
+                        }
                     }
                 }
             }
         });
     } catch (e) {
-        console.error("Erro na busca:", e.message);
+        console.error("Erro na leitura:", e.message);
     }
 }
 
