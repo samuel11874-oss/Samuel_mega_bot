@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Automático'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Hoje Dinâmico'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -18,13 +18,16 @@ const MOBILE_HEADERS = {
 
 let jogosEnviados = new Set();
 
-// Cálculo automático da data
+// Gerador automático de data (Ex: "16 de julho")
 const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-const hoje = new Date();
-const dataFormatadaHoje = `${hoje.getDate()} de ${meses[hoje.getMonth()]}`;
+function getDataHoje() {
+    const agora = new Date();
+    return `${agora.getDate()} de ${meses[agora.getMonth()]}`;
+}
 
 async function monitorarJogos() {
     try {
+        const dataHoje = getDataHoje(); // Atualiza a data a cada ciclo
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
@@ -36,9 +39,8 @@ async function monitorarJogos() {
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro dinâmico: Aceita a data de hoje
-            // Se você quiser incluir amanhã, o código entende "de julho" e filtra o que não for interesse
-            if (linha.includes("de julho") && !linha.includes(dataFormatadaHoje)) {
+            // Filtro: Se a linha contém mês, mas não é "hoje", descarta
+            if (linha.includes("de julho") && !linha.includes(dataHoje)) {
                 return;
             }
 
@@ -56,7 +58,7 @@ async function monitorarJogos() {
                         if (confronto && !jogosEnviados.has(confronto)) {
                             jogosEnviados.add(confronto);
                             
-                            const mensagem = `🔥 *Oportunidade de ${dataFormatadaHoje}*\n` +
+                            const mensagem = `🔥 *Oportunidade - ${dataHoje}*\n` +
                                              `⚽ *Confronto:* ${confronto}\n` +
                                              `📊 *Média Total:* ${mediaTotal}`;
 
@@ -71,7 +73,7 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa o cache todo dia à meia-noite para evitar que jogos antigos fiquem bloqueados
+// Limpa os jogos enviados diariamente à meia-noite para começar o dia novo limpo
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 
 setInterval(monitorarJogos, 600000); 
