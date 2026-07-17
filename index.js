@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Data Bloqueada'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Filtro Rígido'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -27,28 +27,27 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        let isToday = false;
+        let podeEnviar = false;
 
-        // Agora percorremos as linhas (tr) e não os links (a)
         $('tr').each((i, el) => {
-            const linha = $(el).text().trim().replace(/\s+/g, ' ');
+            const linhaTexto = $(el).text().trim();
+            const linhaNormalizada = linhaTexto.toLowerCase();
 
-            // 1. Detecta o cabeçalho de "Hoje"
-            if (linha.toLowerCase().includes('hoje')) {
-                isToday = true;
+            // 1. Detecta início do bloco "Hoje"
+            if (linhaNormalizada.includes('hoje')) {
+                podeEnviar = true;
                 return;
             }
 
-            // 2. Detecta se a data mudou (Amanhã ou datas como 18/07)
-            if (linha.toLowerCase().includes('amanhã') || /\d{1,2}\/\d{1,2}/.test(linha)) {
-                isToday = false;
+            // 2. Trava o envio se detectar data futura (Amanhã ou nomes de meses/dias)
+            if (linhaNormalizada.includes('amanhã') || linhaNormalizada.includes('segunda') || linhaNormalizada.includes('terça') || linhaNormalizada.includes('quarta') || linhaNormalizada.includes('quinta') || linhaNormalizada.includes('sexta') || linhaNormalizada.includes('sábado') || linhaNormalizada.includes('domingo')) {
+                podeEnviar = false;
                 return;
             }
 
-            // 3. Se estiver na seção "Hoje" e for um jogo (contém " x "), enviamos
-            if (isToday && linha.includes(' x ')) {
-                const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                const match = linha.match(regexConfronto);
+            // 3. Se estiver no bloco de "Hoje" e for uma linha de jogo (" x "), envia
+            if (podeEnviar && linhaTexto.includes(' x ')) {
+                const match = linhaTexto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                 
                 if (match) {
                     const confronto = match[0].trim();
@@ -57,10 +56,12 @@ async function monitorarJogos() {
                         jogosEnviados.add(confronto);
 
                         const mensagem = `⚽ *JOGO DE HOJE*\n` +
-                                         `*Confronto:* ${confronto}`;
+                                         `━━━━━━━━━━━━━━\n` +
+                                         `*Partida:* ${confronto}\n` +
+                                         `━━━━━━━━━━━━━━`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado (Data Bloqueada Hoje): ${confronto}`);
+                        console.log(`✅ Enviado: ${confronto}`);
                     }
                 }
             }
@@ -70,10 +71,7 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa cache diariamente
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-
-// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
 monitorarJogos();
