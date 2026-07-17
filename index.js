@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Hoje (17 de julho)'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Somente Hoje (17 de julho)'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -28,34 +28,35 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        let lendoJogosDeHoje = false; // Chave de segurança
+        // Esta variável controla se o bot está liberado para enviar ou não
+        let lendoJogosDeHoje = false; 
 
-        // Varremos todas as linhas da tabela
-        $('tr').each((i, el) => {
-            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
-            const textoLower = linhaTexto.toLowerCase();
+        // Varremos todos os elementos (tr, h2, div) que podem conter datas ou jogos
+        $('tr, h2, h3, div').each((i, el) => {
+            const texto = $(el).text().trim().replace(/\s+/g, ' ');
+            const textoLower = texto.toLowerCase();
 
-            // 1. Detectar se é o cabeçalho de hoje
-            // Se a linha contiver "17" e "jul", ligamos a captura
+            // 1. Detectar o cabeçalho de hoje (17 de julho)
+            // Se encontrar "17" e "julho" na mesma linha, ligamos a chave
             if (textoLower.includes('jul') && textoLower.includes('17')) {
                 lendoJogosDeHoje = true;
-                return; // Pula a linha do cabeçalho
+                return; // Pula essa linha, ela é apenas o título da data
             }
-            
-            // 2. Detectar se é um cabeçalho de outra data (amanhã ou depois)
-            // Se encontrar "jul" e não for 17, desligamos a captura
+
+            // 2. Detectar se é uma data futura (amanhã ou depois)
+            // Se encontrar "julho" mas não for "17", desligamos a chave
             if (textoLower.includes('jul') && !textoLower.includes('17')) {
                 lendoJogosDeHoje = false;
-                return;
             }
 
             // 3. Se a chave estiver ligada (é hoje) e for um jogo (tem " x ")
-            if (lendoJogosDeHoje && linhaTexto.includes(' x ')) {
-                const confronto = linhaTexto.trim();
+            if (lendoJogosDeHoje && texto.includes(' x ') && texto.length > 10 && texto.length < 150) {
+                const confronto = texto.trim();
 
-                if (confronto.length > 10 && !jogosEnviados.has(confronto)) {
+                if (!jogosEnviados.has(confronto)) {
                     jogosEnviados.add(confronto);
                     
+                    // Dispara para o Telegram
                     bot.sendMessage(CHAT_ID, `⚽ ${confronto}`).catch(console.error);
                     console.log(`✅ Enviado (Hoje): ${confronto}`);
                 }
@@ -72,5 +73,5 @@ setInterval(() => { jogosEnviados.clear(); }, 86400000);
 // Varredura a cada 10 minutos
 setInterval(monitorarJogos, 600000); 
 
-// Primeira execução
+// Primeira execução ao ligar
 monitorarJogos();
