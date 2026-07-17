@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Versão Simples'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Limpeza de Linhas'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -26,27 +26,28 @@ async function monitorarJogos() {
         });
 
         const $ = cheerio.load(response.data);
-
-        // Percorre todas as linhas da tabela
+        
+        // Iteramos apenas pelas linhas (tr)
         $('tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
-            // Verifica se é um jogo de hoje
-            if (linha.includes('Hoje') && linha.includes(' x ')) {
+            // FILTRO DE SEGURANÇA:
+            // 1. Deve conter " x "
+            // 2. Não deve ser muito longa (para evitar container de vários jogos)
+            // 3. Deve conter "Hoje"
+            if (linha.includes(' x ') && linha.includes('Hoje') && linha.length < 150) {
                 
-                // Pega o confronto
-                const match = linha.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
+                const matchConfronto = linha.match(regexConfronto);
                 
-                if (match) {
-                    const confronto = match[0].replace('Hoje', '').trim();
+                if (matchConfronto) {
+                    let confronto = matchConfronto[0].replace('Hoje', '').trim();
 
                     if (!jogosEnviados.has(confronto)) {
                         jogosEnviados.add(confronto);
 
                         const mensagem = `⚽ *JOGO DE HOJE*\n` +
-                                         `━━━━━━━━━━━━━━\n` +
-                                         `*Partida:* ${confronto}\n` +
-                                         `━━━━━━━━━━━━━━`;
+                                         `*Confronto:* ${confronto}`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
                         console.log(`✅ Enviado: ${confronto}`);
@@ -59,6 +60,7 @@ async function monitorarJogos() {
     }
 }
 
+// Limpa o cache todo dia às meia-noite
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 setInterval(monitorarJogos, 300000); 
 
