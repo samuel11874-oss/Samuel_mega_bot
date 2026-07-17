@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Total de Hoje'));
+app.get('/', (req, res) => res.send('Bot Ativo - Todos os Jogos > 10.5'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,73 +17,68 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
+const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
-// Função para pegar o dia e o mês atual no formato do site (ex: "17 de julho")
-function obterDataBr() {
+function getDataHoje() {
     const agora = new Date();
-    const opcoes = { day: 'numeric', month: 'long' };
-    // Força o fuso horário do Brasil para não dar erro no servidor internacional do Render
-    return agora.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', ...opcoes }).toLowerCase();
+    return `${agora.getDate()} de ${meses[agora.getMonth()]}`;
 }
 
 async function monitorarJogos() {
     try {
-        const dataHoje = obterDataBr();
-        console.log(`[LOG] Iniciando varredura bruta para a data: ${dataHoje}`);
-        
+        const dataHoje = getDataHoje();
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 30000
+            timeout: 20000
         });
 
         const $ = cheerio.load(response.data);
-        let totalEncontrado NestaVarredura = 0;
+        const elementos = $('div, tr, li, td');
 
-        // Vasculha todas as linhas de tabelas estruturadas do site
-        $('tr').each((i, el) => {
-            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
-            const linhaLower = linhaTexto.toLowerCase();
+        elementos.each((i, el) => {
+            const linha = $(el).text().trim().replace(/\s+/g, ' ');
+            
+            // Filtro de Data: Só olha o dia de hoje
+            if (linha.includes("de julho") && !linha.includes(dataHoje)) {
+                return;
+            }
 
-            // REGRA 1: Precisa ser um confronto válido contendo " x "
-            if (linhaTexto.includes(' x ')) {
+            if (linha.includes(' x ')) {
+                // Regex busca qualquer número com decimal (ex: 10.5, 89.9)
+                const numeros = linha.match(/\d{1,2}\.\d/g);
                 
-                // REGRA 2: Filtro de segurança para garantir que o jogo pertence ao bloco de hoje
-                // Ignora se a linha mencionar textualmente outro mês ou outro dia específico
-                if (linhaLower.includes(' de ') && !linhaLower.includes(dataHoje)) {
-                    return; 
-                }
+                if (numeros) {
+                    for(let num of numeros) {
+                        let valor = parseFloat(num);
+                        
+                        // APENAS FILTRO DE PISO: > 10.5
+                        if (valor > 10.5) {
+                            const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
+                            const matchConfronto = linha.match(regexConfronto);
+                            const confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
-                // Captura o texto limpo da linha (Nome dos times + Estatísticas textuais que estiverem juntas)
-                const jogoFormatado = linhaTexto.trim();
+                            if (confronto && !jogosEnviados.has(confronto)) {
+                                jogosEnviados.add(confronto);
+                                
+                                const mensagem = `🔥 *Oportunidade - ${dataHoje}*\n` +
+                                                 `⚽ *Confronto:* ${confronto}\n` +
+                                                 `📊 *Média de Escanteios:* ${valor}`;
 
-                if (jogoFormatado.length > 8 && !jogosEnviados.has(jogoFormatado)) {
-                    jogosEnviados.add(jogoFormatado);
-                    totalEncontradoNestaVarredura++;
-
-                    // Envia o texto completo do jogo e das médias direto para o Telegram, sem travas
-                    const mensagem = `⚽ *Jogo de Hoje:*\n${jogoFormatado}`;
-                    bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                    
-                    console.log(`[SUCESSO] Jogo detectado e enviado: ${jogoFormatado}`);
+                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                                console.log(`✅ Enviado: ${confronto} | Média: ${valor}`);
+                            }
+                            break; 
+                        }
+                    }
                 }
             }
         });
-
-        console.log(`[LOG] Varredura finalizada. Novos jogos enviados nesta rodada: ${totalEncontradoNestaVarredura}`);
-
     } catch (e) {
-        console.error("[ERRO CRÍTICO] Falha ao acessar ou ler o site:", e.message);
+        console.error("Erro na busca:", e.message);
     }
 }
 
-// Limpa a lista de controle a cada 24 horas para reiniciar o monitoramento no dia seguinte
-setInterval(() => { 
-    jogosEnviados.clear(); 
-    console.log("[LOG] Cache de controle diário reiniciado.");
-}, 86400000); 
-
-// Varredura programada para rodar de 5 em 5 minutos
-setInterval(monitorarJogos, 300000); 
-
-// Execução imediata assim que o Render iniciar o serviço
+// Limpa cache diariamente
+setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+setInterval(monitorarJogos, 600000); 
 monitorarJogos();
