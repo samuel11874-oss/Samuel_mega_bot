@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Hoje (17 de julho)'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Somente Hoje'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -28,29 +28,30 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Esta variável controla se estamos lendo jogos de "hoje" ou não
-        let lendoHoje = false;
+        let lendoHoje = false; // Chave que controla se estamos na data correta
 
-        // Iteramos sobre todos os elementos que podem ser cabeçalhos ou linhas de jogo
-        $('h1, h2, h3, h4, tr').each((i, el) => {
-            const texto = $(el).text().trim();
-            const textoLower = texto.toLowerCase();
+        // Varremos a tabela procurando por datas e depois por jogos
+        $('tr').each((i, el) => {
+            const linha = $(el).text().trim().replace(/\s+/g, ' ');
+            const textoLower = linha.toLowerCase();
 
             // 1. Verifica se encontramos um cabeçalho de data
+            // Se encontrar "17" e "julho", ligamos a captura
             if (textoLower.includes('julho')) {
                 if (textoLower.includes('17')) {
-                    lendoHoje = true; // Achamos hoje, liga a captura
-                    console.log("-> Seção de hoje (17 de julho) encontrada.");
+                    lendoHoje = true; // Achamos hoje, liga a chave
+                    console.log("-> Seção de hoje (17 de julho) ativada.");
                 } else {
-                    lendoHoje = false; // Achamos outra data, desliga a captura
+                    // Se encontrar outra data de julho (ex: 18 de julho), desliga a captura
+                    lendoHoje = false; 
                 }
             }
 
-            // 2. Se estivermos na seção de hoje e for uma linha de jogo (tr)
-            if (lendoHoje && $(el).is('tr') && texto.includes(' x ')) {
-                const confronto = texto.replace(/\s+/g, ' ');
+            // 2. Se estivermos na seção de hoje e for uma linha de jogo (contém ' x ')
+            if (lendoHoje && linha.includes(' x ') && linha.length < 150) {
+                const confronto = linha.trim();
 
-                if (confronto.length > 10 && !jogosEnviados.has(confronto)) {
+                if (!jogosEnviados.has(confronto)) {
                     jogosEnviados.add(confronto);
                     
                     bot.sendMessage(CHAT_ID, `⚽ ${confronto}`).catch(console.error);
