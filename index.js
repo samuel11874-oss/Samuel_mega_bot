@@ -4,21 +4,26 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Modo Amplo'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Precisão'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
+// Pausa para evitar erro 429
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 const MOBILE_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
     'Referer': 'https://www.google.com/'
 };
 
+let jogosEnviados = new Set();
+
 async function monitorarJogos() {
     try {
-        console.log("--- Varredura Ampla Iniciada ---");
+        console.log("--- Varredura com Filtro de Precisão ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
@@ -26,37 +31,48 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        $('div').each((i, el) => {
-            const texto = $(el).text().trim().replace(/\s+/g, ' ');
-            
-            // Filtro mais simples: apenas tem que ser um jogo com " x "
-            if (texto.includes(' x ') && texto.length < 200) {
-                
-                // Log de Debug: Mostra tudo o que ele encontra
-                console.log(`🔎 Analisando: ${texto.substring(0, 60)}...`);
+        // Seleciona os elementos que contêm os jogos
+        const elementos = $('div'); 
 
-                const matchNumeros = texto.match(/(\d{1,2}\.?\d?)/);
+        for (let i = 0; i < elementos.length; i++) {
+            const texto = $(elementlementos[i]).text().trim().replace(/\s+/g, ' ');
+            
+            // Filtro: Apenas "Amanhã"
+            if (texto.includes('Amanhã') && texto.includes(' x ')) {
                 
-                if (matchNumeros) {
-                    const media = parseFloat(matchNumeros[0]);
+                // CRÍTICO: Busca apenas números com formato decimal (ex: 10.5, 12.1)
+                const matchMedia = texto.match(/(\d{1,2}\.\d{1,2})/);
+                
+                if (matchMedia) {
+                    const media = parseFloat(matchMedia[0]);
                     
-                    if (media > 11 && media <= 25) { 
+                    // Validação: Média entre 10.1 e 15.0
+                    if (media > 10.0 && media <= 15.0) {
+                        
                         const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
                         if (matchConfronto) {
                             const confronto = matchConfronto[0].trim();
-                            const msg = `⚽ *OPORTUNIDADE*\n\n` +
-                                        `⚔️ *Confronto:* ${confronto}\n` +
-                                        `📊 *Média:* ${media}\n\n` +
-                                        `🚀 _Samuel Mega Bot_`;
-                                        
-                            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
-                            console.log(`✅ Jogo encontrado e enviado: ${confronto} | Média: ${media}`);
+                            
+                            if (!jogosEnviados.has(confronto)) {
+                                jogosEnviados.add(confronto);
+                                
+                                const msg = `⚽ *JOGO DE AMANHÃ*\n\n` +
+                                            `⚔️ *Confronto:* ${confronto}\n` +
+                                            `📊 *Média Real:* ${media}\n\n` +
+                                            `🚀 _Samuel Mega Bot_`;
+                                            
+                                bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
+                                console.log(`✅ Enviado: ${confronto} | Média: ${media}`);
+                                
+                                // Pausa de 3 segundos para evitar erro 429
+                                await wait(3000);
+                            }
                         }
                     }
                 }
             }
-        });
+        }
         console.log("--- Varredura Finalizada ---");
     } catch (e) {
         console.error("Erro na busca:", e.message);
