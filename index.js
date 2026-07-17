@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Filtro de Data Ativo'));
+app.get('/', (req, res) => res.send('Bot Ativo - Apenas Jogos de Hoje'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,6 +20,7 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
+        console.log("Iniciando varredura focada nos jogos de hoje...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 20000
@@ -27,34 +28,37 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Focando nas linhas de tabela
-        $('tr').each((i, el) => {
+        // Voltando para o seletor que trouxe todos os dados com sucesso
+        const elementos = $('div, tr, li, td');
+
+        elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
-            // --- FILTRO DE DATA ---
-            // Só processa se a linha contiver "Hoje" ou a data de hoje "17 de julho"
-            const eHoje = linha.includes("Hoje") || linha.includes("17 de julho");
-            
-            if (eHoje && linha.includes(' x ')) {
+            // FILTRO DE DATA: O site cola a palavra "Hoje" nos jogos do dia atual
+            if (linha.includes(' x ') && linha.includes('Hoje')) {
                 
-                // Regex para capturar o confronto
                 const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                 const matchConfronto = linha.match(regexConfronto);
-                const confronto = matchConfronto ? matchConfronto[0].trim() : null;
+                let confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
-                // Captura a média numérica (independente de valor)
-                const numeros = linha.match(/\d{1,2}\.\d/g);
-                const valor = numeros ? numeros[0] : "N/A";
+                if (confronto) {
+                    // Remove o texto "Hoje" do início do confronto para o envio ficar bonito
+                    confronto = confronto.replace(/^Hoje\s*/i, '').trim();
 
-                if (confronto && !jogosEnviados.has(confronto)) {
-                    jogosEnviados.add(confronto);
+                    // Pega a média de escanteios (sem aplicar filtro de valor mínimo)
+                    const numeros = linha.match(/\d{1,2}\.\d/g);
+                    const valor = numeros ? numeros[0] : "N/A";
 
-                    const mensagem = `⚽ *Jogo de Hoje*\n` +
-                                     `*Confronto:* ${confronto}\n` +
-                                     `📊 *Média:* ${valor}`;
+                    if (!jogosEnviados.has(confronto)) {
+                        jogosEnviados.add(confronto);
 
-                    bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                    console.log(`✅ Enviado (Hoje): ${confronto} | Média: ${valor}`);
+                        const mensagem = `⚽ *Jogo de Hoje*\n` +
+                                         `*Confronto:* ${confronto}\n` +
+                                         `📊 *Média:* ${valor}`;
+
+                        bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                        console.log(`✅ Enviado: ${confronto} | Média: ${valor}`);
+                    }
                 }
             }
         });
@@ -69,5 +73,5 @@ setInterval(() => { jogosEnviados.clear(); }, 86400000);
 // Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
-// Primeira execução
+// Primeira execução imediata
 monitorarJogos();
