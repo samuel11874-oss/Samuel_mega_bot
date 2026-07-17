@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Limpeza de Linhas'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Links Individuais'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -27,21 +27,17 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Iteramos apenas pelas linhas (tr)
-        $('tr').each((i, el) => {
-            const linha = $(el).text().trim().replace(/\s+/g, ' ');
+        // Estratégia infalível: buscamos apenas os links (<a>) que contêm " x "
+        // Isso isola cada jogo individualmente, pois cada link é um jogo único
+        $('a').each((i, el) => {
+            const textoLink = $(el).text().trim();
 
-            // FILTRO DE SEGURANÇA:
-            // 1. Deve conter " x "
-            // 2. Não deve ser muito longa (para evitar container de vários jogos)
-            // 3. Deve conter "Hoje"
-            if (linha.includes(' x ') && linha.includes('Hoje') && linha.length < 150) {
+            if (textoLink.includes(' x ')) {
+                // Regex para garantir que pegamos o formato "Time x Time"
+                const match = textoLink.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                 
-                const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                const matchConfronto = linha.match(regexConfronto);
-                
-                if (matchConfronto) {
-                    let confronto = matchConfronto[0].replace('Hoje', '').trim();
+                if (match) {
+                    const confronto = match[0].trim();
 
                     if (!jogosEnviados.has(confronto)) {
                         jogosEnviados.add(confronto);
@@ -60,8 +56,10 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa o cache todo dia às meia-noite
+// Limpa o cache diário
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+
+// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
 monitorarJogos();
