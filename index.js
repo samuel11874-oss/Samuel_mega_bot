@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Total'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Apenas Hoje'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,10 +17,12 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
+// Data de hoje fixa para o filtro
+const DATA_HOJE = "17 de julho"; 
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura bruta na página...");
+        console.log("Iniciando varredura para jogos de hoje...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 30000
@@ -28,22 +30,26 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Procura por qualquer texto que tenha ' x ' (formato universal de jogo)
-        $('div, tr, span, td').each((i, el) => {
-            const texto = $(el).text().trim();
-            
-            // Critério Único: Deve conter ' x ' e ser curto (tamanho de nome de jogo)
-            if (texto.includes(' x ') && texto.length > 10 && texto.length < 150) {
-                
-                // Limpeza para evitar repetição de lixo visual
-                const confronto = texto.replace(/\s+/g, ' ');
+        // Vamos procurar nas linhas da tabela (tr)
+        $('tr').each((i, el) => {
+            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
 
-                if (!jogosEnviados.has(confronto)) {
+            // FILTRO DE DATA: Só processa se a linha contiver "17 de julho" OU
+            // se o bot já estiver "dentro" da seção de hoje. 
+            // Como sites mudam, vamos focar em verificar se a linha tem o confronto e a data
+            const contemConfronto = linhaTexto.includes(' x ');
+            const ehHoje = linhaTexto.toLowerCase().includes(DATA_HOJE.toLowerCase());
+
+            // Se for um jogo e for de hoje
+            if (contemConfronto && ehHoje) {
+                
+                const confronto = linhaTexto.trim();
+
+                if (confronto.length > 10 && !jogosEnviados.has(confronto)) {
                     jogosEnviados.add(confronto);
                     
-                    // Dispara para o Telegram
                     bot.sendMessage(CHAT_ID, `⚽ ${confronto}`).catch(console.error);
-                    console.log(`✅ Enviado: ${confronto}`);
+                    console.log(`✅ Enviado (Hoje): ${confronto}`);
                 }
             }
         });
@@ -52,11 +58,11 @@ async function monitorarJogos() {
     }
 }
 
-// Reseta o cache de jogos a cada 24 horas para não encher a memória
+// Reseta o cache a cada 24 horas
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 
 // Varredura a cada 10 minutos
 setInterval(monitorarJogos, 600000); 
 
-// Primeira execução ao ligar
+// Execução inicial
 monitorarJogos();
