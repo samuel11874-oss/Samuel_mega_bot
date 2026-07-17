@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Organizado'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Todos Jogos'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -26,33 +26,35 @@ async function monitorarJogos() {
         });
 
         const $ = cheerio.load(response.data);
-        
-        // Agora focado estritamente nas linhas da tabela (tr)
-        $('tbody tr').each((i, el) => {
+
+        // Estratégia de captura: Iterar apenas em linhas (tr) que contenham " x "
+        // Isso isola cada jogo individualmente
+        $('tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
-            // Verifica se é um jogo de Hoje e tem o formato de confronto " x "
+            // Filtro rigoroso: Só processa se tiver "Hoje" e o sinal de confronto " x "
+            // Isso evita pegar lixos de outras partes do site
             if (linha.includes('Hoje') && linha.includes(' x ')) {
                 
+                // Regex para limpar o texto e pegar apenas o confronto
                 const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                 const matchConfronto = linha.match(regexConfronto);
                 let confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
                 if (confronto) {
-                    // Remove a palavra "Hoje" que vem grudada no nome do time
+                    // Limpeza final do texto
                     confronto = confronto.replace(/^Hoje\s*/i, '').trim();
 
                     if (!jogosEnviados.has(confronto)) {
                         jogosEnviados.add(confronto);
 
-                        // Layout do Card
-                        const mensagem = `⚽ *NOVO JOGO*\n` +
+                        const mensagem = `⚽ *JOGO DE HOJE*\n` +
                                          `━━━━━━━━━━━━━━\n` +
                                          `*Partida:* ${confronto}\n` +
                                          `━━━━━━━━━━━━━━`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado: ${confronto}`);
+                        console.log(`✅ Enviado individualmente: ${confronto}`);
                     }
                 }
             }
@@ -62,11 +64,7 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa cache diariamente
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-
-// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
-// Primeira execução
 monitorarJogos();
