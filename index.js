@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Bloco Isolado'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Filtro de Data Rigoroso'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -27,46 +27,45 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Estratégia: Encontrar o elemento que contém o texto "Hoje"
-        // E capturar apenas os elementos (tr) seguintes até o próximo cabeçalho de data
-        let hojeEncontrado = false;
+        // Esta variável controla se estamos dentro do bloco de "Hoje"
+        let capturandoHoje = false;
 
-        // Limpa o log a cada verificação para evitar poluição
-        console.log("Iniciando varredura apenas no bloco de Hoje...");
+        // Selecionamos cabeçalhos (h2/h3) e linhas de tabela (tr)
+        // Isso nos permite detectar a mudança de data
+        $('h2, h3, tr').each((i, el) => {
+            const textoLinha = $(el).text().trim();
+            const textoLower = textoLinha.toLowerCase();
 
-        // Percorre elementos de topo (h2/h3) e tabelas
-        $('h1, h2, h3, tr').each((i, el) => {
-            const texto = $(el).text().trim().toLowerCase();
+            // 1. INÍCIO: Se acharmos o título "Hoje", ativamos a captura
+            if (textoLower.includes('hoje')) {
+                capturandoHoje = true;
+                return; 
+            }
 
-            // Identifica o cabeçalho "Hoje"
-            if (texto.includes('hoje')) {
-                hojeEncontrado = true;
+            // 2. FIM: Se encontrarmos "Amanhã" ou qualquer data (ex: 18/07), desativamos a captura imediatamente
+            if (capturandoHoje && (textoLower.includes('amanhã') || /\d{2}\/\d{2}/.test(textoLower))) {
+                capturandoHoje = false;
                 return;
             }
 
-            // Se encontrarmos qualquer outro cabeçalho de data, paramos a captura
-            if (hojeEncontrado && ($(el).is('h2') || $(el).is('h3') || texto.includes('amanhã') || /\d{2}\/\d{2}/.test(texto))) {
-                hojeEncontrado = false;
-                return;
-            }
-
-            // Se estivermos dentro do bloco de "Hoje", processamos apenas as linhas de jogo (tr)
-            if (hojeEncontrado && $(el).is('tr') && texto.includes(' x ')) {
-                const match = $(el).text().trim().match(/([a-zà-ÿ\s]{3,})\sx\s([a-zà-ÿ\s]{3,})/i);
+            // 3. CAPTURA: Só processamos linhas de jogo (tr) SE estivermos no modo "capturandoHoje"
+            if (capturandoHoje && $(el).is('tr') && textoLinha.includes(' x ')) {
+                // Regex para capturar o confronto "Time A x Time B"
+                const match = textoLinha.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                 
                 if (match) {
                     const confronto = match[0].trim();
 
                     if (!jogosEnviados.has(confronto)) {
                         jogosEnviados.add(confronto);
-                        
+
                         const mensagem = `⚽ *JOGO DE HOJE*\n` +
                                          `━━━━━━━━━━━━━━\n` +
                                          `*Partida:* ${confronto}\n` +
                                          `━━━━━━━━━━━━━━`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado: ${confronto}`);
+                        console.log(`✅ Enviado (Hoje): ${confronto}`);
                     }
                 }
             }
@@ -76,8 +75,9 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa cache diariamente
+// Limpa o cache diário para permitir reenvio no dia seguinte
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+
 // Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
