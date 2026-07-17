@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Filtro de Data Flexível'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Organizado e Bloqueio de Datas'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -27,31 +27,28 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        let dataPermitida = false;
+        let podeProcessar = false;
 
-        // Itera sobre cabeçalhos (para definir a data) e linhas de jogo
-        $('h1, h2, h3, tr').each((i, el) => {
-            const texto = $(el).text().trim();
-            const textoLower = texto.toLowerCase();
+        // Varredura por linhas da tabela
+        $('tr').each((i, el) => {
+            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
+            const textoLower = linhaTexto.toLowerCase();
 
-            // 1. Deteção de Data: Procura por 17 de Julho ou 17/07
-            if (textoLower.includes('17') && (textoLower.includes('jul') || textoLower.includes('/07'))) {
-                dataPermitida = true;
-                return;
-            }
-            
-            // 2. Bloqueio: Se encontrar qualquer outra data numérica (tipo 18/07 ou 16/07) ou dias da semana, trava
-            if (dataPermitida && (
-                (textoLower.includes('/') && !textoLower.includes('17/07')) ||
-                (textoLower.includes('18') || textoLower.includes('16') || textoLower.includes('19'))
-            )) {
-                dataPermitida = false;
+            // 1. ATIVAÇÃO: Se achar a palavra "Hoje", o bot começa a capturar
+            if (textoLower.includes('hoje')) {
+                podeProcessar = true;
                 return;
             }
 
-            // 3. Captura: Se dataPermitida for true e for uma linha de jogo
-            if (dataPermitida && $(el).is('tr') && texto.includes(' x ')) {
-                const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+            // 2. BLOQUEIO: Se achar qualquer indicativo de outra data, o bot para imediatamente
+            if (podeProcessar && (textoLower.includes('amanhã') || /\d{2}\/\d{2}/.test(textoLower))) {
+                podeProcessar = false;
+                return;
+            }
+
+            // 3. CAPTURA: Só processa se estiver dentro do bloco de "Hoje" e for uma linha de jogo
+            if (podeProcessar && textoLower.includes(' x ')) {
+                const match = linhaTexto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                 
                 if (match) {
                     const confronto = match[0].trim();
@@ -59,13 +56,17 @@ async function monitorarJogos() {
                     if (!jogosEnviados.has(confronto)) {
                         jogosEnviados.add(confronto);
 
-                        const mensagem = `⚽ *JOGO DE HOJE (17/07)*\n` +
-                                         `━━━━━━━━━━━━━━\n` +
-                                         `*Partida:* ${confronto}\n` +
-                                         `━━━━━━━━━━━━━━`;
+                        // Layout do Card Organizado
+                        const mensagem = 
+`⚽ *NOVA OPORTUNIDADE*\n` +
+`━━━━━━━━━━━━━━━━━━\n` +
+`⚔️ *Partida:* ${confronto}\n` +
+`📅 *Data:* 17/07/2026\n` +
+`━━━━━━━━━━━━━━━━━━\n` +
+`🔗 _Verificar estatísticas agora_`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado (Data Confirmada): ${confronto}`);
+                        console.log(`✅ Enviado: ${confronto}`);
                     }
                 }
             }
@@ -75,8 +76,9 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa cache diário
+// Limpa o cache diário
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+
 // Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
