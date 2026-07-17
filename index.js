@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Total Hoje'));
+app.get('/', (req, res) => res.send('Bot Ativo - Captura Pura'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,50 +17,36 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
-const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-
-function getDataHoje() {
-    const agora = new Date();
-    return `${agora.getDate()} de ${meses[agora.getMonth()]}`;
-}
 
 async function monitorarJogos() {
     try {
-        const dataHoje = getDataHoje();
-        console.log(`Buscando jogos para: ${dataHoje}`);
-        
+        console.log("Iniciando varredura total...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 20000
+            timeout: 30000
         });
 
         const $ = cheerio.load(response.data);
-        // Busca linhas de tabela que costumam conter os jogos
-        const elementos = $('tr');
-
-        elementos.each((i, el) => {
+        
+        // Vamos capturar TUDO que for linha de tabela (tr)
+        $('tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro de Data: Garante que só pegamos jogos de hoje
-            if (linha.includes("de julho") && !linha.includes(dataHoje)) {
-                return;
-            }
-
-            // Identificação de Jogo
+            // FILTRO ÚNICO: Só precisa ter " x ".
+            // SEM FILTRO DE DATA, SEM FILTRO DE NÚMERO.
             if (linha.includes(' x ')) {
-                // Remove qualquer lógica de filtro numérico anterior.
-                // Identifica apenas o confronto
-                const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                const matchConfronto = linha.match(regexConfronto);
-                const confronto = matchConfronto ? matchConfronto[0].trim() : null;
+                
+                // Vamos logar o que estamos encontrando para debugarmos se necessário
+                console.log(`Lendo linha: ${linha.substring(0, 50)}...`);
 
-                if (confronto && !jogosEnviados.has(confronto)) {
+                const confronto = linha.trim();
+
+                if (!jogosEnviados.has(confronto)) {
                     jogosEnviados.add(confronto);
                     
-                    const mensagem = `⚽ *Jogo de Hoje:* ${confronto}`;
-
-                    bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                    console.log(`✅ Enviado: ${confronto}`);
+                    const mensagem = `⚽ ${confronto}`;
+                    bot.sendMessage(CHAT_ID, mensagem).catch(console.error);
+                    console.log(`✅ ENVIADO: ${confronto}`);
                 }
             }
         });
@@ -69,8 +55,11 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa cache diariamente
+// Limpa cache a cada 24h
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+
 // Roda a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
+
+// Primeira execução imediata
 monitorarJogos();
