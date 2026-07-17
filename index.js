@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Todos Jogos'));
+app.get('/', (req, res) => res.send('Bot Ativo - Versão Estável'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -26,35 +26,29 @@ async function monitorarJogos() {
         });
 
         const $ = cheerio.load(response.data);
-
-        // Estratégia de captura: Iterar apenas em linhas (tr) que contenham " x "
-        // Isso isola cada jogo individualmente
+        
+        // Focando apenas nas linhas de tabela
         $('tr').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
-            // Filtro rigoroso: Só processa se tiver "Hoje" e o sinal de confronto " x "
-            // Isso evita pegar lixos de outras partes do site
+            // Filtro original: contém "Hoje" e o sinal de confronto " x "
             if (linha.includes('Hoje') && linha.includes(' x ')) {
                 
-                // Regex para limpar o texto e pegar apenas o confronto
                 const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
                 const matchConfronto = linha.match(regexConfronto);
                 let confronto = matchConfronto ? matchConfronto[0].trim() : null;
 
                 if (confronto) {
-                    // Limpeza final do texto
                     confronto = confronto.replace(/^Hoje\s*/i, '').trim();
 
                     if (!jogosEnviados.has(confronto)) {
                         jogosEnviados.add(confronto);
 
-                        const mensagem = `⚽ *JOGO DE HOJE*\n` +
-                                         `━━━━━━━━━━━━━━\n` +
-                                         `*Partida:* ${confronto}\n` +
-                                         `━━━━━━━━━━━━━━`;
+                        const mensagem = `⚽ *Jogo de Hoje*\n` +
+                                         `*Confronto:* ${confronto}`;
 
                         bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado individualmente: ${confronto}`);
+                        console.log(`✅ Enviado: ${confronto}`);
                     }
                 }
             }
