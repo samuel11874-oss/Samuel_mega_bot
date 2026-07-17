@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Detetive'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura 10.5+'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -12,47 +12,61 @@ const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
 const MOBILE_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    'Accept-Language': 'pt-BR,pt;q=0.9'
+    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+    'Referer': 'https://www.google.com/'
 };
 
 let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("Acessando o site...");
+        console.log("Iniciando varredura...");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 30000
         });
 
         const $ = cheerio.load(response.data);
-        const htmlTotal = $('body').text();
-        console.log(`Página carregada. Tamanho do conteúdo: ${htmlTotal.length} caracteres.`);
+        
+        // Vamos varrer parágrafos, tabelas e divs para garantir que pegamos tudo
+        const elementos = $('tr, div, p'); 
 
-        // Vamos procurar qualquer texto que contenha " x " na página toda
-        // para ver se pelo menos o texto dos jogos está vindo
-        const conteudos = $('div, tr, li, p'); 
-        let achouAlgum = false;
-
-        conteudos.each((i, el) => {
-            const linha = $(el).text().trim();
-            if (linha.includes(' x ') && linha.length < 100) { // Jogos curtos
-                console.log(`Jogo encontrado no seletor: ${linha}`);
-                achouAlgum = true;
+        elementos.each((i, el) => {
+            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
+            
+            // Filtro para achar jogos
+            if (linhaTexto.includes(' x ')) {
+                // Converte vírgula para ponto e captura números como 10.6, 11.2, 10,5 etc
+                const textoLimpo = linhaTexto.replace(',', '.');
+                const matchNumeros = textoLimpo.match(/(\d{2}\.\d)/g);
                 
-                if (!jogosEnviados.has(linha)) {
-                    jogosEnviados.add(linha);
-                    bot.sendMessage(CHAT_ID, `⚽ ${linha}`).catch(console.error);
+                if (matchNumeros) {
+                    for (let n of matchNumeros) {
+                        const valor = parseFloat(n);
+                        
+                        // DEBUG: Se o valor for próximo de 10, veremos no log
+                        if (valor > 10.0) {
+                            console.log(`Debug: Encontrei valor ${valor} na linha: ${linhaTexto.substring(0, 30)}...`);
+                        }
+
+                        // CRITÉRIO FINAL: Acima de 10.5
+                        if (valor > 10.5 && valor < 15.0) {
+                            const confrontoMatch = linhaTexto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                            const confronto = confrontoMatch ? confrontoMatch[0].trim() : null;
+
+                            if (confronto && !jogosEnviados.has(confronto)) {
+                                jogosEnviados.add(confronto);
+                                
+                                const mensagem = `⚽ *${confronto}*\n📊 Média FT: ${valor}`;
+                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                                console.log(`✅ Jogo enviado: ${confronto} com média ${valor}`);
+                            }
+                            break; 
+                        }
+                    }
                 }
             }
         });
-
-        if (!achouAlgum) {
-            console.log("Nenhum jogo encontrado com o seletor padrão. Verificando amostra do HTML...");
-            console.log(htmlTotal.substring(0, 500)); // Imprime um pedaço para eu ver
-        }
-
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
