@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Precisão Operacional'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro Rigoroso'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,47 +17,45 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
+const dataHoje = "16 de julho";
 
 async function monitorarJogos() {
     try {
-        console.log("--- Varredura de Precisão (16/07 e 17/07) ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 20000
+            timeout: 15000
         });
 
         const $ = cheerio.load(response.data);
-        
-        $('div').each((i, el) => {
-            const texto = $(el).text().trim().replace(/\s+/g, ' ');
+        const elementos = $('div, tr, li, td');
+
+        elementos.each((i, el) => {
+            const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Busca específica por datas 16/07 (Hoje) ou 17/07 (Amanhã)
-            if ((texto.includes('16/07') || texto.includes('17/07')) && texto.includes(' x ')) {
+            // Filtro rigoroso: Se tiver data (ex: 18 de julho) e NÃO for hoje, descarta imediatamente
+            if (linha.includes("de julho") && !linha.includes(dataHoje)) {
+                return;
+            }
+
+            if (linha.includes(' x ')) {
+                const numeros = linha.match(/\d{1,2}\.\d/g);
                 
-                const matchNumeros = texto.match(/(\d{1,2}\.?\d?)/);
-                
-                if (matchNumeros) {
-                    const media = parseFloat(matchNumeros[0]);
-                    
-                    if (media > 11) {
-                        const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
-                        
-                        if (matchConfronto) {
-                            const confronto = matchConfronto[0].trim();
-                            const dataEncontrada = texto.includes('16/07') ? '16/07 (Hoje)' : '17/07 (Amanhã)';
+                if (numeros && numeros.length >= 2) {
+                    const mediaTotal = parseFloat(numeros[numeros.length - 1]);
+
+                    if (mediaTotal > 10.5) {
+                        const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
+                        const matchConfronto = linha.match(regexConfronto);
+                        const confronto = matchConfronto ? matchConfronto[0].trim() : null;
+
+                        if (confronto && !jogosEnviados.has(confronto)) {
+                            jogosEnviados.add(confronto);
                             
-                            if (!jogosEnviados.has(confronto)) {
-                                jogosEnviados.add(confronto);
-                                
-                                const msg = `⚽ *ALERTA DE OPORTUNIDADE*\n\n` +
-                                            `📅 *Data:* ${dataEncontrada}\n` +
-                                            `⚔️ *Confronto:* ${confronto}\n` +
-                                            `📊 *Média:* ${media}\n\n` +
-                                            `🚀 _Samuel Mega Bot_`;
-                                            
-                                bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`✅ Jogo encontrado: ${confronto} | ${dataEncontrada} | ${media}`);
-                            }
+                            const mensagem = `🔥 *Oportunidade de Hoje*\n` +
+                                             `⚽ *Confronto:* ${confronto}\n` +
+                                             `📊 *Média Total:* ${mediaTotal}`;
+
+                            bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
                         }
                     }
                 }
@@ -68,6 +66,5 @@ async function monitorarJogos() {
     }
 }
 
-// Roda a cada 10 minutos
 setInterval(monitorarJogos, 600000); 
 monitorarJogos();
