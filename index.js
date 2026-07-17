@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Escanteios - Média > 11'));
+app.get('/', (req, res) => res.send('Bot de Escanteios - Filtro Hoje'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,7 +20,7 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("--- Iniciando Varredura (Filtro > 11) ---");
+        console.log("--- Iniciando Varredura (Somente Hoje) ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 15000
@@ -31,32 +31,35 @@ async function monitorarJogos() {
         $('div').each((i, el) => {
             const texto = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Verifica se tem confronto e não é cabeçalho
-            if (texto.includes(' x ') && !texto.includes('ESTATÍSTICAS') && texto.length < 150) {
+            // 1. Filtro: Deve conter "Hoje", " x " e não ser cabeçalho
+            if (texto.includes('Hoje') && texto.includes(' x ') && !texto.includes('ESTATÍSTICAS')) {
                 
-                // Tenta capturar o número da média
-                const matchNumeros = texto.match(/\d{2}/);
+                // 2. Extração: Procura um número decimal (ex: 10.5)
+                const matchMedia = texto.match(/(\d{1,2}\.\d)/);
                 
-                if (matchNumeros) {
-                    const media = parseInt(matchNumeros[0]);
+                if (matchMedia) {
+                    const media = parseFloat(matchMedia[0]);
                     
-                    // AQUI ESTÁ A MUDANÇA: Filtro de média > 11
-                    if (media > 11 && media < 20) {
-                        const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                    // 3. Filtro de Média > 11
+                    if (media > 11) {
+                        const matchConfronto = texto.match(/Hoje([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/i);
                         
                         if (matchConfronto) {
-                            const confronto = matchConfronto[0].trim();
+                            const confronto = matchConfronto[0].replace('Hoje', '').trim();
                             
                             if (!jogosEnviados.has(confronto)) {
                                 jogosEnviados.add(confronto);
-                                const msg = `🔥 *Oportunidade:* ${confronto}\n📊 *Média Detectada:* ${media}`;
+                                
+                                // Card Organizado
+                                const msg = `⚽ *JOGO DO DIA*\n\n` +
+                                            `⚔️ *Confronto:* ${confronto}\n` +
+                                            `📊 *Média de Escanteios:* ${media}\n\n` +
+                                            `🚀 _Análise enviada via Samuel Mega Bot_`;
+                                            
                                 bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`✅ Jogo enviado: ${confronto} | Média: ${media}`);
+                                console.log(`✅ Enviado: ${confronto} | Média: ${media}`);
                             }
                         }
-                    } else {
-                        // Log opcional para você ver que ele está filtrando (não envia ao Telegram)
-                        // console.log(`👁️ Visto: ${texto.substring(0, 40)}... | Média: ${media} (Ignorado)`);
                     }
                 }
             }
