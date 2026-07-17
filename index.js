@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Captura Global'));
+app.get('/', (req, res) => res.send('Bot Ativo - Soma das Médias > 10.5'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,32 +17,66 @@ const MOBILE_HEADERS = {
 };
 
 let jogosEnviados = new Set();
+const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+function getDataHoje() {
+    const agora = new Date();
+    return `${agora.getDate()} de ${meses[agora.getMonth()]}`;
+}
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura global de todas as ligas...");
+        const dataHoje = getDataHoje();
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 30000
+            timeout: 20000
         });
 
         const $ = cheerio.load(response.data);
-        
-        // Focamos especificamente em linhas de tabela (tr), que é onde o site lista os jogos
-        $('tr').each((i, el) => {
-            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
-            
-            // Critério: Contém " x "? É um jogo. Sem filtro de data ou liga.
-            if (linhaTexto.includes(' x ') && linhaTexto.length > 10 && linhaTexto.length < 200) {
-                
-                const confronto = linhaTexto.trim();
+        const elementos = $('div, tr, li, td');
 
-                // Evita enviar o mesmo jogo várias vezes na mesma execução
-                if (!jogosEnviados.has(confronto)) {
-                    jogosEnviados.add(confronto);
-                    
-                    bot.sendMessage(CHAT_ID, `⚽ ${confronto}`).catch(console.error);
-                    console.log(`✅ Enviado (Global): ${confronto}`);
+        elementos.each((i, el) => {
+            const linha = $(el).text().trim().replace(/\s+/g, ' ');
+            
+            // Filtro de Data
+            if (linha.includes("de julho") && !linha.includes(dataHoje)) {
+                return;
+            }
+
+            if (linha.includes(' x ')) {
+                // Regex busca todos os números decimais da linha
+                const numeros = linha.match(/\d{1,2}\.\d/g);
+                
+                if (numeros && numeros.length >= 2) {
+                    // Filtra apenas números que fazem sentido para escanteios (ex: 2.0 a 9.0 por time)
+                    // Isso exclui minutos de jogo (ex: 89.9) ou odds altas
+                    const mediasPossiveis = numeros
+                        .map(n => parseFloat(n))
+                        .filter(n => n >= 2.0 && n <= 9.0);
+
+                    if (mediasPossiveis.length >= 2) {
+                        const soma = mediasPossiveis[0] + mediasPossiveis[1];
+
+                        // CRITÉRIO: SOMA > 10.5
+                        if (soma > 10.5) {
+                            const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
+                            const matchConfronto = linha.match(regexConfronto);
+                            const confronto = matchConfronto ? matchConfronto[0].trim() : null;
+
+                            if (confronto && !jogosEnviados.has(confronto)) {
+                                jogosEnviados.add(confronto);
+                                
+                                const mensagem = `🔥 *Oportunidade - Soma > 10.5*\n` +
+                                                 `📅 *Data:* ${dataHoje}\n` +
+                                                 `⚽ *Confronto:* ${confronto}\n` +
+                                                 `📊 *Soma das Médias:* ${soma.toFixed(1)} ` +
+                                                 `(${mediasPossiveis[0]} + ${mediasPossiveis[1]})`;
+
+                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                                console.log(`✅ Enviado: ${confronto} | Soma: ${soma}`);
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -51,11 +85,6 @@ async function monitorarJogos() {
     }
 }
 
-// Reseta o cache de jogos a cada 24 horas para não sobrecarregar
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-
-// Varredura a cada 10 minutos
 setInterval(monitorarJogos, 600000); 
-
-// Primeira execução ao ligar
 monitorarJogos();
