@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Filtro 10.5+'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro de Médias Reais'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -29,7 +29,7 @@ async function monitorarJogos() {
         const dataHoje = getDataHoje();
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 15000
+            timeout: 20000
         });
 
         const $ = cheerio.load(response.data);
@@ -38,41 +38,37 @@ async function monitorarJogos() {
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Filtro de data mantido
+            // Ignora linhas que não são de hoje
             if (linha.includes("de julho") && !linha.includes(dataHoje)) {
                 return;
             }
 
             if (linha.includes(' x ')) {
-                // Regex para capturar números decimais
-                const numeros = linha.match(/\d{2}\.\d/g);
+                // Regex busca números decimais
+                const numeros = linha.match(/\d{1,2}\.\d/g);
                 
                 if (numeros) {
-                    let mediaValida = 0;
-                    
                     for(let num of numeros) {
                         let valor = parseFloat(num);
-                        // FILTRO RIGOROSO: > 10.5 e <= 16.0 (Ignora minutos 89.9 ou 59.7)
-                        if (valor > 10.5 && valor <= 16.0) {
-                            mediaValida = valor;
+                        
+                        // FILTRO DE MÉDIAS REAIS: > 10.5 E <= 14.5
+                        // Isso elimina minutos de gol (89.9) e odds altas
+                        if (valor > 10.5 && valor <= 14.5) {
+                            const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
+                            const matchConfronto = linha.match(regexConfronto);
+                            const confronto = matchConfronto ? matchConfronto[0].trim() : null;
+
+                            if (confronto && !jogosEnviados.has(confronto)) {
+                                jogosEnviados.add(confronto);
+                                
+                                const mensagem = `🔥 *Oportunidade - ${dataHoje}*\n` +
+                                                 `⚽ *Confronto:* ${confronto}\n` +
+                                                 `📊 *Média de Escanteios:* ${valor}`;
+
+                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                                console.log(`✅ Enviado: ${confronto} | Média Real: ${valor}`);
+                            }
                             break; 
-                        }
-                    }
-
-                    if (mediaValida > 10.5) {
-                        const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                        const matchConfronto = linha.match(regexConfronto);
-                        const confronto = matchConfronto ? matchConfronto[0].trim() : null;
-
-                        if (confronto && !jogosEnviados.has(confronto)) {
-                            jogosEnviados.add(confronto);
-                            
-                            const mensagem = `🔥 *Oportunidade - ${dataHoje}*\n` +
-                                             `⚽ *Confronto:* ${confronto}\n` +
-                                             `📊 *Média de Escanteios:* ${mediaValida}`;
-
-                            bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                            console.log(`✅ Enviado: ${confronto} | Média: ${mediaValida}`);
                         }
                     }
                 }
