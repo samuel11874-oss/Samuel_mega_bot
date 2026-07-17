@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Organizado e Bloqueio de Datas'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro de Cantos Ativado'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -29,44 +29,54 @@ async function monitorarJogos() {
         
         let podeProcessar = false;
 
-        // Varredura por linhas da tabela
+        // Lemos as linhas (tr) da tabela
         $('tr').each((i, el) => {
             const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
             const textoLower = linhaTexto.toLowerCase();
 
-            // 1. ATIVAÇÃO: Se achar a palavra "Hoje", o bot começa a capturar
+            // 1. Controle de Data: Só processa no bloco "Hoje"
             if (textoLower.includes('hoje')) {
                 podeProcessar = true;
                 return;
             }
-
-            // 2. BLOQUEIO: Se achar qualquer indicativo de outra data, o bot para imediatamente
             if (podeProcessar && (textoLower.includes('amanhã') || /\d{2}\/\d{2}/.test(textoLower))) {
                 podeProcessar = false;
                 return;
             }
 
-            // 3. CAPTURA: Só processa se estiver dentro do bloco de "Hoje" e for uma linha de jogo
+            // 2. Filtro: Verifica se é um jogo e se tem média > 10.5
             if (podeProcessar && textoLower.includes(' x ')) {
-                const match = linhaTexto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                 
-                if (match) {
-                    const confronto = match[0].trim();
+                // Regex para pegar um número decimal (ex: 10.6, 11.2, 12.0) na linha
+                // Procuramos por números com vírgula ou ponto, que representam a média
+                const statMatch = linhaTexto.match(/(\d{1,2}[.,]\d)/);
+                
+                if (statMatch) {
+                    const media = parseFloat(statMatch[0].replace(',', '.'));
 
-                    if (!jogosEnviados.has(confronto)) {
-                        jogosEnviados.add(confronto);
+                    // AQUI ESTÁ O CRITÉRIO: Média > 10.5
+                    if (media > 10.5) {
+                        const matchConfronto = linhaTexto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                        
+                        if (matchConfronto) {
+                            const confronto = matchConfronto[0].trim();
 
-                        // Layout do Card Organizado
-                        const mensagem = 
-`⚽ *NOVA OPORTUNIDADE*\n` +
+                            if (!jogosEnviados.has(confronto)) {
+                                jogosEnviados.add(confronto);
+
+                                const mensagem = 
+`⚽ *OPORTUNIDADE DE CANTO*\n` +
 `━━━━━━━━━━━━━━━━━━\n` +
 `⚔️ *Partida:* ${confronto}\n` +
+`📈 *Média Cantos:* ${media}\n` +
 `📅 *Data:* 17/07/2026\n` +
 `━━━━━━━━━━━━━━━━━━\n` +
-`🔗 _Verificar estatísticas agora_`;
+`🔗 _Análise em Tempo Real_`;
 
-                        bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ Enviado: ${confronto}`);
+                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                                console.log(`✅ Enviado: ${confronto} (Média: ${media})`);
+                            }
+                        }
                     }
                 }
             }
@@ -76,10 +86,7 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa o cache diário
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-
-// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
 monitorarJogos();
