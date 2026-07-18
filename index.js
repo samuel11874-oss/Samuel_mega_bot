@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Monitorando Jogos do Dia'));
+app.get('/', (req, res) => res.send('Bot Ativo - Filtro Somente Hoje'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,7 +16,6 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-// Cache para evitar spam dos mesmos jogos
 let jogosEnviados = new Set();
 
 async function monitorarJogos() {
@@ -27,21 +26,32 @@ async function monitorarJogos() {
         });
 
         const $ = cheerio.load(response.data);
-        
+        let capturandoHoje = false; // Trava de segurança
+
         $('div, tr, li, td, span').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
+            const lowerLinha = linha.toLowerCase();
 
-            // Filtra apenas linhas que possuem um confronto
-            if (linha.includes(' x ')) {
+            // LÓGICA DE DATA:
+            // Se encontrar "hoje", libera a captura. Se encontrar dia da semana, bloqueia.
+            if (lowerLinha.includes('hoje')) {
+                capturandoHoje = true;
+            } else if (lowerLinha.includes('segunda') || lowerLinha.includes('terça') || lowerLinha.includes('quarta') || 
+                       lowerLinha.includes('quinta') || lowerLinha.includes('sexta') || lowerLinha.includes('sábado') || 
+                       lowerLinha.includes('domingo')) {
+                capturandoHoje = false;
+            }
+
+            // Só processa se a "capturandoHoje" estiver liberada E contiver um jogo
+            if (capturandoHoje && linha.includes(' x ')) {
                 const matchNumero = linha.match(/(\d{2}[.,]\d)/);
                 
                 if (matchNumero) {
                     const valor = parseFloat(matchNumero[0].replace(',', '.'));
 
-                    // Filtro de Oportunidade Real (10.6 a 15.0)
+                    // Filtro de Média (10.6 a 15.0)
                     if (valor > 10.5 && valor <= 15.0) {
                         
-                        // Limpeza do nome do confronto
                         let confronto = linha.replace(/Hoje/gi, '').replace(/\d{2}\/\d{2}/g, '').trim();
                         const matchConfronto = confronto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
@@ -49,28 +59,25 @@ async function monitorarJogos() {
                             const jogoFinal = matchConfronto[0].trim();
                             jogosEnviados.add(jogoFinal);
 
-                            const mensagem = `⚽ *OPORTUNIDADE REAL (JOGO DO DIA)*\n` +
+                            const mensagem = `⚽ *JOGO DO DIA (HOJE)*\n` +
                                              `⚔️ *Confronto:* ${jogoFinal}\n` +
                                              `📊 *Média FT:* ${valor.toFixed(1)}\n` +
                                              `━━━━━━━━━━━━━━`;
 
                             bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                            console.log(`✅ ENVIADO: ${jogoFinal} | Média: ${valor}`);
+                            console.log(`✅ ENVIADO HOJE: ${jogoFinal} | Média: ${valor}`);
                         }
                     }
                 }
             }
         });
     } catch (e) {
-        console.error("Erro na busca automática:", e.message);
+        console.error("Erro na busca:", e.message);
     }
 }
 
-// Limpa o cache todo dia às 00:00 (ou a cada 24h) para resetar o monitoramento
+// Limpa cache diariamente
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-
-// Monitora o site a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
-// Execução inicial
 monitorarJogos();
