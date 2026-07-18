@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Modo Seção Estrita'));
+app.get('/', (req, res) => res.send('Bot em Teste: Buscando apenas Amanhã'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -27,58 +27,49 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Estado da seção: 'aguardando', 'hoje', 'bloqueado'
+        // Estado: 'aguardando', 'amanhã', 'bloqueado'
         let estadoSecao = 'aguardando'; 
 
-        // Vamos percorrer os elementos que contêm os jogos (geralmente linhas de tabela ou divs)
-        $('div, tr').each((i, el) => {
-            const textoElemento = $(el).text().trim().toLowerCase();
+        $('div, tr, li, td, span').each((i, el) => {
+            const texto = $(el).text().trim().toLowerCase();
             
-            // 1. Identifica se mudamos de seção
-            if (textoElemento.includes('hoje')) {
-                estadoSecao = 'hoje';
-            } else if (['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo', 'amanhã'].some(dia => textoElemento.includes(dia))) {
+            // Lógica do teste: Procura pela palavra "Amanhã"
+            if (texto.includes('amanhã')) {
+                estadoSecao = 'amanhã';
+                console.log(">>> ENCONTREI A SEÇÃO: Amanhã");
+            } 
+            // Se achar qualquer outro dia, bloqueia
+            else if (['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo', 'hoje'].some(dia => texto.includes(dia))) {
                 estadoSecao = 'bloqueado';
             }
 
-            // 2. Só processa se estivermos na seção 'hoje' E tiver um confronto
-            if (estadoSecao === 'hoje' && textoElemento.includes(' x ')) {
-                const matchNumero = textoElemento.match(/(\d{2}[.,]\d)/);
+            // Processa apenas se estiver na seção de amanhã
+            if (estadoSecao === 'amanhã' && texto.includes(' x ')) {
+                const matchNumero = texto.match(/(\d{2}[.,]\d)/);
                 
                 if (matchNumero) {
                     const valor = parseFloat(matchNumero[0].replace(',', '.'));
 
-                    // Filtro de Média (10.6 a 15.0)
                     if (valor > 10.5 && valor <= 15.0) {
+                        const jogoLimpo = $(el).text().trim().replace(/amanhã/gi, '').trim();
+                        const matchConfronto = jogoLimpo.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
-                        const linhaLimpa = $(el).text().trim();
-                        const matchConfronto = linhaLimpa.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
-                        
-                        if (matchConfronto) {
+                        if (matchConfronto && !jogosEnviados.has(matchConfronto[0])) {
                             const jogoFinal = matchConfronto[0].trim();
-                            
-                            if (!jogosEnviados.has(jogoFinal)) {
-                                jogosEnviados.add(jogoFinal);
+                            jogosEnviados.add(jogoFinal);
 
-                                const mensagem = `⚽ *JOGO DE HOJE*\n` +
-                                                 `⚔️ *Confronto:* ${jogoFinal}\n` +
-                                                 `📊 *Média FT:* ${valor.toFixed(1)}\n` +
-                                                 `━━━━━━━━━━━━━━`;
-
-                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`✅ ENVIADO HOJE: ${jogoFinal} | Média: ${valor}`);
-                            }
+                            bot.sendMessage(CHAT_ID, `🚀 *TESTE AMANHÃ*\n⚔️ ${jogoFinal}\n📊 ${valor.toFixed(1)}`, { parse_mode: 'Markdown' });
+                            console.log(`✅ ENVIADO TESTE AMANHÃ: ${jogoFinal}`);
                         }
                     }
                 }
             }
         });
     } catch (e) {
-        console.error("Erro na busca:", e.message);
+        console.error("Erro no teste:", e.message);
     }
 }
 
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 setInterval(monitorarJogos, 300000); 
-
 monitorarJogos();
