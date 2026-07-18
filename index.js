@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Debug Ativo'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro Ajustado para 9.5'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -41,27 +41,23 @@ async function monitorarJogos() {
 
             // Se estiver em "Hoje" e tiver jogo
             if (emSecaoHoje && texto.includes(' x ')) {
-                // Regex para separar nomes dos times (ignora o resto da sujeira)
                 const matchConfronto = rawText.match(/([A-Za-zÀ-ÿ\s]+)\sx\s([A-Za-zÀ-ÿ\s]+)/);
                 
                 if (matchConfronto) {
                     const jogoFinal = matchConfronto[0].replace(/Hoje/gi, '').trim();
                     
-                    // Regex para pegar os números (procura números tipo 4.3 ou 5.4 e tenta somar)
+                    // Regex para pegar os números e somar
                     const numeros = rawText.match(/(\d{1,2}[.,]\d)/g);
                     let media = 0;
                     if (numeros && numeros.length >= 2) {
                         media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                     }
 
-                    // LOG DE DEBUG (Aparece tudo no Render)
-                    console.log(`🔍 DEBUG: [${jogoFinal}] | Média Calculada: ${media.toFixed(1)}`);
-
-                    // Filtro para Telegram (10.6 a 15.0)
-                    if (media > 10.5 && media <= 15.0 && !jogosEnviados.has(jogoFinal)) {
+                    // FILTRO AJUSTADO: Agora aceita de 9.5 a 15.0
+                    if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(jogoFinal)) {
                         jogosEnviados.add(jogoFinal);
-                        bot.sendMessage(CHAT_ID, `⚽ *OPORTUNIDADE REAL*\n⚔️ ${jogoFinal}\n📊 Média FT: ${media.toFixed(1)}`, { parse_mode: 'Markdown' });
-                        console.log(`✅ ENVIADO: ${jogoFinal}`);
+                        bot.sendMessage(CHAT_ID, `⚽ *OPORTUNIDADE ENCONTRADA*\n⚔️ ${jogoFinal}\n📊 Média FT: ${media.toFixed(1)}`, { parse_mode: 'Markdown' });
+                        console.log(`✅ ENVIADO: ${jogoFinal} | Média: ${media.toFixed(1)}`);
                     }
                 }
             }
