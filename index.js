@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Filtro Preciso 10.5 - 15.0'));
+app.get('/', (req, res) => res.send('Bot em Modo Espião - Analisando tudo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,10 +16,9 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-let jogosEnviados = new Set();
-
 async function monitorarJogos() {
     try {
+        console.log("--- Iniciando Varredura Espião ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 20000
@@ -31,50 +30,27 @@ async function monitorarJogos() {
         elementos.each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
+            // ESPIÃO: Se tiver " x ", ele vai mostrar no log o que achou
             if (linha.includes(' x ')) {
-                // Captura o confronto
-                const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                const matchConfronto = linha.match(regexConfronto);
-                let confronto = matchConfronto ? matchConfronto[0].trim() : null;
-                
-                // Limpeza: remove "Hoje" se existir no nome do time
-                if (confronto) {
-                    confronto = confronto.replace(/Hoje/gi, '').trim();
-                }
-
-                // Captura o número decimal (ex: 10.6, 12.3)
+                // Tenta achar qualquer número decimal
                 const numeros = linha.match(/\d{1,2}\.\d/g);
-                const valorString = numeros ? numeros[0] : "0";
-                const valorFloat = parseFloat(valorString);
+                const valor = numeros ? numeros[0] : "SEM_MEDIA";
+                
+                console.log(`🔍 ACHOU: ${linha.substring(0, 50)}... | Média detectada: ${valor}`);
 
-                // FILTRO DE SEGURANÇA:
-                // Apenas envia se a média for maior que 10.5 E menor ou igual a 15.0
-                const ehValido = valorFloat > 10.5 && valorFloat <= 15.0;
-
-                if (confronto && ehValido && !jogosEnviados.has(confronto)) {
-                    jogosEnviados.add(confronto);
-
-                    const mensagem = `⚽ *OPORTUNIDADE DE CANTO*\n` +
-                                     `━━━━━━━━━━━━━━\n` +
-                                     `⚔️ *Confronto:* ${confronto}\n` +
-                                     `📊 *Média FT:* ${valorFloat.toFixed(1)}\n` +
-                                     `━━━━━━━━━━━━━━`;
-
-                    bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                    console.log(`✅ Enviado: ${confronto} | Média Validada: ${valorFloat}`);
+                // Filtro flexível para você ver o que passa
+                const valorFloat = parseFloat(valor);
+                
+                if (valorFloat > 0) {
+                     console.log(`   -> Valor convertido: ${valorFloat}`);
                 }
             }
         });
+        console.log("--- Varredura Finalizada ---");
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
 }
 
-// Limpa o cache diariamente para não bloquear jogos que se repetem em outros dias
-setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-
-// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
-
-// Primeira execução
 monitorarJogos();
