@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot em Modo Diagnóstico'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Leitura de Texto'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -13,39 +13,82 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 
 const MOBILE_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     'Referer': 'https://www.google.com/'
 };
 
-async function diagnosticarSite() {
+let jogosEnviados = new Set();
+
+async function monitorarJogos() {
     try {
-        console.log("--- Tentando acessar o site ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 20000
         });
 
-        console.log("Status do Site:", response.status);
-        console.log("Tamanho da página recebida:", response.data.length);
-        
-        // Vamos ver um pedaço do HTML para saber se o site está bloqueando
-        const snippet = response.data.substring(0, 500);
-        console.log("Início do HTML recebido:", snippet);
-
         const $ = cheerio.load(response.data);
-        
-        // Procura qualquer coisa que se pareça com um nome de time ou jogo no corpo todo
-        const textoBody = $('body').text();
-        if (textoBody.includes(' x ')) {
-            console.log("SUCESSO: Encontrei ' x ' no texto da página!");
-        } else {
-            console.log("ERRO: Não encontrei nenhum ' x ' (jogo) na página.");
-        }
+        const textoCompleto = $('body').text();
+        const linhas = textoCompleto.split('\n'); // Divide o site em linhas de texto
 
+        let capturandoHoje = false;
+
+        for (let linha of linhas) {
+            let linhaLimpa = linha.trim();
+            let linhaLower = linhaLimpa.toLowerCase();
+
+            // 1. ATIVAÇÃO: Se achar "hoje", liga a captura
+            if (linhaLower.includes('hoje')) {
+                capturandoHoje = true;
+                continue;
+            }
+
+            // 2. BLOQUEIO: Se achar "amanhã" ou datas, desliga a captura
+            if (capturandoHoje && (linhaLower.includes('amanhã') || /\d{2}\/\d{2}/.test(linhaLower))) {
+                capturandoHoje = false;
+                continue;
+            }
+
+            // 3. PROCESSAMENTO: Só olha se estiver no bloco de "Hoje" e tiver um confronto
+            if (capturandoHoje && linhaLimpa.includes(' x ')) {
+                // Regex para capturar números decimais (ex: 10.6, 11.2)
+                const statMatch = linhaLimpa.match(/(\d{2}[.,]\d)/);
+                
+                if (statMatch) {
+                    const media = parseFloat(statMatch[0].replace(',', '.'));
+
+                    // Filtro da Média > 10.5
+                    if (media > 10.5) {
+                        const matchConfronto = linhaLimpa.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                        
+                        if (matchConfronto) {
+                            const confronto = matchConfronto[0].trim();
+
+                            if (!jogosEnviados.has(confronto)) {
+                                jogosEnviados.add(confronto);
+
+                                const mensagem = 
+`⚽ *OPORTUNIDADE DE CANTO*\n` +
+`━━━━━━━━━━━━━━━━━━\n` +
+`⚔️ *Partida:* ${confronto}\n` +
+`📈 *Média FT:* ${media.toFixed(1)}\n` +
+`📅 *Data:* Hoje (17/07/2026)\n` +
+`━━━━━━━━━━━━━━━━━━\n` +
+`🔗 _Análise validada pelo sistema_`;
+
+                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                                console.log(`✅ Enviado: ${confronto} (Média: ${media})`);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     } catch (e) {
-        console.error("ERRO CRÍTICO NA CONEXÃO:", e.message);
+        console.error("Erro na leitura:", e.message);
     }
 }
 
-setInterval(diagnosticarSite, 300000); 
-diagnosticarSite();
+// Limpa cache diário e monitora a cada 5 min
+setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+setInterval(monitorarJogos, 300000); 
+
+monitorarJogos();
