@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Filtro de Data Rígido'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Seção Estrita'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -26,26 +26,24 @@ async function monitorarJogos() {
         });
 
         const $ = cheerio.load(response.data);
-        let capturandoHoje = false; 
+        
+        // Estado da seção: 'aguardando', 'hoje', 'bloqueado'
+        let estadoSecao = 'aguardando'; 
 
-        $('div, tr, li, td, span').each((i, el) => {
-            const linha = $(el).text().trim().replace(/\s+/g, ' ');
-            const lowerLinha = linha.toLowerCase();
-
-            // 1. TRAVA DE BLOQUEIO (Se achar dia da semana ou amanhã, desliga a captura imediatamente)
-            const diasSemana = ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo', 'amanhã'];
-            if (diasSemana.some(dia => lowerLinha.includes(dia))) {
-                capturandoHoje = false;
+        // Vamos percorrer os elementos que contêm os jogos (geralmente linhas de tabela ou divs)
+        $('div, tr').each((i, el) => {
+            const textoElemento = $(el).text().trim().toLowerCase();
+            
+            // 1. Identifica se mudamos de seção
+            if (textoElemento.includes('hoje')) {
+                estadoSecao = 'hoje';
+            } else if (['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo', 'amanhã'].some(dia => textoElemento.includes(dia))) {
+                estadoSecao = 'bloqueado';
             }
 
-            // 2. ATIVAÇÃO (Só liga se encontrar "hoje")
-            if (lowerLinha.includes('hoje')) {
-                capturandoHoje = true;
-            }
-
-            // 3. PROCESSAMENTO (Só envia se o jogo estiver no bloco de "Hoje" E tiver o filtro de média)
-            if (capturandoHoje && linha.includes(' x ')) {
-                const matchNumero = linha.match(/(\d{2}[.,]\d)/);
+            // 2. Só processa se estivermos na seção 'hoje' E tiver um confronto
+            if (estadoSecao === 'hoje' && textoElemento.includes(' x ')) {
+                const matchNumero = textoElemento.match(/(\d{2}[.,]\d)/);
                 
                 if (matchNumero) {
                     const valor = parseFloat(matchNumero[0].replace(',', '.'));
@@ -53,20 +51,23 @@ async function monitorarJogos() {
                     // Filtro de Média (10.6 a 15.0)
                     if (valor > 10.5 && valor <= 15.0) {
                         
-                        let confronto = linha.replace(/Hoje/gi, '').replace(/\d{2}\/\d{2}/g, '').trim();
-                        const matchConfronto = confronto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                        const linhaLimpa = $(el).text().trim();
+                        const matchConfronto = linhaLimpa.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
-                        if (matchConfronto && !jogosEnviados.has(matchConfronto[0])) {
+                        if (matchConfronto) {
                             const jogoFinal = matchConfronto[0].trim();
-                            jogosEnviados.add(jogoFinal);
+                            
+                            if (!jogosEnviados.has(jogoFinal)) {
+                                jogosEnviados.add(jogoFinal);
 
-                            const mensagem = `⚽ *JOGO DO DIA (DATA REAL)*\n` +
-                                             `⚔️ *Confronto:* ${jogoFinal}\n` +
-                                             `📊 *Média FT:* ${valor.toFixed(1)}\n` +
-                                             `━━━━━━━━━━━━━━`;
+                                const mensagem = `⚽ *JOGO DE HOJE*\n` +
+                                                 `⚔️ *Confronto:* ${jogoFinal}\n` +
+                                                 `📊 *Média FT:* ${valor.toFixed(1)}\n` +
+                                                 `━━━━━━━━━━━━━━`;
 
-                            bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                            console.log(`✅ ENVIADO HOJE: ${jogoFinal} | Média: ${valor}`);
+                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                                console.log(`✅ ENVIADO HOJE: ${jogoFinal} | Média: ${valor}`);
+                            }
                         }
                     }
                 }
