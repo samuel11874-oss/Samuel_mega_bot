@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot em Teste: Buscando apenas Amanhã'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Data Validado'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -27,46 +27,49 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Estado: 'aguardando', 'amanhã', 'bloqueado'
+        // Estado: 'aguardando', 'hoje', 'bloqueado'
         let estadoSecao = 'aguardando'; 
 
         $('div, tr, li, td, span').each((i, el) => {
             const texto = $(el).text().trim().toLowerCase();
             
-            // Lógica do teste: Procura pela palavra "Amanhã"
-            if (texto.includes('amanhã')) {
-                estadoSecao = 'amanhã';
-                console.log(">>> ENCONTREI A SEÇÃO: Amanhã");
+            // 1. Identifica o cabeçalho
+            if (texto.includes('hoje')) {
+                estadoSecao = 'hoje';
             } 
-            // Se achar qualquer outro dia, bloqueia
-            else if (['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo', 'hoje'].some(dia => texto.includes(dia))) {
+            // Se encontrar qualquer dia futuro ou outro cabeçalho, bloqueia a captura
+            else if (['amanhã', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'].some(dia => texto.includes(dia))) {
                 estadoSecao = 'bloqueado';
             }
 
-            // Processa apenas se estiver na seção de amanhã
-            if (estadoSecao === 'amanhã' && texto.includes(' x ')) {
+            // 2. Processa apenas se estivermos na seção 'hoje'
+            if (estadoSecao === 'hoje' && texto.includes(' x ')) {
                 const matchNumero = texto.match(/(\d{2}[.,]\d)/);
                 
                 if (matchNumero) {
                     const valor = parseFloat(matchNumero[0].replace(',', '.'));
 
                     if (valor > 10.5 && valor <= 15.0) {
-                        const jogoLimpo = $(el).text().trim().replace(/amanhã/gi, '').trim();
+                        // Limpeza do confronto
+                        const jogoLimpo = $(el).text().trim().replace(/hoje/gi, '').trim();
                         const matchConfronto = jogoLimpo.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
-                        if (matchConfronto && !jogosEnviados.has(matchConfronto[0])) {
+                        if (matchConfronto) {
                             const jogoFinal = matchConfronto[0].trim();
-                            jogosEnviados.add(jogoFinal);
+                            
+                            if (!jogosEnviados.has(jogoFinal)) {
+                                jogosEnviados.add(jogoFinal);
 
-                            bot.sendMessage(CHAT_ID, `🚀 *TESTE AMANHÃ*\n⚔️ ${jogoFinal}\n📊 ${valor.toFixed(1)}`, { parse_mode: 'Markdown' });
-                            console.log(`✅ ENVIADO TESTE AMANHÃ: ${jogoFinal}`);
+                                bot.sendMessage(CHAT_ID, `✅ *OPORTUNIDADE REAL (HOJE)*\n⚔️ ${jogoFinal}\n📊 Média FT: ${valor.toFixed(1)}`, { parse_mode: 'Markdown' });
+                                console.log(`✅ ENVIADO HOJE: ${jogoFinal}`);
+                            }
                         }
                     }
                 }
             }
         });
     } catch (e) {
-        console.error("Erro no teste:", e.message);
+        console.error("Erro na busca:", e.message);
     }
 }
 
