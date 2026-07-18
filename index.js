@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Global Scanner'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtrando apenas HOJE'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -18,56 +18,70 @@ const HEADERS = {
 let jogosEnviados = new Set();
 
 async function monitorarJogos() {
-    console.log(`🔍 Iniciando Varredura Global...`);
+    console.log(`🔍 Iniciando Varredura com Filtro de Data (HOJE)...`);
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
-        
-        // Debug: Loga o tamanho da página para saber se estamos recebendo dados
-        console.log(`Página carregada. Tamanho: ${data.length} caracteres.`);
-        
-        // Pega todo o texto da página de uma vez, sem depender de tags específicas (tr, div)
         const $ = cheerio.load(data);
-        const textoCompleto = $('body').text();
         
-        // Regex para encontrar "Time X Time" (agora mais flexível)
-        const regexJogo = /([A-Za-zÀ-ÿ\s]{4,})\s?x\s?([A-Za-zÀ-ÿ\s]{4,})/g;
-        let match;
+        let modoCaptura = false; // A chave que diz se estamos no "hoje"
         let encontrados = 0;
 
-        // Itera sobre todas as ocorrências encontradas no texto todo
-        while ((match = regexJogo.exec(textoCompleto)) !== null) {
-            const jogoOriginal = match[0].trim();
-            
-            // Tenta pegar números próximos ao jogo
-            const trecho = textoCompleto.substring(match.index, match.index + 150);
-            const numeros = trecho.match(/(\d{1,2}[.,]\d)/g);
-            
-            if (numeros && numeros.length >= 2) {
-                const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
-                const chaveUnica = jogoOriginal.toLowerCase().replace(/[^a-z]/g, '');
+        // Itera sobre todos os elementos que podem ser linhas de jogo ou cabeçalhos
+        $('tr, div, h2, h3').each((i, el) => {
+            const texto = $(el).text().trim();
+            const textoLower = texto.toLowerCase();
+
+            // 1. Início da Cerca: Se achar "Hoje", ativa a captura
+            if (textoLower.includes('hoje')) {
+                modoCaptura = true;
+            } 
+            // 2. Fim da Cerca: Se achar "Amanhã" ou dias da semana, desativa
+            else if (/(amanhã|segunda|terça|quarta|quinta|sexta|sábado|domingo)/.test(textoLower)) {
+                modoCaptura = false;
+            }
+
+            // 3. Processamento (apenas se estiver dentro da cerca "Hoje")
+            if (modoCaptura && texto.includes(' x ')) {
+                const match = texto.match(/([A-Za-zÀ-ÿ\s]{4,})\sx\s([A-Za-zÀ-ÿ\s]{4,})/);
                 
-                if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(chaveUnica)) {
-                    jogosEnviados.add(chaveUnica);
-                    encontrados++;
+                if (match) {
+                    const jogo = match[0].trim();
+                    const trechoNumeros = texto.substring(match.index, match.index + 50);
+                    const numeros = trechoNumeros.match(/(\d{1,2}[.,]\d)/g);
                     
-                    const msg = `⚽ *Oportunidade Encontrada*\n\n` +
-                                `⚔️ *Jogo:* ${jogoOriginal}\n` +
-                                `📊 *Média de escanteios:* ${media.toFixed(1)}`;
-                    
-                    bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                    console.log(`✅ ENVIADO: ${jogoOriginal} | Média: ${media.toFixed(1)}`);
+                    if (numeros && numeros.length >= 1) {
+                        // Calcula média (garantindo que estamos pegando a média correta)
+                        const media = parseFloat(numeros[0].replace(',', '.'));
+                        const chaveUnica = jogo.toLowerCase().replace(/[^a-z]/g, '');
+                        
+                        if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(chaveUnica)) {
+                            jogosEnviados.add(chaveUnica);
+                            encontrados++;
+                            
+                            const msg = `⚽ *Oportunidade (HOJE)*\n\n` +
+                                        `⚔️ *Jogo:* ${jogo}\n` +
+                                        `📊 *Média de escanteios:* ${media.toFixed(1)}`;
+                            
+                            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                            console.log(`✅ ENVIADO (HOJE): ${jogo} | Média: ${media.toFixed(1)}`);
+                        }
+                    }
                 }
             }
-        }
+        });
         
-        console.log(`🔍 Varredura concluída. Novos jogos encontrados: ${encontrados}`);
+        console.log(`🔍 Varredura concluída. Novos jogos de HOJE encontrados: ${encontrados}`);
         
     } catch (e) {
-        console.error("Erro na busca (verifique se o site mudou o link):", e.message);
+        console.error("Erro na busca:", e.message);
     }
 }
 
-// Reseta o cache a cada 6 horas
-setInterval(() => { jogosEnviados.clear(); }, 21600000);
-setInterval(monitorarJogos, 300000);
+// Reseta o cache de jogos à meia-noite (00:00) para começar o dia limpo
+setInterval(() => { 
+    const horaAtual = new Date().getHours();
+    if (horaAtual === 0) jogosEnviados.clear(); 
+}, 3600000); 
+
+setInterval(monitorarJogos, 300000); // 5 minutos
 monitorarJogos();
