@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot em Diagnóstico Total'));
+app.get('/', (req, res) => res.send('Bot Debug Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,32 +16,61 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-async function diagnosticarJogos() {
+let jogosEnviados = new Set();
+
+async function monitorarJogos() {
     try {
-        console.log("--- INICIANDO VARREDURA TOTAL ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 20000
         });
 
         const $ = cheerio.load(response.data);
-        
-        // Vamos percorrer TODOS os elementos <div> da página
-        $('div').each((i, el) => {
-            const texto = $(el).text().trim().replace(/\s+/g, ' ');
-            
-            // Se encontrar " x ", vamos logar para ver o que ele achou
-            if (texto.includes(' x ') && texto.length < 200) {
-                console.log(`🔍 ENCONTRADO: ${texto}`);
+        let emSecaoHoje = false;
+
+        $('div, tr').each((i, el) => {
+            const rawText = $(el).text().trim().replace(/\s+/g, ' ');
+            const texto = rawText.toLowerCase();
+
+            // Lógica de Seção
+            if (texto.includes('hoje')) {
+                emSecaoHoje = true;
+            } else if (['amanhã', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'].some(d => texto.includes(d))) {
+                emSecaoHoje = false;
+            }
+
+            // Se estiver em "Hoje" e tiver jogo
+            if (emSecaoHoje && texto.includes(' x ')) {
+                // Regex para separar nomes dos times (ignora o resto da sujeira)
+                const matchConfronto = rawText.match(/([A-Za-zÀ-ÿ\s]+)\sx\s([A-Za-zÀ-ÿ\s]+)/);
+                
+                if (matchConfronto) {
+                    const jogoFinal = matchConfronto[0].replace(/Hoje/gi, '').trim();
+                    
+                    // Regex para pegar os números (procura números tipo 4.3 ou 5.4 e tenta somar)
+                    const numeros = rawText.match(/(\d{1,2}[.,]\d)/g);
+                    let media = 0;
+                    if (numeros && numeros.length >= 2) {
+                        media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
+                    }
+
+                    // LOG DE DEBUG (Aparece tudo no Render)
+                    console.log(`🔍 DEBUG: [${jogoFinal}] | Média Calculada: ${media.toFixed(1)}`);
+
+                    // Filtro para Telegram (10.6 a 15.0)
+                    if (media > 10.5 && media <= 15.0 && !jogosEnviados.has(jogoFinal)) {
+                        jogosEnviados.add(jogoFinal);
+                        bot.sendMessage(CHAT_ID, `⚽ *OPORTUNIDADE REAL*\n⚔️ ${jogoFinal}\n📊 Média FT: ${media.toFixed(1)}`, { parse_mode: 'Markdown' });
+                        console.log(`✅ ENVIADO: ${jogoFinal}`);
+                    }
+                }
             }
         });
-        
-        console.log("--- VARREDURA CONCLUÍDA ---");
     } catch (e) {
-        console.error("Erro na busca:", e.message);
+        console.error("Erro:", e.message);
     }
 }
 
-// Roda a cada 5 minutos
-setInterval(diagnosticarJogos, 300000); 
-diagnosticarJogos();
+setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+setInterval(monitorarJogos, 300000); 
+monitorarJogos();
