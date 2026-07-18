@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Volume Máximo'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro Estrito'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,55 +17,62 @@ const HEADERS = {
 
 let jogosEnviados = new Set();
 
+// Limpeza agressiva: remove tudo que não for nome de time
+function limparNome(nome) {
+    return nome.replace(/Brasileirão|Série|ESTATÍSTICAS|DE|ESCANTEIOS|Liga|Handicap|Mais|Menos|Partida|Hoje|Amanhã/gi, '')
+               .replace(/\s+/g, ' ')
+               .trim();
+}
+
 async function monitorarJogos() {
-    console.log(`🔍 Iniciando Varredura...`);
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
-        const textoCompleto = $('body').text();
         
-        // Regex para capturar [Time] [x] [Time]
-        // Ele para de ler se encontrar uma barra (|) ou dígitos, evitando pegar o nome da Liga junto
-        const regexJogo = /([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s]{3,})\s*[xX]\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s]{2,})(?=\s*\d|\s*\|)/g;
-        
-        let match;
+        // Pega cada bloco de texto e processa individualmente para não misturar linhas
+        const linhas = $('body').text().split('\n');
         let encontrados = 0;
 
-        while ((match = regexJogo.exec(textoCompleto)) !== null) {
-            const timeA = match[1].trim();
-            const timeB = match[2].trim();
+        for (let linha of linhas) {
+            // Regex restrita: [A-Za-zÀ-ÿ ] significa que NÃO permite quebras de linha no nome
+            // Ela só captura o jogo se encontrar o padrão exato em uma ÚNICA linha
+            const match = linha.match(/([A-ZÀ-Ÿ][A-Za-zÀ-ÿ ]{3,})\s*[xX]\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ ]{3,})/);
             
-            // Pega o contexto próximo para ler a média
-            const contexto = textoCompleto.substring(match.index, match.index + 150);
-            const numeros = contexto.match(/(\d{1,2}[.,]\d)/g);
-            
-            if (numeros && numeros.length >= 2) {
-                const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
-                const chave = (timeA + timeB).toLowerCase().replace(/[^a-z]/g, '');
+            if (match) {
+                let timeA = limparNome(match[1]);
+                let timeB = limparNome(match[2]);
                 
-                // Filtro de Média (9.5 a 15.0) + Bloqueio de Repetição
-                if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(chave)) {
-                    jogosEnviados.add(chave);
-                    encontrados++;
+                // Validação: nomes muito longos ou estranhos são descartados
+                if (timeA.length > 25 || timeB.length > 25) continue;
+                
+                // Extrai números apenas desta linha
+                const numeros = linha.match(/(\d{1,2}[.,]\d)/g);
+                
+                if (numeros && numeros.length >= 2) {
+                    const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
+                    const chave = (timeA + timeB).toLowerCase().replace(/[^a-z]/g, '');
                     
-                    const msg = `⚽ *Oportunidade Encontrada*\n\n` +
-                                `⚔️ *Jogo:* ${timeA} x ${timeB}\n` +
-                                `📊 *Média:* ${media.toFixed(1)}`;
-                    
-                    bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                    console.log(`✅ ENVIADO: ${timeA} x ${timeB} | Média: ${media.toFixed(1)}`);
+                    if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(chave)) {
+                        jogosEnviados.add(chave);
+                        encontrados++;
+                        
+                        const msg = `⚽ *Oportunidade*\n` +
+                                    `⚔️ *${timeA} x ${timeB}*\n` +
+                                    `📊 *Média: ${media.toFixed(1)}*`;
+                        
+                        bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                        console.log(`✅ ENVIADO: ${timeA} x ${timeB} | Média: ${media.toFixed(1)}`);
+                    }
                 }
             }
         }
-        
         console.log(`🔍 Varredura concluída. Novos jogos encontrados: ${encontrados}`);
-        
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
 }
 
-// Reseta o cache a cada 6 horas para limpar jogos antigos e permitir novas entradas
-setInterval(() => { jogosEnviados.clear(); }, 21600000);
+// Reseta o cache de duplicados a cada 2 horas
+setInterval(() => { jogosEnviados.clear(); }, 7200000);
 setInterval(monitorarJogos, 300000); // 5 minutos
 monitorarJogos();
