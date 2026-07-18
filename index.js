@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro Ajustado para 9.5'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Data e Formatação Ajustados'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -32,41 +32,46 @@ async function monitorarJogos() {
             const rawText = $(el).text().trim().replace(/\s+/g, ' ');
             const texto = rawText.toLowerCase();
 
-            // Lógica de Seção
+            // Lógica de Seção: Identifica o que é 'Hoje'
             if (texto.includes('hoje')) {
                 emSecaoHoje = true;
             } else if (['amanhã', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'].some(d => texto.includes(d))) {
                 emSecaoHoje = false;
             }
 
-            // Se estiver em "Hoje" e tiver jogo
+            // Processa se estiver na seção 'Hoje' e contiver um confronto
             if (emSecaoHoje && texto.includes(' x ')) {
                 const matchConfronto = rawText.match(/([A-Za-zÀ-ÿ\s]+)\sx\s([A-Za-zÀ-ÿ\s]+)/);
                 
                 if (matchConfronto) {
                     const jogoFinal = matchConfronto[0].replace(/Hoje/gi, '').trim();
                     
-                    // Regex para pegar os números e somar
+                    // Regex para calcular a média
                     const numeros = rawText.match(/(\d{1,2}[.,]\d)/g);
                     let media = 0;
                     if (numeros && numeros.length >= 2) {
                         media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                     }
 
-                    // FILTRO AJUSTADO: Agora aceita de 9.5 a 15.0
+                    // Filtro de envio (9.5 a 15.0)
                     if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(jogoFinal)) {
                         jogosEnviados.add(jogoFinal);
-                        bot.sendMessage(CHAT_ID, `⚽ *OPORTUNIDADE ENCONTRADA*\n⚔️ ${jogoFinal}\n📊 Média FT: ${media.toFixed(1)}`, { parse_mode: 'Markdown' });
+                        
+                        // Formatação final do card conforme solicitado
+                        bot.sendMessage(CHAT_ID, `⚽ *Oportunidade encontrada*\n\n⚔️ ${jogoFinal}\n📊 Média de escanteios FT: ${media.toFixed(1)}`, { parse_mode: 'Markdown' });
+                        
                         console.log(`✅ ENVIADO: ${jogoFinal} | Média: ${media.toFixed(1)}`);
                     }
                 }
             }
         });
     } catch (e) {
-        console.error("Erro:", e.message);
+        console.error("Erro na busca:", e.message);
     }
 }
 
+// Reseta o cache de envio a cada 24 horas
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+// Varredura a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 monitorarJogos();
