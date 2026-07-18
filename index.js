@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Filtro 10.5 Cantos'));
+app.get('/', (req, res) => res.send('Bot Ativo - Modo Diagnóstico'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,78 +16,59 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-let jogosEnviados = new Set();
-
 async function monitorarJogos() {
     try {
+        console.log("--- Iniciando nova varredura ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 20000
         });
 
         const $ = cheerio.load(response.data);
-        
-        let podeProcessar = false;
+        let countLinhas = 0;
 
-        // Varredura por linhas da tabela
-        $('tr').each((i, el) => {
-            const linhaTexto = $(el).text().trim().replace(/\s+/g, ' ');
-            const textoLower = linhaTexto.toLowerCase();
+        // Varrer todas as tabelas
+        $('table').each((i, table) => {
+            $(table).find('tr').each((j, row) => {
+                const linhaTexto = $(row).text().trim().replace(/\s+/g, ' ');
+                
+                // DEBUG: Isso vai aparecer nos seus Logs do Render
+                // Se não aparecer nada aqui, o bot não está acessando a tabela correta
+                if (linhaTexto.includes(' x ')) {
+                    countLinhas++;
+                    console.log(`Linha detectada (${countLinhas}): ${linhaTexto}`);
 
-            // 1. ATIVAÇÃO: Só processa o que estiver abaixo do cabeçalho "Hoje"
-            if (textoLower.includes('hoje')) {
-                podeProcessar = true;
-                return;
-            }
-
-            // 2. BLOQUEIO: Se o site citar outras datas, para a leitura
-            if (podeProcessar && (textoLower.includes('amanhã') || /\d{2}\/\d{2}/.test(textoLower))) {
-                podeProcessar = false;
-                return;
-            }
-
-            // 3. FILTRO DE JOGO E MÉDIA:
-            if (podeProcessar && textoLower.includes(' x ')) {
-                // Regex para encontrar números de média (ex: 10.6, 11.2)
-                // Procura por números no formato "XX.X" ou "XX,X"
-                const statsMatch = linhaTexto.match(/(\d{2}[.,]\d)/);
-
-                if (statsMatch) {
-                    const media = parseFloat(statsMatch[0].replace(',', '.'));
-
-                    // FILTRO RÍGIDO: Só envia se a média for > 10.5
-                    if (media > 10.5) {
-                        const matchConfronto = linhaTexto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                    // Regex para pegar qualquer número com ponto ou vírgula
+                    const statsMatch = linhaTexto.match(/(\d{1,2}[.,]\d+)/);
+                    
+                    if (statsMatch) {
+                        const media = parseFloat(statsMatch[0].replace(',', '.'));
                         
-                        if (matchConfronto) {
-                            const confronto = matchConfronto[0].trim();
-
-                            if (!jogosEnviados.has(confronto)) {
-                                jogosEnviados.add(confronto);
-
-                                const mensagem = 
-`⚽ *OPORTUNIDADE DE CANTOS*\n` +
+                        // Critério: Média > 10.5
+                        if (media > 10.5) {
+                            console.log(`>>> JOGO DENTRO DO FILTRO: ${linhaTexto} (Média: ${media})`);
+                            
+                            const mensagem = 
+`⚽ *OPORTUNIDADE DE CANTO*\n` +
 `━━━━━━━━━━━━━━━━━━\n` +
-`⚔️ *Partida:* ${confronto}\n` +
+`⚔️ *Partida:* ${linhaTexto.split(' x ')[0].split(' ').pop()} x ${linhaTexto.split(' x ')[1].split(' ')[0]}\n` +
 `📈 *Média FT:* ${media.toFixed(1)}\n` +
-`📅 *Data:* Hoje (17/07/2026)\n` +
-`━━━━━━━━━━━━━━━━━━\n` +
-`🔗 _Análise validada pelo robô_`;
+`📅 *Data:* 17/07\n` +
+`━━━━━━━━━━━━━━━━━━`;
 
-                                bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                                console.log(`✅ Enviado: ${confronto} (Média: ${media})`);
-                            }
+                            bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
                         }
                     }
                 }
-            }
+            });
         });
+        
+        console.log(`Varredura finalizada. Total de linhas com jogos analisadas: ${countLinhas}`);
+
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
 }
 
-setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 setInterval(monitorarJogos, 300000); 
-
 monitorarJogos();
