@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro Estrito'));
+app.get('/', (req, res) => res.send('Bot Operacional - Limpeza Total'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,52 +17,50 @@ const HEADERS = {
 
 let jogosEnviados = new Set();
 
-// Limpeza agressiva: remove tudo que não for nome de time
-function limparNome(nome) {
-    return nome.replace(/Brasileirão|Série|ESTATÍSTICAS|DE|ESCANTEIOS|Liga|Handicap|Mais|Menos|Partida|Hoje|Amanhã/gi, '')
-               .replace(/\s+/g, ' ')
-               .trim();
-}
-
 async function monitorarJogos() {
+    console.log(`🔍 Iniciando Varredura...`);
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
         
-        // Pega cada bloco de texto e processa individualmente para não misturar linhas
-        const linhas = $('body').text().split('\n');
+        // 1. Pega todo o texto e já limpa as palavras de lixo de uma vez
+        let texto = $('body').text();
+        const lixo = /Brasileirão|Série|ESTATÍSTICAS|DE|ESCANTEIOS|Liga|Handicap|Mais|Menos|Partida|Hoje|Amanhã|Copa|Profissional|S|B|A|Tabela|Resultados/gi;
+        texto = texto.replace(lixo, ' '); 
+        texto = texto.replace(/\s+/g, ' '); // Remove espaços duplos criados pela limpeza
+
+        // 2. Procura pelo padrão "Time A x Time B"
+        // A regex agora permite que o nome tenha mais de 3 caracteres e termina antes de números
+        const regexJogo = /([A-ZÀ-Ÿ][A-Za-zÀ-ÿ ]{3,})\s*[xX]\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ ]{3,})/g;
+        
+        let match;
         let encontrados = 0;
 
-        for (let linha of linhas) {
-            // Regex restrita: [A-Za-zÀ-ÿ ] significa que NÃO permite quebras de linha no nome
-            // Ela só captura o jogo se encontrar o padrão exato em uma ÚNICA linha
-            const match = linha.match(/([A-ZÀ-Ÿ][A-Za-zÀ-ÿ ]{3,})\s*[xX]\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ ]{3,})/);
+        while ((match = regexJogo.exec(texto)) !== null) {
+            const timeA = match[1].trim();
+            const timeB = match[2].trim();
             
-            if (match) {
-                let timeA = limparNome(match[1]);
-                let timeB = limparNome(match[2]);
+            // Verifica se os nomes são curtos e lógicos (evita lixo que sobrou)
+            if (timeA.length > 20 || timeB.length > 20) continue;
+
+            // Pega o trecho logo após o jogo para achar a média (os números estão lá)
+            const contexto = texto.substring(match.index, match.index + 100);
+            const numeros = contexto.match(/(\d{1,2}[.,]\d)/g);
+            
+            if (numeros && numeros.length >= 2) {
+                const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
+                const chave = (timeA + timeB).toLowerCase().replace(/[^a-z]/g, '');
                 
-                // Validação: nomes muito longos ou estranhos são descartados
-                if (timeA.length > 25 || timeB.length > 25) continue;
-                
-                // Extrai números apenas desta linha
-                const numeros = linha.match(/(\d{1,2}[.,]\d)/g);
-                
-                if (numeros && numeros.length >= 2) {
-                    const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
-                    const chave = (timeA + timeB).toLowerCase().replace(/[^a-z]/g, '');
+                if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(chave)) {
+                    jogosEnviados.add(chave);
+                    encontrados++;
                     
-                    if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(chave)) {
-                        jogosEnviados.add(chave);
-                        encontrados++;
-                        
-                        const msg = `⚽ *Oportunidade*\n` +
-                                    `⚔️ *${timeA} x ${timeB}*\n` +
-                                    `📊 *Média: ${media.toFixed(1)}*`;
-                        
-                        bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                        console.log(`✅ ENVIADO: ${timeA} x ${timeB} | Média: ${media.toFixed(1)}`);
-                    }
+                    const msg = `⚽ *Oportunidade*\n` +
+                                `⚔️ *${timeA} x ${timeB}*\n` +
+                                `📊 *Média: ${media.toFixed(1)}*`;
+                    
+                    bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                    console.log(`✅ ENVIADO: ${timeA} x ${timeB} | Média: ${media.toFixed(1)}`);
                 }
             }
         }
@@ -72,7 +70,7 @@ async function monitorarJogos() {
     }
 }
 
-// Reseta o cache de duplicados a cada 2 horas
+// Reseta cache a cada 2 horas
 setInterval(() => { jogosEnviados.clear(); }, 7200000);
 setInterval(monitorarJogos, 300000); // 5 minutos
 monitorarJogos();
