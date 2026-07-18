@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Busca de Texto'));
+app.get('/', (req, res) => res.send('Bot Operacional - Versão Limpa'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,35 +17,38 @@ const HEADERS = {
 
 let jogosEnviados = new Set();
 
+// Função para limpar sujeira dos nomes
+function limparNome(texto) {
+    return texto.replace(/Brasileirão|Série|ESTATÍSTICAS|DE|ESCANTEIOS|Liga|Handicap|Mais|Menos|Partida|Hoje|Amanhã/gi, '')
+                .replace(/\s+/g, ' ') // Remove espaços duplicados
+                .trim();
+}
+
 async function monitorarJogos() {
-    console.log(`🔍 Iniciando Varredura de Texto...`);
+    console.log(`🔍 Iniciando Varredura Limpa...`);
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
-        
-        // Pega TODO o texto da página, limpando tags HTML
         const textoCompleto = $('body').text();
         
-        // Regex para capturar "Time A x Time B" (suporta espaços extras)
-        const regexJogo = /([A-Za-zÀ-ÿ\s]{4,})\s*[xX]\s*([A-Za-zÀ-ÿ\s]{4,})/g;
+        // Regex mais inteligente: Exige que o nome comece com letra maiúscula
+        const regexJogo = /([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s]{3,})\s*[xX]\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s]{3,})/g;
         
         let match;
         let encontrados = 0;
 
         while ((match = regexJogo.exec(textoCompleto)) !== null) {
-            const timeA = match[1].trim();
-            const timeB = match[2].trim();
+            let timeA = limparNome(match[1]);
+            let timeB = limparNome(match[2]);
             
-            // Pega um trecho de texto após o nome do jogo para encontrar as médias
-            // Geralmente os números estão logo após os nomes
-            const trecho = textoCompleto.substring(match.index, match.index + 300);
+            // Pega o trecho para ler a média
+            const trecho = textoCompleto.substring(match.index, match.index + 200);
             const numeros = trecho.match(/(\d{1,2}[.,]\d)/g);
             
             if (numeros && numeros.length >= 2) {
                 const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                 const chave = (timeA + timeB).toLowerCase().replace(/[^a-z]/g, '');
                 
-                // Filtro (9.5 a 15.0)
                 if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(chave)) {
                     jogosEnviados.add(chave);
                     encontrados++;
