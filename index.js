@@ -1,9 +1,7 @@
 const express = require('express');
 const axios = require('axios');
-const cheerio = require('cheerio');
-
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Mapeamento Ativo'));
+app.get('/', (req, res) => res.send('Bot de Diagnóstico de Rede'));
 app.listen(process.env.PORT || 3000);
 
 const MOBILE_HEADERS = {
@@ -11,28 +9,35 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-async function mapearSite() {
+async function diagnosticarRede() {
+    console.log(`🚀 [DEBUG] Iniciando tentativa de acesso ao site...`);
+    
     try {
-        console.log(`🔍 Iniciando Mapeamento de Estrutura...`);
-        
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 20000
+            timeout: 25000 // Aumentei o timeout para 25 segundos
         });
-
-        const $ = cheerio.load(response.data);
         
-        // Vamos listar todas as tabelas (onde ficam os jogos) e suas classes
-        $('table').each((i, el) => {
-            const classe = $(el).attr('class') || "Sem classe";
-            const primeiraLinha = $(el).find('tr').first().text().trim().substring(0, 50);
-            console.log(`📌 TABELA ${i} | Classe: ${classe}`);
-            console.log(`   Conteúdo inicial: ${primeiraLinha}...`);
-        });
+        console.log(`✅ [DEBUG] Sucesso! Status da página: ${response.status}`);
+        console.log(`✅ [DEBUG] Conteúdo recebido com sucesso.`);
+        
+        // Verifica se existem tabelas no HTML retornado
+        const cheerio = require('cheerio');
+        const $ = cheerio.load(response.data);
+        const totalTabelas = $('table').length;
+        
+        console.log(`📊 [DEBUG] Total de tabelas encontradas no HTML: ${totalTabelas}`);
+        
+        if (totalTabelas > 0) {
+            console.log(`📌 [DEBUG] Exemplo da primeira tabela: ` + $('table').first().text().trim().substring(0, 100));
+        }
 
     } catch (e) {
-        console.error("❌ ERRO no mapeamento:", e.message);
+        console.error(`❌ [DEBUG] Erro ao acessar o site: ${e.message}`);
+        if (e.response) {
+            console.error(`❌ [DEBUG] Detalhes do erro: ${e.response.status}`);
+        }
     }
 }
 
-mapearSite();
+diagnosticarRede();
