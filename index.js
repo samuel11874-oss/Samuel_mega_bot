@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot em Varredura Global'));
+app.get('/', (req, res) => res.send('Bot em Diagnóstico Total'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,10 +16,9 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-let jogosEnviados = new Set();
-
-async function monitorarJogos() {
+async function diagnosticarJogos() {
     try {
+        console.log("--- INICIANDO VARREDURA TOTAL ---");
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
             timeout: 20000
@@ -27,46 +26,22 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Varredura total: pega cada linha (tr) que parece um jogo
-        $('tr').each((i, el) => {
+        // Vamos percorrer TODOS os elementos <div> da página
+        $('div').each((i, el) => {
             const texto = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // Verifica se é uma linha de jogo
-            if (texto.includes(' x ')) {
-                // Tenta extrair a média no formato decimal
-                const matchNumero = texto.match(/(\d{2}[.,]\d)/);
-                
-                if (matchNumero) {
-                    const valor = parseFloat(matchNumero[0].replace(',', '.'));
-
-                    // Filtro de Média (10.6 a 15.0)
-                    if (valor > 10.5 && valor <= 15.0) {
-                        
-                        const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
-                        
-                        if (matchConfronto) {
-                            const jogoFinal = matchConfronto[0].trim();
-                            
-                            // Log de depuração: para sabermos se o jogo foi lido
-                            console.log(`🔍 Lendo: ${jogoFinal} | Média: ${valor}`);
-
-                            if (!jogosEnviados.has(jogoFinal)) {
-                                jogosEnviados.add(jogoFinal);
-
-                                bot.sendMessage(CHAT_ID, `⚽ *OPORTUNIDADE ENCONTRADA*\n⚔️ *Confronto:* ${jogoFinal}\n📊 *Média FT:* ${valor.toFixed(1)}`, { parse_mode: 'Markdown' });
-                                console.log(`✅ ENVIADO: ${jogoFinal}`);
-                            }
-                        }
-                    }
-                }
+            // Se encontrar " x ", vamos logar para ver o que ele achou
+            if (texto.includes(' x ') && texto.length < 200) {
+                console.log(`🔍 ENCONTRADO: ${texto}`);
             }
         });
+        
+        console.log("--- VARREDURA CONCLUÍDA ---");
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
 }
 
-// Limpa cache a cada 24h
-setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-setInterval(monitorarJogos, 300000); 
-monitorarJogos();
+// Roda a cada 5 minutos
+setInterval(diagnosticarJogos, 300000); 
+diagnosticarJogos();
