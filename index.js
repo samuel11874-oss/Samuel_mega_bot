@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Filtro Cirúrgico 10.6-15.0'));
+app.get('/', (req, res) => res.send('Bot Ativo - Varredura Ampla'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -26,35 +26,40 @@ async function monitorarJogos() {
         });
 
         const $ = cheerio.load(response.data);
-        // Vamos focar apenas em linhas (tr) que contêm " x "
-        $('tr').each((i, el) => {
+        
+        // Varredura ampla em todos os containers possíveis
+        $('div, tr, li, td, span').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
+            // Procura apenas linhas que tenham um confronto (x)
             if (linha.includes(' x ')) {
-                // 1. Captura o confronto
-                const regexConfronto = /([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/;
-                const matchConfronto = linha.match(regexConfronto);
-                const confronto = matchConfronto ? matchConfronto[0].replace(/Hoje/gi, '').trim() : null;
-
-                // 2. Captura o número decimal (ex: 10.6, 11.2) - busca apenas no formato XX.X
+                
+                // Regex para capturar números decimais (ex: 10.6, 11.2)
                 const matchNumero = linha.match(/(\d{2}[.,]\d)/);
                 
-                if (confronto && matchNumero) {
+                if (matchNumero) {
                     const valor = parseFloat(matchNumero[0].replace(',', '.'));
 
-                    // 3. FILTRO DE PRECISÃO (O PULO DO GATO)
-                    // Só envia se a média for maior que 10.5 E menor ou igual a 15.0
-                    if (valor > 10.5 && valor <= 15.0 && !jogosEnviados.has(confronto)) {
-                        jogosEnviados.add(confronto);
+                    // Filtro: 10.6 a 15.0
+                    if (valor > 10.5 && valor <= 15.0) {
+                        
+                        // Limpeza: remove "Hoje" e datas se aparecerem no texto
+                        let confronto = linha.replace(/Hoje/gi, '').replace(/\d{2}\/\d{2}/g, '').trim();
+                        // Pega apenas a parte do confronto
+                        const matchConfronto = confronto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                        
+                        if (matchConfronto && !jogosEnviados.has(matchConfronto[0])) {
+                            const jogoFinal = matchConfronto[0].trim();
+                            jogosEnviados.add(jogoFinal);
 
-                        const mensagem = `⚽ *OPORTUNIDADE REAL*\n` +
-                                         `━━━━━━━━━━━━━━\n` +
-                                         `⚔️ *Confronto:* ${confronto}\n` +
-                                         `📊 *Média FT:* ${valor.toFixed(1)}\n` +
-                                         `━━━━━━━━━━━━━━`;
+                            const mensagem = `⚽ *OPORTUNIDADE REAL*\n` +
+                                             `⚔️ *Confronto:* ${jogoFinal}\n` +
+                                             `📊 *Média FT:* ${valor.toFixed(1)}\n` +
+                                             `━━━━━━━━━━━━━━`;
 
-                        bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
-                        console.log(`✅ ENVIADO: ${confronto} | Média: ${valor}`);
+                            bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(console.error);
+                            console.log(`✅ ENVIADO: ${jogoFinal} | Média: ${valor}`);
+                        }
                     }
                 }
             }
