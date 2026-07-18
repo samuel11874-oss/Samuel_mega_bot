@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Data Validado'));
+app.get('/', (req, res) => res.send('Bot em Varredura Global'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -27,41 +27,34 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Estado: 'aguardando', 'hoje', 'bloqueado'
-        let estadoSecao = 'aguardando'; 
-
-        $('div, tr, li, td, span').each((i, el) => {
-            const texto = $(el).text().trim().toLowerCase();
+        // Varredura total: pega cada linha (tr) que parece um jogo
+        $('tr').each((i, el) => {
+            const texto = $(el).text().trim().replace(/\s+/g, ' ');
             
-            // 1. Identifica o cabeçalho
-            if (texto.includes('hoje')) {
-                estadoSecao = 'hoje';
-            } 
-            // Se encontrar qualquer dia futuro ou outro cabeçalho, bloqueia a captura
-            else if (['amanhã', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'].some(dia => texto.includes(dia))) {
-                estadoSecao = 'bloqueado';
-            }
-
-            // 2. Processa apenas se estivermos na seção 'hoje'
-            if (estadoSecao === 'hoje' && texto.includes(' x ')) {
+            // Verifica se é uma linha de jogo
+            if (texto.includes(' x ')) {
+                // Tenta extrair a média no formato decimal
                 const matchNumero = texto.match(/(\d{2}[.,]\d)/);
                 
                 if (matchNumero) {
                     const valor = parseFloat(matchNumero[0].replace(',', '.'));
 
+                    // Filtro de Média (10.6 a 15.0)
                     if (valor > 10.5 && valor <= 15.0) {
-                        // Limpeza do confronto
-                        const jogoLimpo = $(el).text().trim().replace(/hoje/gi, '').trim();
-                        const matchConfronto = jogoLimpo.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
+                        
+                        const matchConfronto = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
                         if (matchConfronto) {
                             const jogoFinal = matchConfronto[0].trim();
                             
+                            // Log de depuração: para sabermos se o jogo foi lido
+                            console.log(`🔍 Lendo: ${jogoFinal} | Média: ${valor}`);
+
                             if (!jogosEnviados.has(jogoFinal)) {
                                 jogosEnviados.add(jogoFinal);
 
-                                bot.sendMessage(CHAT_ID, `✅ *OPORTUNIDADE REAL (HOJE)*\n⚔️ ${jogoFinal}\n📊 Média FT: ${valor.toFixed(1)}`, { parse_mode: 'Markdown' });
-                                console.log(`✅ ENVIADO HOJE: ${jogoFinal}`);
+                                bot.sendMessage(CHAT_ID, `⚽ *OPORTUNIDADE ENCONTRADA*\n⚔️ *Confronto:* ${jogoFinal}\n📊 *Média FT:* ${valor.toFixed(1)}`, { parse_mode: 'Markdown' });
+                                console.log(`✅ ENVIADO: ${jogoFinal}`);
                             }
                         }
                     }
@@ -73,6 +66,7 @@ async function monitorarJogos() {
     }
 }
 
+// Limpa cache a cada 24h
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 setInterval(monitorarJogos, 300000); 
 monitorarJogos();
