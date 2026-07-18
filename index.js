@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Ativo - Varredura Ampla'));
+app.get('/', (req, res) => res.send('Bot Operacional - Monitorando Jogos do Dia'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,6 +16,7 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
+// Cache para evitar spam dos mesmos jogos
 let jogosEnviados = new Set();
 
 async function monitorarJogos() {
@@ -27,32 +28,28 @@ async function monitorarJogos() {
 
         const $ = cheerio.load(response.data);
         
-        // Varredura ampla em todos os containers possíveis
         $('div, tr, li, td, span').each((i, el) => {
             const linha = $(el).text().trim().replace(/\s+/g, ' ');
 
-            // Procura apenas linhas que tenham um confronto (x)
+            // Filtra apenas linhas que possuem um confronto
             if (linha.includes(' x ')) {
-                
-                // Regex para capturar números decimais (ex: 10.6, 11.2)
                 const matchNumero = linha.match(/(\d{2}[.,]\d)/);
                 
                 if (matchNumero) {
                     const valor = parseFloat(matchNumero[0].replace(',', '.'));
 
-                    // Filtro: 10.6 a 15.0
+                    // Filtro de Oportunidade Real (10.6 a 15.0)
                     if (valor > 10.5 && valor <= 15.0) {
                         
-                        // Limpeza: remove "Hoje" e datas se aparecerem no texto
+                        // Limpeza do nome do confronto
                         let confronto = linha.replace(/Hoje/gi, '').replace(/\d{2}\/\d{2}/g, '').trim();
-                        // Pega apenas a parte do confronto
                         const matchConfronto = confronto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
                         
                         if (matchConfronto && !jogosEnviados.has(matchConfronto[0])) {
                             const jogoFinal = matchConfronto[0].trim();
                             jogosEnviados.add(jogoFinal);
 
-                            const mensagem = `⚽ *OPORTUNIDADE REAL*\n` +
+                            const mensagem = `⚽ *OPORTUNIDADE REAL (JOGO DO DIA)*\n` +
                                              `⚔️ *Confronto:* ${jogoFinal}\n` +
                                              `📊 *Média FT:* ${valor.toFixed(1)}\n` +
                                              `━━━━━━━━━━━━━━`;
@@ -65,11 +62,15 @@ async function monitorarJogos() {
             }
         });
     } catch (e) {
-        console.error("Erro na busca:", e.message);
+        console.error("Erro na busca automática:", e.message);
     }
 }
 
+// Limpa o cache todo dia às 00:00 (ou a cada 24h) para resetar o monitoramento
 setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+
+// Monitora o site a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
 
+// Execução inicial
 monitorarJogos();
