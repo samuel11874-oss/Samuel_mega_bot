@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Versão Limpa'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtrando Jogos de Hoje'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,33 +17,35 @@ const HEADERS = {
 
 let jogosEnviados = new Set();
 
-// Função para limpar sujeira dos nomes
-function limparNome(texto) {
-    return texto.replace(/Brasileirão|Série|ESTATÍSTICAS|DE|ESCANTEIOS|Liga|Handicap|Mais|Menos|Partida|Hoje|Amanhã/gi, '')
-                .replace(/\s+/g, ' ') // Remove espaços duplicados
-                .trim();
+// Verifica se o texto sugere um dia futuro
+function ehDataFutura(texto) {
+    const diasFuturos = ['amanhã', 'domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta'];
+    return diasFuturos.some(dia => texto.toLowerCase().includes(dia));
 }
 
 async function monitorarJogos() {
-    console.log(`🔍 Iniciando Varredura Limpa...`);
+    console.log(`🔍 Iniciando Varredura focada em hoje...`);
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
         const textoCompleto = $('body').text();
         
-        // Regex mais inteligente: Exige que o nome comece com letra maiúscula
-        const regexJogo = /([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s]{3,})\s*[xX]\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s]{3,})/g;
+        // Regex aprimorada: Para de capturar quando encontra um número ou barra (evita pegar o nome da liga)
+        const regexJogo = /([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s]{3,})\s*[xX]\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s]{2,})(?=\s*\d|\s*\|)/g;
         
         let match;
         let encontrados = 0;
 
         while ((match = regexJogo.exec(textoCompleto)) !== null) {
-            let timeA = limparNome(match[1]);
-            let timeB = limparNome(match[2]);
+            const linhaContexto = textoCompleto.substring(match.index, match.index + 200);
             
-            // Pega o trecho para ler a média
-            const trecho = textoCompleto.substring(match.index, match.index + 200);
-            const numeros = trecho.match(/(\d{1,2}[.,]\d)/g);
+            // Filtro de Data: Se tiver dia futuro, ignora este jogo
+            if (ehDataFutura(linhaContexto)) continue;
+
+            const timeA = match[1].trim();
+            const timeB = match[2].trim();
+            
+            const numeros = linhaContexto.match(/(\d{1,2}[.,]\d)/g);
             
             if (numeros && numeros.length >= 2) {
                 const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
@@ -53,7 +55,7 @@ async function monitorarJogos() {
                     jogosEnviados.add(chave);
                     encontrados++;
                     
-                    const msg = `⚽ *Oportunidade Encontrada*\n\n` +
+                    const msg = `⚽ *Oportunidade - Hoje*\n\n` +
                                 `⚔️ *Jogo:* ${timeA} x ${timeB}\n` +
                                 `📊 *Média:* ${media.toFixed(1)}`;
                     
