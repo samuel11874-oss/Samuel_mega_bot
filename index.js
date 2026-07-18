@@ -17,9 +17,9 @@ const HEADERS = {
 
 let jogosEnviados = new Set();
 
-// Limpeza agressiva para remover lixo do nome do time
+// Função de limpeza corrigida com a barra escapada ( \/ )
 function limparTexto(texto) {
-    return texto.replace(/(Hoje|Começa em \d+ minutos|Mais|Menos|1\d+/\d+|[0-9]{1,3})/gi, '').trim();
+    return texto.replace(/(Hoje|Começa em \d+ minutos|Mais|Menos|1\d+\/\d+|[0-9]{1,3})/gi, '').trim();
 }
 
 async function monitorarJogos() {
@@ -31,19 +31,18 @@ async function monitorarJogos() {
         let emSecaoHoje = false;
         let encontrados = 0;
 
-        // Itera sobre todos os elementos que contêm informação
         $('div, tr, td, p, span').each((i, el) => {
             const texto = $(el).text().trim();
             const textoLower = texto.toLowerCase();
 
-            // Lógica de Seção:
+            // Lógica de Seção
             if (textoLower.includes('hoje')) {
                 emSecaoHoje = true;
             } else if (/(amanhã|segunda|terça|quarta|quinta|sexta|sábado|domingo|janeiro|fevereiro|março)/.test(textoLower)) {
                 emSecaoHoje = false;
             }
 
-            // Só processa se estiver na seção "Hoje"
+            // Processa apenas na seção "Hoje"
             if (emSecaoHoje && texto.includes(' x ')) {
                 const match = texto.match(/([A-Za-zÀ-ÿ\s]{4,})\sx\s([A-Za-zÀ-ÿ\s]{4,})/);
                 
