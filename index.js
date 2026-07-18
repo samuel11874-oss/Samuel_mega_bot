@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Modo Extrator'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtrando apenas Hoje'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,56 +17,67 @@ const HEADERS = {
 
 let jogosEnviados = new Set();
 
+// Limpeza agressiva para remover lixo do nome do time
+function limparTexto(texto) {
+    return texto.replace(/(Hoje|Começa em \d+ minutos|Mais|Menos|1\d+/\d+|[0-9]{1,3})/gi, '').trim();
+}
+
 async function monitorarJogos() {
-    console.log(`🔍 Iniciando varredura com Extrator Inteligente...`);
+    console.log(`🔍 Varredura iniciada...`);
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
+        
+        let emSecaoHoje = false;
         let encontrados = 0;
 
-        // Varre todos os blocos de texto
+        // Itera sobre todos os elementos que contêm informação
         $('div, tr, td, p, span').each((i, el) => {
             const texto = $(el).text().trim();
-            
-            // Regex focado apenas nos nomes dos times (letras e espaços)
-            // Ignora qualquer número ou palavra que venha grudada
-            const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\sx\s([A-Za-zÀ-ÿ\s]{3,})/);
-            
-            if (match) {
-                const timeCasa = match[1].trim();
-                const timeFora = match[2].trim();
-                const jogoLimpo = `${timeCasa} x ${timeFora}`;
+            const textoLower = texto.toLowerCase();
+
+            // Lógica de Seção:
+            if (textoLower.includes('hoje')) {
+                emSecaoHoje = true;
+            } else if (/(amanhã|segunda|terça|quarta|quinta|sexta|sábado|domingo|janeiro|fevereiro|março)/.test(textoLower)) {
+                emSecaoHoje = false;
+            }
+
+            // Só processa se estiver na seção "Hoje"
+            if (emSecaoHoje && texto.includes(' x ')) {
+                const match = texto.match(/([A-Za-zÀ-ÿ\s]{4,})\sx\s([A-Za-zÀ-ÿ\s]{4,})/);
                 
-                // Busca os números de escanteio no mesmo bloco de texto
-                const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
-                
-                if (numeros && numeros.length >= 2) {
-                    const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
+                if (match) {
+                    const jogoLimpo = limparTexto(match[0]);
+                    const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
                     
-                    // Filtro de 9.5 a 15.0 e evita duplicados
-                    if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(jogoLimpo)) {
-                        jogosEnviados.add(jogoLimpo);
-                        encontrados++;
+                    if (numeros && numeros.length >= 2) {
+                        const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                         
-                        const msg = `⚽ *Oportunidade Encontrada*\n\n` +
-                                    `⚔️ *Jogo:* ${jogoLimpo}\n` +
-                                    `📊 *Média de escanteios FT:* ${media.toFixed(1)}`;
-                        
-                        bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                        console.log(`✅ ENVIADO: ${jogoLimpo} | Média: ${media.toFixed(1)}`);
+                        if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(jogoLimpo)) {
+                            jogosEnviados.add(jogoLimpo);
+                            encontrados++;
+                            
+                            const msg = `⚽ *Oportunidade (HOJE)*\n\n` +
+                                        `⚔️ *Jogo:* ${jogoLimpo}\n` +
+                                        `📊 *Média de escanteios FT:* ${media.toFixed(1)}`;
+                            
+                            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                            console.log(`✅ ENVIADO (HOJE): ${jogoLimpo} | Média: ${media.toFixed(1)}`);
+                        }
                     }
                 }
             }
         });
         
-        console.log(`🔍 Varredura concluída. Novos jogos encontrados: ${encontrados}`);
+        console.log(`🔍 Varredura concluída. Novos jogos de HOJE encontrados: ${encontrados}`);
         
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
 }
 
-// Reseta o cache de jogos a cada 1 hora para não parar de enviar
-setInterval(() => { jogosEnviados.clear(); }, 3600000);
+// Reseta o cache a cada 30 minutos
+setInterval(() => { jogosEnviados.clear(); }, 1800000);
 setInterval(monitorarJogos, 300000);
 monitorarJogos();
