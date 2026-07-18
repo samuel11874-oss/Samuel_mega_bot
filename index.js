@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Diagnóstico de Rede'));
+app.get('/', (req, res) => res.send('Bot de Diagnóstico de Estrutura'));
 app.listen(process.env.PORT || 3000);
 
 const MOBILE_HEADERS = {
@@ -9,35 +9,23 @@ const MOBILE_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-async function diagnosticarRede() {
-    console.log(`🚀 [DEBUG] Iniciando tentativa de acesso ao site...`);
+async function inspecionarSite() {
+    console.log(`🔍 Buscando estrutura da página...`);
     
     try {
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', {
             headers: MOBILE_HEADERS,
-            timeout: 25000 // Aumentei o timeout para 25 segundos
+            timeout: 25000
         });
         
-        console.log(`✅ [DEBUG] Sucesso! Status da página: ${response.status}`);
-        console.log(`✅ [DEBUG] Conteúdo recebido com sucesso.`);
-        
-        // Verifica se existem tabelas no HTML retornado
-        const cheerio = require('cheerio');
-        const $ = cheerio.load(response.data);
-        const totalTabelas = $('table').length;
-        
-        console.log(`📊 [DEBUG] Total de tabelas encontradas no HTML: ${totalTabelas}`);
-        
-        if (totalTabelas > 0) {
-            console.log(`📌 [DEBUG] Exemplo da primeira tabela: ` + $('table').first().text().trim().substring(0, 100));
-        }
+        // Vamos imprimir os primeiros 2000 caracteres do HTML da página
+        console.log(`--- INÍCIO DO CÓDIGO HTML ---`);
+        console.log(response.data.substring(0, 2000));
+        console.log(`--- FIM DO CÓDIGO HTML ---`);
 
     } catch (e) {
-        console.error(`❌ [DEBUG] Erro ao acessar o site: ${e.message}`);
-        if (e.response) {
-            console.error(`❌ [DEBUG] Detalhes do erro: ${e.response.status}`);
-        }
+        console.error(`❌ Erro: ${e.message}`);
     }
 }
 
-diagnosticarRede();
+inspecionarSite();
