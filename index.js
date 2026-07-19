@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtros e Formatação Ativos'));
+app.get('/', (req, res) => res.send('Bot Operacional - Emojis e Bandeiras Ativos'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -15,8 +15,23 @@ const HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 };
 
-// Esta lista garante que o mesmo jogo não seja enviado repetidas vezes
 let jogosEnviados = new Set();
+
+// Função para identificar a bandeira pelo nome do time
+function getBandeira(teamName) {
+    const list = {
+        "Flamengo": "🇧🇷", "Palmeiras": "🇧🇷", "Corinthians": "🇧🇷", "São Paulo": "🇧🇷",
+        "Santos": "🇧🇷", "Cruzeiro": "🇧🇷", "Atlético": "🇧🇷", "Bahia": "🇧🇷",
+        "Vasco": "🇧🇷", "Botafogo": "🇧🇷", "Fluminense": "🇧🇷", "Grêmio": "🇧🇷",
+        "Internacional": "🇧🇷", "Ceará": "🇧🇷", "CRB": "🇧🇷", "Náutico": "🇧🇷",
+        "Londrina": "🇧🇷", "Coritiba": "🇧🇷", "Operário": "🇧🇷", "Avaí": "🇧🇷",
+        "América": "🇧🇷", "Juventude": "🇧🇷", "Criciúma": "🇧🇷", "São Bernardo": "🇧🇷",
+        "Athletic": "🇧🇷", "Malmo": "🇸🇪", "Kalmar": "🇸🇪", "Hacken": "🇸🇪", "AIK": "🇸🇪",
+        "Lahti": "🇫🇮", "Mariehamn": "🇫🇮", "KuPS": "🇫🇮", "VPS": "🇫🇮", "Gnistan": "🇫🇮"
+    };
+    // Verifica se o nome do time está na lista, caso contrário retorna bandeira mundial
+    return list[teamName] || "🏳️";
+}
 
 function ehDataFutura(texto) {
     const dataAtual = 19; 
@@ -48,20 +63,22 @@ async function monitorarJogos() {
                     const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                     
                     if (media > 9.5 && media <= 15.0) {
-                        // Cria uma chave única baseada no nome do jogo para evitar repetição
                         const chave = (match[1] + match[2]).toLowerCase().replace(/\s/g, '');
                         
                         if (!jogosEnviados.has(chave)) {
                             jogosEnviados.add(chave);
                             encontrados++;
+
+                            const t1 = match[1].trim();
+                            const t2 = match[2].trim();
+                            const bandeira = getBandeira(t1); // Pega a bandeira baseada no primeiro time
                             
-                            // Formatação solicitada
-                            const msg = `🔍 *Oportunidade encontrada*\n\n` +
-                                        `⚔️ *${match[1].trim()} x ${match[2].trim()}*\n` +
-                                        `📊 *Média de escanteio FT: ${media.toFixed(1)}*`;
+                            const msg = `⚽ *Oportunidade encontrada*\n\n` +
+                                        `${bandeira} *${t1} x ${t2}*\n` +
+                                        `⛳ *Média de escanteio FT: ${media.toFixed(1)}*`;
                             
                             bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                            console.log(`✅ ENVIADO: ${match[1].trim()} x ${match[2].trim()} | Média: ${media.toFixed(1)}`);
+                            console.log(`✅ ENVIADO: ${t1} x ${t2} | Bandeira: ${bandeira}`);
                         }
                     }
                 }
@@ -74,7 +91,6 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa a memória de jogos enviados a cada 1 hora para renovar a lista
 setInterval(() => { jogosEnviados.clear(); }, 3600000); 
 setInterval(monitorarJogos, 300000); 
 monitorarJogos();
