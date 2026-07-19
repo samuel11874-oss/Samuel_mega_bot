@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Hoje'));
+app.get('/', (req, res) => res.send('Bot Operacional - Busca Estável'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,64 +17,60 @@ const HEADERS = {
 
 let jogosEnviados = new Set();
 
+function limparNome(nome) {
+    // Remove a palavra "Hoje" caso ela tenha sido capturada no nome
+    return nome.replace(/Hoje/gi, "").trim();
+}
+
 async function monitorarJogos() {
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
         
         let encontrados = 0;
-        let pararLeitura = false;
 
-        // Regex: 
-        // 1. Ignora "Hoje" ou "Today" no início (não captura)
-        // 2. Captura Time A
-        // 3. Captura Time B
-        const regexJogo = /(?:Hoje|Today)?\s*([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s]{2,})\s?x\s?([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s]{2,})/i;
-
+        // Itera sobre as linhas da tabela
         $('tr').each((i, el) => {
-            if (pararLeitura) return false;
-
             const texto = $(el).text();
             
-            // Regra de Parada: se encontrar "Amanhã", encerra a busca
-            if (/amanhã|tomorrow/i.test(texto)) {
-                pararLeitura = true;
-                return false;
-            }
-
-            if (texto.includes(' x ')) {
-                const match = texto.match(regexJogo);
+            // Regex que captura "Time x Time"
+            // \s+ garante que haja espaço entre os nomes e o "x"
+            const match = texto.match(/([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s]{2,})\s+x\s+([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s]{2,})/i);
+            
+            if (match) {
+                const timeA = limparNome(match[1]);
+                const timeB = limparNome(match[2]);
                 
-                if (match) {
-                    const timeA = match[1].trim();
-                    const timeB = match[2].trim();
+                // Busca os números na mesma linha
+                const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
+                
+                if (numeros && numeros.length >= 2) {
+                    const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
+                    const chave = (timeA + timeB).toLowerCase().replace(/[^a-z]/g, '');
                     
-                    const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
-                    if (numeros && numeros.length >= 2) {
-                        const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
-                        const chave = (timeA + timeB).toLowerCase().replace(/[^a-z]/g, '');
+                    // Filtro de Média e evita duplicados
+                    if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(chave)) {
+                        jogosEnviados.add(chave);
+                        encontrados++;
                         
-                        if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(chave)) {
-                            jogosEnviados.add(chave);
-                            encontrados++;
-                            
-                            const msg = `⚽ *Oportunidade de Hoje*\n` +
-                                        `⚔️ *${timeA} x ${timeB}*\n` +
-                                        `📊 *Média: ${media.toFixed(1)}*`;
-                            
-                            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                            console.log(`✅ ENVIADO: ${timeA} x ${timeB} | Média: ${media.toFixed(1)}`);
-                        }
+                        const msg = `⚽ *Oportunidade de Hoje*\n` +
+                                    `⚔️ *${timeA} x ${timeB}*\n` +
+                                    `📊 *Média: ${media.toFixed(1)}*`;
+                        
+                        bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                        console.log(`✅ ENVIADO: ${timeA} x ${timeB} | Média: ${media.toFixed(1)}`);
                     }
                 }
             }
         });
+        
         console.log(`🔍 Varredura concluída. Novos jogos hoje: ${encontrados}`);
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
 }
 
-setInterval(() => { jogosEnviados.clear(); }, 7200000);
+// Reset cache a cada 6h, checa a cada 5 min
+setInterval(() => { jogosEnviados.clear(); }, 21600000);
 setInterval(monitorarJogos, 300000); 
 monitorarJogos();
