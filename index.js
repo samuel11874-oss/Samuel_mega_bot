@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Caçador Universal'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Hoje Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,20 +23,25 @@ async function monitorarJogos() {
         const $ = cheerio.load(data);
         
         let encontrados = 0;
+        let pararBusca = false; // Trava de segurança
 
-        // Procura em TODAS as divs, mas exclui as que são claramente do menu
         $('div').each((i, el) => {
+            if (pararBusca) return; // Se encontrar "Amanhã", para de processar
+
             const $el = $(el);
-            // Pula se for menu
+            const texto = $el.text().trim();
+
+            // Bloqueio de segurança: Se encontrar "Amanhã" ou "Tomorrow", encerra a busca
+            if (/amanhã|tomorrow/i.test(texto)) {
+                pararBusca = true;
+                return;
+            }
+
+            // Filtro de Menu
             if ($el.hasClass('menu-item-content') || $el.closest('.menu').length > 0) return;
 
-            const texto = $el.text().trim();
-            
-            // Procura o padrão: Time x Time (exige espaço antes e depois do x)
-            // Procura também por números decimais (a estatística)
+            // Busca de jogos
             if (texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
-                
-                // Extrai times e média
                 const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
                 const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
                 
@@ -50,7 +55,7 @@ async function monitorarJogos() {
                             jogosEnviados.add(chave);
                             encontrados++;
                             
-                            const msg = `⚽ *Oportunidade*\n` +
+                            const msg = `⚽ *Oportunidade de Hoje*\n` +
                                         `⚔️ *${match[1].trim()} x ${match[2].trim()}*\n` +
                                         `📊 *Média: ${media.toFixed(1)}*`;
                             
@@ -62,13 +67,12 @@ async function monitorarJogos() {
             }
         });
         
-        console.log(`🔍 Varredura concluída. Novos jogos encontrados: ${encontrados}`);
+        console.log(`🔍 Varredura concluída. Novos jogos hoje: ${encontrados}`);
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
 }
 
-// Configuração de tempo
-setInterval(() => { jogosEnviados.clear(); }, 3600000);
-setInterval(monitorarJogos, 300000); 
+setInterval(() => { jogosEnviados.clear(); }, 3600000); // Limpa cache a cada hora
+setInterval(monitorarJogos, 300000); // Busca a cada 5 min
 monitorarJogos();
