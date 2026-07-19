@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Caça Ampla'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtragem de Datas Ativa'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -15,6 +15,20 @@ const HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 };
 
+// Lista de palavras que NUNCA devem estar no nome do time
+const lixo = ["julho", "agosto", "setembro", "2026", "feira", "ho", "TotalPró", "Liga", "Partida", "Amanhã", "Tomorrow"];
+
+function limparNome(nome) {
+    let n = nome.trim();
+    // Remove palavras do lixo
+    lixo.forEach(palavra => {
+        const regex = new RegExp(palavra, "gi");
+        n = n.replace(regex, "");
+    });
+    // Remove caracteres especiais e espaços extras
+    return n.replace(/[^\wÀ-ÿ\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
 let jogosEnviados = new Set();
 
 async function monitorarJogos() {
@@ -22,30 +36,28 @@ async function monitorarJogos() {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
         
-        // DEBUG: Se o bot não achar nada, este log vai te mostrar o que ele está lendo
-        const textoCompleto = $('body').text();
-        console.log("DEBUG - Início do site:", textoCompleto.substring(0, 300));
-
         let encontrados = 0;
 
-        // Procura em toda a página por "Time x Time"
-        // Regex bem solta para pegar qualquer coisa entre um "x"
-        // Formato: QualquerTexto + espaço + x + espaço + QualquerTexto
-        const regexJogo = /(.{3,30})\s+x\s+(.{3,30})/i;
-
-        // Varre todos os elementos de texto
+        // Procura em toda a página
         $('div, p, td, span').each((i, el) => {
             const texto = $(el).text().trim();
+            
+            // FILTRO DE SEGURANÇA: Se a linha tiver "x" MAS contiver palavras de data, ignora na hora
+            const ehData = lixo.some(termo => texto.toLowerCase().includes(termo.toLowerCase()));
+            if (ehData) return; // Pula esta linha
+
             if (texto.includes(' x ')) {
-                const match = texto.match(regexJogo);
+                // Regex: Procura "Nome x Nome" (ignora se começar com minúscula, evitando cabeçalhos)
+                const match = texto.match(/([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s]{2,})\s?x\s?([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s]{2,})/i);
                 
                 if (match) {
-                    const timeA = match[1].trim();
-                    const timeB = match[2].trim();
+                    const timeA = limparNome(match[1]);
+                    const timeB = limparNome(match[2]);
                     
-                    // Procura números na mesma linha
+                    // Validação: nomes precisam ter pelo menos 3 letras e não ser lixo
+                    if (timeA.length < 3 || timeB.length < 3) return;
+
                     const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
-                    
                     if (numeros && numeros.length >= 2) {
                         const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                         const chave = (timeA + timeB).toLowerCase().replace(/[^a-z]/g, '');
@@ -54,7 +66,7 @@ async function monitorarJogos() {
                             jogosEnviados.add(chave);
                             encontrados++;
                             
-                            const msg = `⚽ *Oportunidade*\n` +
+                            const msg = `⚽ *Oportunidade de Hoje*\n` +
                                         `⚔️ *${timeA} x ${timeB}*\n` +
                                         `📊 *Média: ${media.toFixed(1)}*`;
                             
@@ -65,7 +77,6 @@ async function monitorarJogos() {
                 }
             }
         });
-        
         console.log(`🔍 Varredura concluída. Novos jogos hoje: ${encontrados}`);
     } catch (e) {
         console.error("Erro na busca:", e.message);
