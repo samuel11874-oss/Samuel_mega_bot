@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Modo TESTE Ativo'));
+app.get('/', (req, res) => res.send('Bot Operacional - Critério Normalizado'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -38,6 +38,7 @@ async function monitorarJogos() {
             const texto = $(el).text().trim();
             if (ehDataFutura(texto)) return;
 
+            // Filtro rigoroso: precisa conter " x " e um formato de média claro
             if (texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
                 const linhaLimpa = texto.replace(/hoje|amanhã|tomorrow|data/gi, '').trim();
                 const match = linhaLimpa.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
@@ -46,27 +47,27 @@ async function monitorarJogos() {
                 if (match && numeros && numeros.length >= 2) {
                     const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                     
-                    // TESTE: Captura qualquer média entre 0 e 20
-                    if (media > 0 && media <= 20.0) {
+                    // CRITÉRIO ORIGINAL RESTAURADO (9.5 a 15.0)
+                    if (media > 9.5 && media <= 15.0) {
                         const chave = (match[1] + match[2]).toLowerCase().replace(/\s/g, '');
                         
                         if (!jogosEnviados.has(chave)) {
                             jogosEnviados.add(chave);
                             encontrados++;
                             
-                            const msg = `⚽ *Oportunidade (TESTE - SEM FILTRO)*\n` +
+                            const msg = `⚽ *Oportunidade (HOJE)*\n` +
                                         `⚔️ *${match[1].trim()} x ${match[2].trim()}*\n` +
                                         `📊 *Média: ${media.toFixed(1)}*`;
                             
                             bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                            console.log(`✅ ENVIADO (TESTE): ${match[1].trim()} x ${match[2].trim()} | Média: ${media.toFixed(1)}`);
+                            console.log(`✅ ENVIADO: ${match[1].trim()} x ${match[2].trim()} | Média: ${media.toFixed(1)}`);
                         }
                     }
                 }
             }
         });
         
-        console.log(`🔍 Varredura concluída. Jogos encontrados: ${encontrados}`);
+        console.log(`🔍 Varredura concluída. Jogos válidos de HOJE encontrados: ${encontrados}`);
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
