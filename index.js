@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Datas Seguro'));
+app.get('/', (req, res) => res.send('Bot Operacional - Modo Hoje por Padrão'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,29 +23,24 @@ async function monitorarJogos() {
         const $ = cheerio.load(data);
         
         let encontrados = 0;
-        let secaoAtual = 'DESCONHECIDO'; // Define em qual parte do site estamos
+        let modoCaptura = true; // COMEÇA ATIVO (Assume-se que o topo é hoje)
 
         // Analisamos os elementos da página
-        $('h2, h3, div').each((i, el) => {
+        $('div, h2, h3, h4').each((i, el) => {
             const $el = $(el);
             const texto = $el.text().trim();
-            const tagName = el.tagName.toLowerCase();
 
-            // 1. IDENTIFICAÇÃO DE SEÇÃO (Cabeçalhos)
-            // Se for um título (h2, h3) ou uma div que indica a data
-            if (tagName === 'h2' || tagName === 'h3' || $el.hasClass('header')) {
-                if (/hoje/i.test(texto)) {
-                    secaoAtual = 'HOJE';
-                    return;
-                }
-                if (/amanhã|tomorrow/i.test(texto)) {
-                    secaoAtual = 'FUTURO';
-                    return;
-                }
+            // 1. VERIFICA SE CHEGAMOS EM AMANHÃ
+            // Se encontrar qualquer cabeçalho com "Amanhã" ou "Tomorrow", desliga a captura
+            if ((el.tagName === 'h2' || el.tagName === 'h3' || el.tagName === 'h4') && 
+                /amanhã|tomorrow/i.test(texto)) {
+                modoCaptura = false;
+                return;
             }
 
-            // 2. PROCESSAMENTO DE JOGO (Só processa se estiver na seção "HOJE")
-            if (secaoAtual === 'HOJE') {
+            // 2. PROCESSAMENTO DE JOGO (Só processa se o modo estiver ligado)
+            if (modoCaptura) {
+                // Filtra apenas linhas que parecem jogos (possuem " x ")
                 if (texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
                     
                     const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
@@ -81,6 +76,6 @@ async function monitorarJogos() {
     }
 }
 
-setInterval(() => { jogosEnviados.clear(); }, 3600000); // Limpa cache
-setInterval(monitorarJogos, 300000); // 5 minutos
+setInterval(() => { jogosEnviados.clear(); }, 3600000); 
+setInterval(monitorarJogos, 300000); 
 monitorarJogos();
