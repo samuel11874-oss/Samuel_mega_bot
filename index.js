@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Limpeza Total'));
+app.get('/', (req, res) => res.send('Bot Operacional - Processamento Seguro'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -18,34 +18,33 @@ const HEADERS = {
 let jogosEnviados = new Set();
 
 async function monitorarJogos() {
-    console.log(`🔍 Iniciando Varredura...`);
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
         
-        // 1. Pega todo o texto e já limpa as palavras de lixo de uma vez
-        let texto = $('body').text();
-        const lixo = /Brasileirão|Série|ESTATÍSTICAS|DE|ESCANTEIOS|Liga|Handicap|Mais|Menos|Partida|Hoje|Amanhã|Copa|Profissional|S|B|A|Tabela|Resultados/gi;
-        texto = texto.replace(lixo, ' '); 
-        texto = texto.replace(/\s+/g, ' '); // Remove espaços duplos criados pela limpeza
-
-        // 2. Procura pelo padrão "Time A x Time B"
-        // A regex agora permite que o nome tenha mais de 3 caracteres e termina antes de números
-        const regexJogo = /([A-ZÀ-Ÿ][A-Za-zÀ-ÿ ]{3,})\s*[xX]\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ ]{3,})/g;
-        
-        let match;
+        // Pega o conteúdo da página e divide linha por linha
+        const linhas = $('body').text().split('\n');
         let encontrados = 0;
 
-        while ((match = regexJogo.exec(texto)) !== null) {
-            const timeA = match[1].trim();
-            const timeB = match[2].trim();
-            
-            // Verifica se os nomes são curtos e lógicos (evita lixo que sobrou)
-            if (timeA.length > 20 || timeB.length > 20) continue;
+        for (let linha of linhas) {
+            // Apenas analisa linhas que contenham " x "
+            if (!linha.includes(' x ')) continue;
 
-            // Pega o trecho logo após o jogo para achar a média (os números estão lá)
-            const contexto = texto.substring(match.index, match.index + 100);
-            const numeros = contexto.match(/(\d{1,2}[.,]\d)/g);
+            // Divide a linha pelo " x "
+            const partes = linha.split(' x ');
+            if (partes.length < 2) continue;
+
+            const timeA = partes[0].trim();
+            // Pega o time B e limpa qualquer "sujeira" que vier depois dele (como nome do campeonato)
+            // Para quando encontra um número (estatística)
+            const timeBCompleto = partes[1].trim();
+            const timeB = timeBCompleto.split(/[0-9]/)[0].trim(); 
+
+            // Validação simples: nomes precisam ter tamanho mínimo
+            if (timeA.length < 3 || timeB.length < 3) continue;
+
+            // Busca os números na linha original
+            const numeros = linha.match(/(\d{1,2}[.,]\d)/g);
             
             if (numeros && numeros.length >= 2) {
                 const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
@@ -70,7 +69,6 @@ async function monitorarJogos() {
     }
 }
 
-// Reseta cache a cada 2 horas
 setInterval(() => { jogosEnviados.clear(); }, 7200000);
-setInterval(monitorarJogos, 300000); // 5 minutos
+setInterval(monitorarJogos, 300000); 
 monitorarJogos();
