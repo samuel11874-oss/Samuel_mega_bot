@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Critério Normalizado'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtros e Formatação Ativos'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -15,6 +15,7 @@ const HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 };
 
+// Esta lista garante que o mesmo jogo não seja enviado repetidas vezes
 let jogosEnviados = new Set();
 
 function ehDataFutura(texto) {
@@ -38,7 +39,6 @@ async function monitorarJogos() {
             const texto = $(el).text().trim();
             if (ehDataFutura(texto)) return;
 
-            // Filtro rigoroso: precisa conter " x " e um formato de média claro
             if (texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
                 const linhaLimpa = texto.replace(/hoje|amanhã|tomorrow|data/gi, '').trim();
                 const match = linhaLimpa.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
@@ -47,17 +47,18 @@ async function monitorarJogos() {
                 if (match && numeros && numeros.length >= 2) {
                     const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                     
-                    // CRITÉRIO ORIGINAL RESTAURADO (9.5 a 15.0)
                     if (media > 9.5 && media <= 15.0) {
+                        // Cria uma chave única baseada no nome do jogo para evitar repetição
                         const chave = (match[1] + match[2]).toLowerCase().replace(/\s/g, '');
                         
                         if (!jogosEnviados.has(chave)) {
                             jogosEnviados.add(chave);
                             encontrados++;
                             
-                            const msg = `⚽ *Oportunidade (HOJE)*\n` +
+                            // Formatação solicitada
+                            const msg = `🔍 *Oportunidade encontrada*\n\n` +
                                         `⚔️ *${match[1].trim()} x ${match[2].trim()}*\n` +
-                                        `📊 *Média: ${media.toFixed(1)}*`;
+                                        `📊 *Média de escanteio FT: ${media.toFixed(1)}*`;
                             
                             bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
                             console.log(`✅ ENVIADO: ${match[1].trim()} x ${match[2].trim()} | Média: ${media.toFixed(1)}`);
@@ -73,6 +74,7 @@ async function monitorarJogos() {
     }
 }
 
+// Limpa a memória de jogos enviados a cada 1 hora para renovar a lista
 setInterval(() => { jogosEnviados.clear(); }, 3600000); 
 setInterval(monitorarJogos, 300000); 
 monitorarJogos();
