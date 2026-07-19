@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Busca Flexível Ativa'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Datas Seguro'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,65 +23,64 @@ async function monitorarJogos() {
         const $ = cheerio.load(data);
         
         let encontrados = 0;
-        let estaEmHoje = false; 
+        let secaoAtual = 'DESCONHECIDO'; // Define em qual parte do site estamos
 
-        // Escaneia a página
-        $('div, h2, h3').each((i, el) => {
+        // Analisamos os elementos da página
+        $('h2, h3, div').each((i, el) => {
             const $el = $(el);
             const texto = $el.text().trim();
-            
-            // Debug: Loga o que está sendo lido nos títulos para encontrarmos o termo correto
-            if (texto.length > 0 && texto.length < 30) {
-                // console.log("DEBUG Lendo: " + texto); // Remova o comentário se quiser ver tudo no log
+            const tagName = el.tagName.toLowerCase();
+
+            // 1. IDENTIFICAÇÃO DE SEÇÃO (Cabeçalhos)
+            // Se for um título (h2, h3) ou uma div que indica a data
+            if (tagName === 'h2' || tagName === 'h3' || $el.hasClass('header')) {
+                if (/hoje/i.test(texto)) {
+                    secaoAtual = 'HOJE';
+                    return;
+                }
+                if (/amanhã|tomorrow/i.test(texto)) {
+                    secaoAtual = 'FUTURO';
+                    return;
+                }
             }
 
-            // BUSCA FLEXÍVEL: Se o texto contiver "hoje", ativa a leitura
-            if (texto.toLowerCase().includes('hoje')) {
-                estaEmHoje = true;
-            }
-
-            // Se encontrar "Amanhã" ou "Tomorrow", desliga
-            if (texto.toLowerCase().includes('amanhã') || texto.toLowerCase().includes('tomorrow')) {
-                estaEmHoje = false;
-            }
-
-            // Ignora menus
-            if ($el.hasClass('menu-item-content') || $el.closest('.menu').length > 0) return;
-
-            // Processa se estiver no modo "Hoje"
-            if (estaEmHoje && texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
-                
-                const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
-                const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
-                
-                if (match && numeros && numeros.length >= 2) {
-                    const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
+            // 2. PROCESSAMENTO DE JOGO (Só processa se estiver na seção "HOJE")
+            if (secaoAtual === 'HOJE') {
+                if (texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
                     
-                    if (media > 9.5 && media <= 15.0) {
-                        const chave = (match[1] + match[2]).toLowerCase().replace(/\s/g, '');
+                    const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
+                    const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
+                    
+                    if (match && numeros && numeros.length >= 2) {
+                        const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                         
-                        if (!jogosEnviados.has(chave)) {
-                            jogosEnviados.add(chave);
-                            encontrados++;
+                        // Filtro de mercado
+                        if (media > 9.5 && media <= 15.0) {
+                            const chave = (match[1] + match[2]).toLowerCase().replace(/\s/g, '');
                             
-                            const msg = `⚽ *Oportunidade (HOJE)*\n` +
-                                        `⚔️ *${match[1].trim()} x ${match[2].trim()}*\n` +
-                                        `📊 *Média: ${media.toFixed(1)}*`;
-                            
-                            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                            console.log(`✅ ENVIADO (Hoje): ${match[1].trim()} x ${match[2].trim()} | Média: ${media.toFixed(1)}`);
+                            if (!jogosEnviados.has(chave)) {
+                                jogosEnviados.add(chave);
+                                encontrados++;
+                                
+                                const msg = `⚽ *Oportunidade (HOJE)*\n` +
+                                            `⚔️ *${match[1].trim()} x ${match[2].trim()}*\n` +
+                                            `📊 *Média: ${media.toFixed(1)}*`;
+                                
+                                bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                                console.log(`✅ ENVIADO: ${match[1].trim()} x ${match[2].trim()} | Média: ${media.toFixed(1)}`);
+                            }
                         }
                     }
                 }
             }
         });
         
-        console.log(`🔍 Varredura concluída. Jogos processados hoje: ${encontrados}`);
+        console.log(`🔍 Varredura concluída. Jogos válidos de HOJE encontrados: ${encontrados}`);
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
 }
 
-setInterval(() => { jogosEnviados.clear(); }, 3600000);
-setInterval(monitorarJogos, 300000); 
+setInterval(() => { jogosEnviados.clear(); }, 3600000); // Limpa cache
+setInterval(monitorarJogos, 300000); // 5 minutos
 monitorarJogos();
