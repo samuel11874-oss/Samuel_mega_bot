@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtrado'));
+app.get('/', (req, res) => res.send('Bot Operacional - Caçador Universal'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,51 +23,52 @@ async function monitorarJogos() {
         const $ = cheerio.load(data);
         
         let encontrados = 0;
-        console.log("--- BUSCANDO DADOS NA TABELA ---");
 
-        // IGNORA O MENU E FOCA NAS TABELAS
-        $('table').not('.menu-item-content').each((i, table) => {
-            $(table).find('tr').each((j, row) => {
-                const linhaTexto = $(row).text().trim();
+        // Procura em TODAS as divs, mas exclui as que são claramente do menu
+        $('div').each((i, el) => {
+            const $el = $(el);
+            // Pula se for menu
+            if ($el.hasClass('menu-item-content') || $el.closest('.menu').length > 0) return;
+
+            const texto = $el.text().trim();
+            
+            // Procura o padrão: Time x Time (exige espaço antes e depois do x)
+            // Procura também por números decimais (a estatística)
+            if (texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
                 
-                // Filtra para garantir que é uma linha de jogo com números (médias)
-                if (linhaTexto.includes(' x ') && /\d/.test(linhaTexto)) {
+                // Extrai times e média
+                const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
+                const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
+                
+                if (match && numeros && numeros.length >= 2) {
+                    const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                     
-                    // Regex para capturar números decimais (ex: 9.5, 10.4)
-                    const numeros = linhaTexto.match(/(\d{1,2}[.,]\d)/g);
-                    
-                    if (numeros && numeros.length >= 2) {
-                        const media1 = parseFloat(numeros[0].replace(',', '.'));
-                        const media2 = parseFloat(numeros[1].replace(',', '.'));
-                        const mediaTotal = media1 + media2;
+                    if (media > 9.5 && media <= 15.0) {
+                        const chave = (match[1] + match[2]).toLowerCase().replace(/\s/g, '');
                         
-                        // Sua regra: Média entre 9.5 e 15.0
-                        if (mediaTotal > 9.5 && mediaTotal <= 15.0) {
+                        if (!jogosEnviados.has(chave)) {
+                            jogosEnviados.add(chave);
                             encontrados++;
-                            const nomeJogo = linhaTexto.split(' ').slice(0, 5).join(' '); // Nome abreviado do jogo
-                            const chave = nomeJogo.replace(/\s+/g, '');
                             
-                            if (!jogosEnviados.has(chave)) {
-                                jogosEnviados.add(chave);
-                                const msg = `⚽ *Oportunidade*\n` + 
-                                            `⚔️ *${linhaTexto.substring(0, 40)}...*\n` + 
-                                            `📊 *Soma Médias: ${mediaTotal.toFixed(1)}*`;
-                                
-                                bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                                console.log(`✅ ENVIADO: ${nomeJogo} | Soma: ${mediaTotal.toFixed(1)}`);
-                            }
+                            const msg = `⚽ *Oportunidade*\n` +
+                                        `⚔️ *${match[1].trim()} x ${match[2].trim()}*\n` +
+                                        `📊 *Média: ${media.toFixed(1)}*`;
+                            
+                            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                            console.log(`✅ ENVIADO: ${match[1].trim()} x ${match[2].trim()} | Média: ${media.toFixed(1)}`);
                         }
                     }
                 }
-            });
+            }
         });
         
-        console.log(`--- BUSCA FINALIZADA. Novos jogos: ${encontrados} ---`);
+        console.log(`🔍 Varredura concluída. Novos jogos encontrados: ${encontrados}`);
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
 }
 
-setInterval(() => { jogosEnviados.clear(); }, 3600000); // Limpa cache a cada hora
-setInterval(monitorarJogos, 300000); // Busca a cada 5 min
+// Configuração de tempo
+setInterval(() => { jogosEnviados.clear(); }, 3600000);
+setInterval(monitorarJogos, 300000); 
 monitorarJogos();
