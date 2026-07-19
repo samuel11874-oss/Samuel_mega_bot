@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Hoje Seguro'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro Exclusivo de Hoje'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,20 +23,31 @@ async function monitorarJogos() {
         const $ = cheerio.load(data);
         
         let encontrados = 0;
+        let estaEmHoje = false; // Chave de segurança
 
-        $('div').each((i, el) => {
+        // Selecionamos DIVs, H2 e H3 (onde geralmente ficam os títulos de datas)
+        $('div, h2, h3').each((i, el) => {
             const $el = $(el);
             const texto = $el.text().trim();
 
-            // FILTRO SEGURO: Se encontrar "Amanhã" ou "Tomorrow" nesta linha, apenas pula esta linha
-            // Isso não desliga o robô, só ignora o que não é de hoje
-            if (/amanhã|tomorrow/i.test(texto)) return; 
+            // LÓGICA DO RASTREADOR:
+            // Se encontrar "Hoje" (mas não "Hoje à Noite" como menu), liga a chave
+            if (/^hoje$/i.test(texto)) {
+                estaEmHoje = true;
+                return;
+            }
+
+            // Se encontrar "Amanhã" ou "Tomorrow", desliga a chave
+            if (/amanhã|tomorrow|fim de semana/i.test(texto)) {
+                estaEmHoje = false;
+                return;
+            }
 
             // Ignora menus
             if ($el.hasClass('menu-item-content') || $el.closest('.menu').length > 0) return;
 
-            // Processa o jogo
-            if (texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
+            // Só processa se a chave "estaEmHoje" estiver ligada
+            if (estaEmHoje && texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
                 
                 const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
                 const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
@@ -51,12 +62,12 @@ async function monitorarJogos() {
                             jogosEnviados.add(chave);
                             encontrados++;
                             
-                            const msg = `⚽ *Oportunidade de Hoje*\n` +
+                            const msg = `⚽ *Oportunidade (HOJE)*\n` +
                                         `⚔️ *${match[1].trim()} x ${match[2].trim()}*\n` +
                                         `📊 *Média: ${media.toFixed(1)}*`;
                             
                             bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                            console.log(`✅ ENVIADO: ${match[1].trim()} x ${match[2].trim()} | Média: ${media.toFixed(1)}`);
+                            console.log(`✅ ENVIADO (Hoje): ${match[1].trim()} x ${match[2].trim()} | Média: ${media.toFixed(1)}`);
                         }
                     }
                 }
