@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro Exclusivo de Hoje'));
+app.get('/', (req, res) => res.send('Bot Operacional - Busca Flexível Ativa'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,30 +23,32 @@ async function monitorarJogos() {
         const $ = cheerio.load(data);
         
         let encontrados = 0;
-        let estaEmHoje = false; // Chave de segurança
+        let estaEmHoje = false; 
 
-        // Selecionamos DIVs, H2 e H3 (onde geralmente ficam os títulos de datas)
+        // Escaneia a página
         $('div, h2, h3').each((i, el) => {
             const $el = $(el);
             const texto = $el.text().trim();
-
-            // LÓGICA DO RASTREADOR:
-            // Se encontrar "Hoje" (mas não "Hoje à Noite" como menu), liga a chave
-            if (/^hoje$/i.test(texto)) {
-                estaEmHoje = true;
-                return;
+            
+            // Debug: Loga o que está sendo lido nos títulos para encontrarmos o termo correto
+            if (texto.length > 0 && texto.length < 30) {
+                // console.log("DEBUG Lendo: " + texto); // Remova o comentário se quiser ver tudo no log
             }
 
-            // Se encontrar "Amanhã" ou "Tomorrow", desliga a chave
-            if (/amanhã|tomorrow|fim de semana/i.test(texto)) {
+            // BUSCA FLEXÍVEL: Se o texto contiver "hoje", ativa a leitura
+            if (texto.toLowerCase().includes('hoje')) {
+                estaEmHoje = true;
+            }
+
+            // Se encontrar "Amanhã" ou "Tomorrow", desliga
+            if (texto.toLowerCase().includes('amanhã') || texto.toLowerCase().includes('tomorrow')) {
                 estaEmHoje = false;
-                return;
             }
 
             // Ignora menus
             if ($el.hasClass('menu-item-content') || $el.closest('.menu').length > 0) return;
 
-            // Só processa se a chave "estaEmHoje" estiver ligada
+            // Processa se estiver no modo "Hoje"
             if (estaEmHoje && texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
                 
                 const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
