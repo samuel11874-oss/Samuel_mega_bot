@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Multi-Fonte Ativo'));
+app.get('/', (req, res) => res.send('Bot Operacional - Gatilho de Data Estrito Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -30,61 +30,55 @@ function getBandeira(teamName) {
     return list[teamName] || "🏳️";
 }
 
-// --- BUSCA NO WINDRAWWIN ---
 async function monitorarWinDrawWin() {
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
-        processarHtml(data, 'WinDrawWin');
-    } catch (e) { console.error("Erro WinDrawWin:", e.message); }
-}
+        
+        const $ = cheerio.load(data);
+        let capturando = true; // Começa true (hoje)
+        const diaHoje = 19; // Dia atual
 
-// --- BUSCA NO SOCCERSTATS ---
-async function monitorarSoccerStats() {
-    try {
-        // Exemplo: página de escanteios (ajuste a URL se precisar de uma liga específica)
-        const { data } = await axios.get('https://www.soccerstats.com/results.asp?league=brazil&pmtype=corners', { headers: HEADERS });
-        processarHtml(data, 'SoccerStats');
-    } catch (e) { console.error("Erro SoccerStats:", e.message); }
-}
-
-// --- PROCESSADOR COMUM ---
-function processarHtml(html, fonte) {
-    const $ = cheerio.load(html);
-    $('div, tr').each((i, el) => {
-        const texto = $(el).text().trim();
-        if (texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
-            const linhaLimpa = texto.replace(/hoje|amanhã|tomorrow|data/gi, '').trim();
-            const match = linhaLimpa.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
-            const numeros = linhaLimpa.match(/(\d{1,2}[.,]\d)/g);
+        $('div, tr, h2, h3').each((i, el) => {
+            const texto = $(el).text().trim();
             
-            if (match && numeros && numeros.length >= 2) {
-                const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
+            // Lógica de Bloqueio: Se encontrar data, verifica se é hoje
+            if (/(\d{1,2})\s+de\s+julho/i.test(texto)) {
+                const diaEncontrado = parseInt(texto.match(/(\d{1,2})/)[1]);
+                if (diaEncontrado === diaHoje || /hoje/i.test(texto)) {
+                    capturando = true;
+                } else {
+                    capturando = false; // Encontrou futuro, bloqueia!
+                }
+                return;
+            }
+
+            // Só processa se a captura estiver ligada
+            if (capturando && texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
+                const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
+                const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
                 
-                if (media > 9.5 && media <= 15.0) {
-                    const chave = (match[1] + match[2]).toLowerCase().replace(/\s/g, '');
-                    if (!jogosEnviados.has(chave)) {
-                        jogosEnviados.add(chave);
+                if (match && numeros && numeros.length >= 2) {
+                    const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
+                    
+                    if (media > 9.5 && media <= 15.0) {
                         const t1 = match[1].trim();
                         const t2 = match[2].trim();
-                        const msg = `⚽ *Oportunidade (${fonte})*\n\n` +
-                                    `${getBandeira(t1)} *${t1} x ${t2}*\n` +
-                                    `⛳ *Média de escanteio FT: ${media.toFixed(1)}*`;
+                        const chave = (t1 + t2).toLowerCase().replace(/\s/g, '');
                         
-                        bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                        console.log(`✅ ENVIADO: ${t1} x ${t2} via ${fonte}`);
+                        if (!jogosEnviados.has(chave)) {
+                            jogosEnviados.add(chave);
+                            const msg = `⚽ *Oportunidade encontrada*\n\n` +
+                                        `${getBandeira(t1)} *${t1} x ${t2}*\n` +
+                                        `⛳ *Média de escanteio FT: ${media.toFixed(1)}*`;
+                            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                        }
                     }
                 }
             }
-        }
-    });
-}
-
-// Execução sequencial para evitar bloqueio de IP
-async function rodarBot() {
-    await monitorarWinDrawWin();
-    setTimeout(monitorarSoccerStats, 5000); // 5 segundos de intervalo entre um site e outro
+        });
+    } catch (e) { console.error("Erro WinDrawWin:", e.message); }
 }
 
 setInterval(() => { jogosEnviados.clear(); }, 3600000); 
-setInterval(rodarBot, 300000); // Roda tudo a cada 5 minutos
-rodarBot();
+setInterval(monitorarWinDrawWin, 300000); 
+monitorarWinDrawWin();
