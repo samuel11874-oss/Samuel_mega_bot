@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Busca Estável'));
+app.get('/', (req, res) => res.send('Bot Operacional - Caça Ampla'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,48 +17,50 @@ const HEADERS = {
 
 let jogosEnviados = new Set();
 
-function limparNome(nome) {
-    // Remove a palavra "Hoje" caso ela tenha sido capturada no nome
-    return nome.replace(/Hoje/gi, "").trim();
-}
-
 async function monitorarJogos() {
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
         
+        // DEBUG: Se o bot não achar nada, este log vai te mostrar o que ele está lendo
+        const textoCompleto = $('body').text();
+        console.log("DEBUG - Início do site:", textoCompleto.substring(0, 300));
+
         let encontrados = 0;
 
-        // Itera sobre as linhas da tabela
-        $('tr').each((i, el) => {
-            const texto = $(el).text();
-            
-            // Regex que captura "Time x Time"
-            // \s+ garante que haja espaço entre os nomes e o "x"
-            const match = texto.match(/([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s]{2,})\s+x\s+([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s]{2,})/i);
-            
-            if (match) {
-                const timeA = limparNome(match[1]);
-                const timeB = limparNome(match[2]);
+        // Procura em toda a página por "Time x Time"
+        // Regex bem solta para pegar qualquer coisa entre um "x"
+        // Formato: QualquerTexto + espaço + x + espaço + QualquerTexto
+        const regexJogo = /(.{3,30})\s+x\s+(.{3,30})/i;
+
+        // Varre todos os elementos de texto
+        $('div, p, td, span').each((i, el) => {
+            const texto = $(el).text().trim();
+            if (texto.includes(' x ')) {
+                const match = texto.match(regexJogo);
                 
-                // Busca os números na mesma linha
-                const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
-                
-                if (numeros && numeros.length >= 2) {
-                    const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
-                    const chave = (timeA + timeB).toLowerCase().replace(/[^a-z]/g, '');
+                if (match) {
+                    const timeA = match[1].trim();
+                    const timeB = match[2].trim();
                     
-                    // Filtro de Média e evita duplicados
-                    if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(chave)) {
-                        jogosEnviados.add(chave);
-                        encontrados++;
+                    // Procura números na mesma linha
+                    const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
+                    
+                    if (numeros && numeros.length >= 2) {
+                        const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
+                        const chave = (timeA + timeB).toLowerCase().replace(/[^a-z]/g, '');
                         
-                        const msg = `⚽ *Oportunidade de Hoje*\n` +
-                                    `⚔️ *${timeA} x ${timeB}*\n` +
-                                    `📊 *Média: ${media.toFixed(1)}*`;
-                        
-                        bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                        console.log(`✅ ENVIADO: ${timeA} x ${timeB} | Média: ${media.toFixed(1)}`);
+                        if (media > 9.5 && media <= 15.0 && !jogosEnviados.has(chave)) {
+                            jogosEnviados.add(chave);
+                            encontrados++;
+                            
+                            const msg = `⚽ *Oportunidade*\n` +
+                                        `⚔️ *${timeA} x ${timeB}*\n` +
+                                        `📊 *Média: ${media.toFixed(1)}*`;
+                            
+                            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                            console.log(`✅ ENVIADO: ${timeA} x ${timeB} | Média: ${media.toFixed(1)}`);
+                        }
                     }
                 }
             }
