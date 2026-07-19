@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Caçador Estável'));
+app.get('/', (req, res) => res.send('Bot Operacional - Somente Hoje'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,18 +23,24 @@ async function monitorarJogos() {
         const $ = cheerio.load(data);
         
         let encontrados = 0;
-        console.log("--- INICIANDO BUSCA ESTÁVEL ---");
+        let podeProcessar = true; // Interruptor começa ligado
 
         $('div').each((i, el) => {
             const $el = $(el);
+            const texto = $el.text().trim();
+
+            // BLOQUEIO: Se encontrar "Amanhã" ou "Tomorrow", desliga o interruptor e sai
+            if (/amanhã|tomorrow/i.test(texto)) {
+                podeProcessar = false;
+                return; 
+            }
+
+            // Ignora menus
             if ($el.hasClass('menu-item-content') || $el.closest('.menu').length > 0) return;
 
-            const texto = $el.text().trim();
-            
-            // VERIFICAÇÃO: Se contiver "x" e números de média
-            if (texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
+            // Só processa se o interruptor estiver ligado (estamos na seção "Hoje")
+            if (podeProcessar && texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
                 
-                // Extrai times e média
                 const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
                 const numeros = texto.match(/(\d{1,2}[.,]\d)/g);
                 
@@ -44,31 +50,28 @@ async function monitorarJogos() {
                     if (media > 9.5 && media <= 15.0) {
                         const chave = (match[1] + match[2]).toLowerCase().replace(/\s/g, '');
                         
-                        // LOG PARA IDENTIFICAR SE É HOJE OU AMANHÃ
-                        console.log(`DEBUG: Processando ${match[1].trim()} x ${match[2].trim()} | Texto Original: ${texto.substring(0, 30)}`);
-                        
                         if (!jogosEnviados.has(chave)) {
                             jogosEnviados.add(chave);
                             encontrados++;
                             
-                            const msg = `⚽ *Oportunidade*\n` +
+                            const msg = `⚽ *Oportunidade de Hoje*\n` +
                                         `⚔️ *${match[1].trim()} x ${match[2].trim()}*\n` +
                                         `📊 *Média: ${media.toFixed(1)}*`;
                             
                             bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                            console.log(`✅ ENVIADO: ${match[1].trim()} x ${match[2].trim()} | Média: ${media.toFixed(1)}`);
+                            console.log(`✅ ENVIADO (Hoje): ${match[1].trim()} x ${match[2].trim()} | Média: ${media.toFixed(1)}`);
                         }
                     }
                 }
             }
         });
         
-        console.log(`🔍 Varredura concluída. Novos jogos encontrados: ${encontrados}`);
+        console.log(`🔍 Varredura concluída. Novos jogos de HOJE encontrados: ${encontrados}`);
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
 }
 
-setInterval(() => { jogosEnviados.clear(); }, 3600000);
-setInterval(monitorarJogos, 300000); 
+setInterval(() => { jogosEnviados.clear(); }, 3600000); // Limpa cache a cada hora
+setInterval(monitorarJogos, 300000); // Busca a cada 5 min
 monitorarJogos();
