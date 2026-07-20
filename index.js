@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro HOJE Obrigatório'));
+app.get('/', (req, res) => res.send('Bot Operacional - Trava de Segurança Ativa'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -40,15 +40,21 @@ async function monitorarJogos() {
             const texto = $(el).text().trim();
             const textoLower = texto.toLowerCase();
 
-            // 1. FILTRO ANTI-LIXO
+            // 1. FILTRO ANTI-FUTURO (Blacklist)
+            const datasFuturas = ["20 de julho", "21 de julho", "22 de julho", "23 de julho", "24 de julho", "25 de julho", "26 de julho"];
+            const ehFuturo = datasFuturas.some(data => texto.includes(data));
+            
+            // 2. FILTRO ANTI-LIXO
             const lixo = ["windrawwin", "palpites", "jogos", "estatísticas", "página", "total", "próxima", "brasileirão", "mais", "menos"];
             const contemLixo = lixo.some(termo => textoLower.includes(termo));
             
-            // 2. FILTRO RIGOROSO: Precisa de " x " E da palavra "hoje" E não pode conter lixo
-            if (texto.includes(' x ') && textoLower.includes('hoje') && !contemLixo && texto.length < 60) {
+            // 3. FILTRO OBRIGATÓRIO (Hoje)
+            const ehHoje = textoLower.includes('hoje') || texto.includes('19 de julho');
+
+            // LÓGICA FINAL: Tem "x" E é "Hoje" E NÃO é futuro E NÃO é lixo
+            if (texto.includes(' x ') && ehHoje && !ehFuturo && !contemLixo && texto.length < 60) {
                 
-                // Limpeza: Remove "Hoje" e espaços extras
-                const linhaLimpa = texto.replace(/Hoje/gi, '').trim();
+                const linhaLimpa = texto.replace(/Hoje/gi, '').replace('19 de julho', '').trim();
                 const match = linhaLimpa.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
                 
                 if (match) {
