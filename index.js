@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro HOJE Ativo'));
+app.get('/', (req, res) => res.send('Bot Operacional - Modo Limpeza Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -26,7 +26,7 @@ function getBandeira(teamName) {
         "Londrina": "🇧🇷", "Coritiba": "🇧🇷", "Operário": "🇧🇷", "Avaí": "🇧🇷",
         "América": "🇧🇷", "Juventude": "🇧🇷", "Criciúma": "🇧🇷", "São Bernardo": "🇧🇷",
         "Athletic": "🇧🇷", "Malmo": "🇸🇪", "Kalmar": "🇸🇪", "Hacken": "🇸🇪", "AIK": "🇸🇪",
-        "Lahti": "🇫🇮", "Mariehamn": "🇫🇮"
+        "Lahti": "🇫🇮", "Mariehamn": "🇫🇮", "Gnistan": "🇫🇮"
     };
     return list[teamName] || "🏳️";
 }
@@ -39,33 +39,31 @@ async function monitorarJogos() {
         $('div').each((i, el) => {
             const texto = $(el).text().trim();
 
-            // Filtro rigoroso: Só processa se tiver " x " E contiver a palavra "Hoje"
-            if (texto.includes(' x ') && texto.includes('Hoje')) {
+            // 1. FILTRO ANTI-LIXO: Bloqueia qualquer coisa que pareça menu/título
+            const lixo = ["WinDrawWin", "Palpites", "Jogos", "Estatísticas", "Página", "Total", "Próxima", "Brasileirão", "Mais", "Menos"];
+            const contemLixo = lixo.some(termo => texto.includes(termo));
+            
+            // 2. FILTRO DE FORMATO: Precisa de " x " e não pode conter lixo
+            // E vamos procurar por um padrão de time (letras) + x + time (letras)
+            if (texto.includes(' x ') && !contemLixo && texto.length < 60) {
                 
-                // Limpeza: Remove a palavra "Hoje"
-                const linhaLimpa = texto.replace('Hoje', '').trim();
-                const match = linhaLimpa.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
-                
-                // Tenta extrair a média (procura números no texto)
-                const numeros = linhaLimpa.match(/(\d{1,2})/); 
-                const media = numeros ? parseFloat(numeros[1]) : 0;
+                const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
                 
                 if (match) {
                     const t1 = match[1].trim();
                     const t2 = match[2].trim();
                     const chave = (t1 + t2).toLowerCase().replace(/\s/g, '');
                     
-                    // Verifica se a média está dentro do seu critério (9.5 a 15.0)
-                    // Se não tiver média clara (como o log mostrou), permitimos envio para você validar
+                    // Só envia se for inédito
                     if (!jogosEnviados.has(chave)) {
                         jogosEnviados.add(chave);
                         
                         const msg = `⚽ *Oportunidade encontrada*\n\n` +
                                     `${getBandeira(t1)} *${t1} x ${t2}*\n` +
-                                    `⛳ *Média de escanteio FT: ${media > 0 ? media : "Consultar site"}*`;
+                                    `⛳ *Média: FT (Verificar no site)*`;
                         
                         bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                        console.log(`✅ ENVIADO (HOJE): ${t1} x ${t2} | Média: ${media}`);
+                        console.log(`✅ ENVIADO (LIMPO): ${t1} x ${t2}`);
                     }
                 }
             }
@@ -75,7 +73,6 @@ async function monitorarJogos() {
     }
 }
 
-// Limpa memória a cada 1 hora e busca a cada 5 minutos
 setInterval(() => { jogosEnviados.clear(); }, 3600000); 
 setInterval(monitorarJogos, 300000); 
 monitorarJogos();
