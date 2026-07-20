@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro Rigoroso Ativo'));
+app.get('/', (req, res) => res.send('Bot Operacional - Bloqueio de datas futuras ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,33 +20,34 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura com filtro rigoroso de data...");
+        console.log("Iniciando varredura com BLOQUEIO DE SEGURANÇA...");
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
         
         let processar = false; 
         let encontrados = 0;
 
-        // Itera sobre elementos de estrutura de lista/tabela
-        $('tr, div, h3').each((i, el) => {
+        // Itera sobre os itens do menu que descobrimos que contêm os jogos
+        // O método .each do Cheerio interrompe o loop se retornarmos 'false'
+        $('.menu-item-content.indent-2').each((i, el) => {
             const texto = $(el).text().trim();
             const textoLower = texto.toLowerCase();
 
-            // 1. ATIVAÇÃO: Só processa se ler "Hoje"
-            if (textoLower.includes('hoje') && !textoLower.includes('jogado hoje')) {
+            // 1. ATIVAÇÃO: Inicia quando encontrar o título de hoje
+            if (textoLower.includes('hoje')) {
                 processar = true;
-                return;
+                return true; // Continua para a próxima linha
             }
 
-            // 2. BLOQUEIO TOTAL: Se ler qualquer uma dessas palavras, o bot para de processar imediatamente
-            const palavrasDeBloqueio = ['amanhã', 'ontem', 'jogado hoje', 'july 21', 'july 22', 'july 23', 'jul 21', 'jul 22'];
-            if (palavrasDeBloqueio.some(p => textoLower.includes(p))) {
-                processar = false;
-                return;
+            // 2. BLOQUEIO TOTAL E DEFINITIVO: Se encontrar qualquer termo de futuro, PARA O BOT AGORA
+            const termosFuturo = ['amanhã', 'jul 21', 'jul 22', 'jul 23', 'jul 24', 'jul 25', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo', 'jogado hoje'];
+            if (termosFuturo.some(termo => textoLower.includes(termo))) {
+                console.log(`BLOQUEIO: Encontrado termo de data futura: "${texto}". Encerrando varredura.`);
+                return false; // Este comando PARA o bot de ler o resto da página
             }
 
-            // 3. PROCESSAMENTO: Só envia se estiver na seção de hoje E tiver ' x '
-            if (processar && texto.includes(' x ') && texto.length < 100) {
+            // 3. PROCESSAMENTO: Só envia se estiver na seção de hoje
+            if (processar && texto.includes(' x ')) {
                 const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
                 
                 if (match) {
