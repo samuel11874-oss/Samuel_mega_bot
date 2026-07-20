@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Trava de Segurança Ativa'));
+app.get('/', (req, res) => res.send('Bot Operacional - Blindagem de Data (19 Jul) Ativa'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -36,41 +36,46 @@ async function monitorarJogos() {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
         
-        $('div').each((i, el) => {
+        let dataAtual = "Nenhuma"; // Armazena a data que o bot está lendo no momento
+
+        $('div, h2, h3, tr').each((i, el) => {
             const texto = $(el).text().trim();
             const textoLower = texto.toLowerCase();
 
-            // 1. FILTRO ANTI-FUTURO (Blacklist)
-            const datasFuturas = ["20 de julho", "21 de julho", "22 de julho", "23 de julho", "24 de julho", "25 de julho", "26 de julho"];
-            const ehFuturo = datasFuturas.some(data => texto.includes(data));
-            
-            // 2. FILTRO ANTI-LIXO
-            const lixo = ["windrawwin", "palpites", "jogos", "estatísticas", "página", "total", "próxima", "brasileirão", "mais", "menos"];
-            const contemLixo = lixo.some(termo => textoLower.includes(termo));
-            
-            // 3. FILTRO OBRIGATÓRIO (Hoje)
-            const ehHoje = textoLower.includes('hoje') || texto.includes('19 de julho');
+            // 1. ATUALIZAÇÃO DE DATA: Se a linha tiver uma data, guardamos ela
+            if (texto.includes('julho')) {
+                if (texto.includes('19')) {
+                    dataAtual = "19 de julho";
+                } else {
+                    dataAtual = "Outra Data"; // Bloqueia tudo que não for 19
+                }
+            }
 
-            // LÓGICA FINAL: Tem "x" E é "Hoje" E NÃO é futuro E NÃO é lixo
-            if (texto.includes(' x ') && ehHoje && !ehFuturo && !contemLixo && texto.length < 60) {
+            // 2. FILTRO DE JOGO: Só envia se tiver " x " E a data for 19 de julho
+            if (texto.includes(' x ') && dataAtual === "19 de julho") {
                 
-                const linhaLimpa = texto.replace(/Hoje/gi, '').replace('19 de julho', '').trim();
-                const match = linhaLimpa.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
-                
-                if (match) {
-                    const t1 = match[1].trim();
-                    const t2 = match[2].trim();
-                    const chave = (t1 + t2).toLowerCase().replace(/\s/g, '');
+                // Limpeza de lixo
+                const lixo = ["WinDrawWin", "Palpites", "Jogos", "Estatísticas", "Página", "Total", "Próxima", "Brasileirão", "Mais", "Menos"];
+                const contemLixo = lixo.some(termo => texto.includes(termo));
+
+                if (!contemLixo && texto.length < 70) {
+                    const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
                     
-                    if (!jogosEnviados.has(chave)) {
-                        jogosEnviados.add(chave);
+                    if (match) {
+                        const t1 = match[1].trim();
+                        const t2 = match[2].trim();
+                        const chave = (t1 + t2).toLowerCase().replace(/\s/g, '');
                         
-                        const msg = `⚽ *Oportunidade encontrada*\n\n` +
-                                    `${getBandeira(t1)} *${t1} x ${t2}*\n` +
-                                    `⛳ *Média: FT (Verificar no site)*`;
-                        
-                        bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                        console.log(`✅ ENVIADO (HOJE): ${t1} x ${t2}`);
+                        if (!jogosEnviados.has(chave)) {
+                            jogosEnviados.add(chave);
+                            
+                            const msg = `⚽ *Oportunidade encontrada*\n\n` +
+                                        `${getBandeira(t1)} *${t1} x ${t2}*\n` +
+                                        `⛳ *Data: 19 de Julho*`;
+                            
+                            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                            console.log(`✅ ENVIADO (19 DE JULHO): ${t1} x ${t2}`);
+                        }
                     }
                 }
             }
