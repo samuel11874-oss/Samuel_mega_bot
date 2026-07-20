@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Emojis e Bandeiras Ativos'));
+app.get('/', (req, res) => res.send('Bot Operacional - SoccerStats Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,7 +17,6 @@ const HEADERS = {
 
 let jogosEnviados = new Set();
 
-// Função para identificar a bandeira pelo nome do time
 function getBandeira(teamName) {
     const list = {
         "Flamengo": "🇧🇷", "Palmeiras": "🇧🇷", "Corinthians": "🇧🇷", "São Paulo": "🇧🇷",
@@ -29,7 +28,6 @@ function getBandeira(teamName) {
         "Athletic": "🇧🇷", "Malmo": "🇸🇪", "Kalmar": "🇸🇪", "Hacken": "🇸🇪", "AIK": "🇸🇪",
         "Lahti": "🇫🇮", "Mariehamn": "🇫🇮", "KuPS": "🇫🇮", "VPS": "🇫🇮", "Gnistan": "🇫🇮"
     };
-    // Verifica se o nome do time está na lista, caso contrário retorna bandeira mundial
     return list[teamName] || "🏳️";
 }
 
@@ -45,13 +43,19 @@ function ehDataFutura(texto) {
 
 async function monitorarJogos() {
     try {
-        const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
+        // URL ajustada para o SoccerStats (Brasil como exemplo)
+        const { data } = await axios.get('https://www.soccerstats.com/results.asp?league=brazil&pmtype=corners', { headers: HEADERS });
         const $ = cheerio.load(data);
         
         let encontrados = 0;
 
-        $('div, tr').each((i, el) => {
-            const texto = $(el).text().trim();
+        // O SoccerStats é focado em tabelas (tr)
+        $('tr').each((i, el) => {
+            let texto = $(el).text().trim();
+            
+            // CONVERSÃO DE FORMATO: Transforma "Time A v Time B" em "Time A x Time B"
+            texto = texto.replace(/\s+v\s+/i, ' x ');
+            
             if (ehDataFutura(texto)) return;
 
             if (texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
@@ -71,23 +75,23 @@ async function monitorarJogos() {
 
                             const t1 = match[1].trim();
                             const t2 = match[2].trim();
-                            const bandeira = getBandeira(t1); // Pega a bandeira baseada no primeiro time
+                            const bandeira = getBandeira(t1);
                             
-                            const msg = `⚽ *Oportunidade encontrada*\n\n` +
+                            const msg = `⚽ *Oportunidade (SoccerStats)*\n\n` +
                                         `${bandeira} *${t1} x ${t2}*\n` +
                                         `⛳ *Média de escanteio FT: ${media.toFixed(1)}*`;
                             
                             bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                            console.log(`✅ ENVIADO: ${t1} x ${t2} | Bandeira: ${bandeira}`);
+                            console.log(`✅ ENVIADO: ${t1} x ${t2}`);
                         }
                     }
                 }
             }
         });
         
-        console.log(`🔍 Varredura concluída. Jogos válidos de HOJE encontrados: ${encontrados}`);
+        console.log(`🔍 Varredura SoccerStats concluída. Jogos válidos encontrados: ${encontrados}`);
     } catch (e) {
-        console.error("Erro na busca:", e.message);
+        console.error("Erro na busca (SoccerStats):", e.message);
     }
 }
 
