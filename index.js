@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Diagnóstico de Estrutura Ativo'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Sentinela Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,35 +16,65 @@ const HEADERS = {
     'Referer': 'https://www.windrawwin.com/br/estatisticas/escanteios/'
 };
 
+let jogosEnviados = new Set();
+
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura profunda de estrutura...");
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
         
-        console.log("--- INÍCIO DO DUMP DE ESTRUTURA ---");
-        
-        // Vamos varrer os elementos em ordem para ver o que vem antes dos jogos
-        $('body').find('*').each((i, el) => {
-            const tagName = el.tagName;
-            const text = $(el).text().trim();
-            
-            // Filtramos apenas elementos com texto relevante e classes de menu
-            if (tagName === 'div' && $(el).hasClass('menu-item-content')) {
-                console.log(`ELEMENTO: ${tagName} (Classe: ${$(el).attr('class')}) | CONTEÚDO: ${text}`);
+        let isToday = false;
+        let encontrados = 0;
+
+        // Varre os itens do menu que descobrimos que guardam os jogos
+        $('.menu-item-content').each((i, el) => {
+            const texto = $(el).text().trim();
+            const textoLower = texto.toLowerCase();
+
+            // 1. SINALIZADORES DE DATA
+            // Se encontrar "Segunda" ou "20" (hoje é 20 de julho), ativamos o modo Hoje
+            if (textoLower.includes('segunda') || textoLower.includes('20')) {
+                isToday = true;
+                return; // Pula a linha do cabeçalho
             }
-            // Procuramos cabeçalhos (h2, h3) que podem conter a data
-            if (['h2', 'h3'].includes(tagName) && text.length > 0) {
-                console.log(`CABEÇALHO ENCONTRADO: ${tagName} | CONTEÚDO: ${text}`);
+            
+            // Se encontrar qualquer outro dia, desativamos
+            if (textoLower.includes('terça') || textoLower.includes('quarta') || 
+                textoLower.includes('quinta') || textoLower.includes('sexta') || 
+                textoLower.includes('sábado') || textoLower.includes('domingo') ||
+                textoLower.includes('amanhã')) {
+                isToday = false;
+                return;
+            }
+
+            // 2. PROCESSAMENTO: Só envia se estiver no modo "Hoje" E for jogo (tem " x ")
+            if (isToday && texto.includes(' x ')) {
+                const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
+                
+                if (match) {
+                    const t1 = match[1].trim();
+                    const t2 = match[2].trim();
+                    const chave = (t1 + t2).toLowerCase().replace(/\s/g, '');
+                    
+                    if (!jogosEnviados.has(chave)) {
+                        jogosEnviados.add(chave);
+                        encontrados++;
+                        
+                        const msg = `⚽ *Oportunidade (HOJE)*\n\n*${t1} x ${t2}*`;
+                        bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                        console.log(`✅ ENVIADO HOJE: ${t1} x ${t2}`);
+                    }
+                }
             }
         });
         
-        console.log("--- FIM DO DUMP ---");
-
+        console.log(`Varredura concluída. Jogos processados hoje: ${encontrados}`);
+        
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
 }
 
+setInterval(() => { jogosEnviados.clear(); }, 86400000); 
 setInterval(monitorarJogos, 300000); 
 monitorarJogos();
