@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Diagnóstico de Classes Ativo'));
+app.get('/', (req, res) => res.send('Bot Operacional - Extração Direta Ativa'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,28 +16,67 @@ const HEADERS = {
     'Referer': 'https://www.windrawwin.com/'
 };
 
+let jogosEnviados = new Set();
+
+function getBandeira(teamName) {
+    const list = {
+        "Flamengo": "🇧🇷", "Palmeiras": "🇧🇷", "Corinthians": "🇧🇷", "São Paulo": "🇧🇷",
+        "Santos": "🇧🇷", "Cruzeiro": "🇧🇷", "Atlético": "🇧🇷", "Bahia": "🇧🇷",
+        "Vasco": "🇧🇷", "Botafogo": "🇧🇷", "Fluminense": "🇧🇷", "Grêmio": "🇧🇷",
+        "Internacional": "🇧🇷", "Ceará": "🇧🇷", "CRB": "🇧🇷", "Náutico": "🇧🇷",
+        "Londrina": "🇧🇷", "Coritiba": "🇧🇷", "Operário": "🇧🇷", "Avaí": "🇧🇷",
+        "América": "🇧🇷", "Juventude": "🇧🇷", "Criciúma": "🇧🇷", "São Bernardo": "🇧🇷",
+        "Athletic": "🇧🇷", "Malmo": "🇸🇪", "Kalmar": "🇸🇪", "Hacken": "🇸🇪", "AIK": "🇸🇪",
+        "Lahti": "🇫🇮", "Mariehamn": "🇫🇮", "KuPS": "🇫🇮", "VPS": "🇫🇮", "Gnistan": "🇫🇮"
+    };
+    return list[teamName] || "🏳️";
+}
+
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura de classes...");
+        console.log("Iniciando varredura nos itens de menu...");
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
         
-        console.log("--- LISTAGEM DE CLASSES DE DIV ---");
-        // Vamos listar as 30 primeiras classes de div para achar o container de jogos
-        $('div').each((i, el) => {
-            if (i < 30) {
-                const classe = $(el).attr('class');
-                if (classe) {
-                    console.log(`DIV ${i} (Classe: ${classe}) -> Texto: ${$(el).text().substring(0, 30).trim()}`);
+        let encontrados = 0;
+
+        // Focando exatamente na classe que descobrimos no log
+        $('.menu-item-content.indent-2').each((i, el) => {
+            const texto = $(el).text().trim();
+            
+            // Filtro: Precisa ter " x " para ser jogo
+            if (texto.includes(' x ')) {
+                const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
+                
+                if (match) {
+                    const t1 = match[1].trim();
+                    const t2 = match[2].trim();
+                    const chave = (t1 + t2).toLowerCase().replace(/\s/g, '');
+                    
+                    if (!jogosEnviados.has(chave)) {
+                        jogosEnviados.add(chave);
+                        encontrados++;
+                        
+                        const bandeira = getBandeira(t1);
+                        const msg = `⚽ *Oportunidade Encontrada*\n\n${bandeira} *${t1} x ${t2}*`;
+                        
+                        bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                        console.log(`✅ ENVIADO: ${t1} x ${t2}`);
+                    }
                 }
             }
         });
-        console.log("--- FIM DA LISTAGEM ---");
-
+        
+        console.log(`Varredura concluída. Novos jogos encontrados: ${encontrados}`);
+        
     } catch (e) {
         console.error("Erro na busca:", e.message);
     }
 }
 
+// Limpa memória a cada 24h
+setInterval(() => { jogosEnviados.clear(); }, 86400000); 
+// Verifica a cada 5 minutos
 setInterval(monitorarJogos, 300000); 
+
 monitorarJogos();
