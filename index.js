@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Hoje Ativo'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro Rigoroso Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -20,32 +20,33 @@ let jogosEnviados = new Set();
 
 async function monitorarJogos() {
     try {
-        console.log("Buscando jogos apenas para HOJE...");
+        console.log("Iniciando varredura com filtro rigoroso de data...");
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
         
-        let processar = false; // Flag para saber se estamos na seção de hoje
+        let processar = false; 
         let encontrados = 0;
 
-        // Vamos percorrer os elementos principais da página
-        // O WinDrawWin geralmente usa <h3> para títulos de data
-        $('h3, tr, div').each((i, el) => {
+        // Itera sobre elementos de estrutura de lista/tabela
+        $('tr, div, h3').each((i, el) => {
             const texto = $(el).text().trim();
             const textoLower = texto.toLowerCase();
 
-            // 1. Detectar início da seção "Hoje"
+            // 1. ATIVAÇÃO: Só processa se ler "Hoje"
             if (textoLower.includes('hoje') && !textoLower.includes('jogado hoje')) {
                 processar = true;
                 return;
             }
 
-            // 2. Detectar quando acaba "Hoje" (começa "Amanhã" ou outras datas)
-            if (textoLower.includes('amanhã') || textoLower.includes('jogado hoje') || textoLower.includes('ontem')) {
+            // 2. BLOQUEIO TOTAL: Se ler qualquer uma dessas palavras, o bot para de processar imediatamente
+            const palavrasDeBloqueio = ['amanhã', 'ontem', 'jogado hoje', 'july 21', 'july 22', 'july 23', 'jul 21', 'jul 22'];
+            if (palavrasDeBloqueio.some(p => textoLower.includes(p))) {
                 processar = false;
+                return;
             }
 
-            // 3. Processar jogos apenas se estivermos na seção de "Hoje"
-            if (processar && texto.includes(' x ')) {
+            // 3. PROCESSAMENTO: Só envia se estiver na seção de hoje E tiver ' x '
+            if (processar && texto.includes(' x ') && texto.length < 100) {
                 const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
                 
                 if (match) {
@@ -57,7 +58,7 @@ async function monitorarJogos() {
                         jogosEnviados.add(chave);
                         encontrados++;
                         
-                        const msg = `⚽ *Oportunidade (Hoje)*\n\n*${t1} x ${t2}*`;
+                        const msg = `⚽ *Oportunidade (HOJE)*\n\n*${t1} x ${t2}*`;
                         bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
                         console.log(`✅ ENVIADO HOJE: ${t1} x ${t2}`);
                     }
