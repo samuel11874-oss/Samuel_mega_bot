@@ -4,64 +4,56 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Filtro de Precisão Ativo'));
+app.get('/', (req, res) => res.send('Bot de Estatísticas SoccerStats Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
+// Identidade para o site não bloquear
 const HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
-    'Referer': 'https://www.windrawwin.com/br/estatisticas/escanteios/'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Referer': 'https://www.soccerstats.com/'
 };
 
-let jogosEnviados = new Set();
-
-async function monitorarJogos() {
+async function buscarJogosEstatistica() {
     try {
-        console.log("Iniciando varredura com filtro de precisão...");
-        const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
+        console.log("Acessando SoccerStats...");
+        // URL dos jogos de hoje
+        const { data } = await axios.get('https://www.soccerstats.com/matches.asp?matchday=1', { headers: HEADERS });
         const $ = cheerio.load(data);
         
         let encontrados = 0;
-
-        // Foco total na classe 'statln2' que o seu log revelou
-        $('.statln2').each((i, el) => {
-            const fullText = $(el).text().trim();
-
-            // A regra de ouro: SÓ processa se contiver "Hoje" e o separador " x "
-            if (fullText.includes('Hoje') && fullText.includes(' x ')) {
+        
+        // Estrutura de tabela padrão do SoccerStats
+        $('table[id="btable"]').find('tr').each((i, el) => {
+            const linha = $(el).text().trim();
+            
+            // Filtro por média > 9.5 (Logica simplificada baseada na estrutura da tabela)
+            // Aqui buscamos o padrão de "Time A x Time B" e os números de escanteios
+            if (linha.includes(' x ')) {
+                // Se o bot encontrar o jogo, ele extrai a média (assumindo que a coluna de escanteios está presente)
+                // Nota: O SoccerStats usa tabelas fixas.
+                const t1 = $(el).find('.home').text().trim();
+                const t2 = $(el).find('.away').text().trim();
                 
-                // Limpeza: remove "Hoje" e corta tudo o que for número (odds)
-                // Isso deixa apenas os nomes dos times
-                let cleanText = fullText.replace('Hoje', '').split(/[0-9]/)[0].trim();
+                // Extração básica (O código vai evoluir conforme o log)
+                console.log(`Analisando: ${t1} x ${t2}`);
                 
-                if (cleanText.includes(' x ')) {
-                    const chave = cleanText.toLowerCase().replace(/\s/g, '');
-                    
-                    if (!jogosEnviados.has(chave)) {
-                        jogosEnviados.add(chave);
-                        encontrados++;
-                        
-                        const msg = `⚽ *Oportunidade (HOJE)*\n\n*${cleanText}*`;
-                        bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                        console.log(`✅ ENVIADO HOJE: ${cleanText}`);
-                    }
-                }
+                // Aqui entraria a regra de negócio (se média > 9.5)
+                // Por enquanto, vamos logar para garantir que o bot está lendo a tabela
             }
         });
         
-        console.log(`Varredura concluída. Jogos de hoje encontrados e enviados: ${encontrados}`);
+        console.log("Busca concluída.");
         
     } catch (e) {
-        console.error("Erro na busca:", e.message);
+        console.error("Erro na leitura do SoccerStats:", e.message);
     }
 }
 
-// Limpa memória a cada 24h
-setInterval(() => { jogosEnviados.clear(); }, 86400000); 
-// Verifica a cada 5 minutos
-setInterval(monitorarJogos, 300000); 
-
-monitorarJogos();
+// Rodar a cada 30 minutos
+setInterval(buscarJogosEstatistica, 1800000);
+buscarJogosEstatistica();
