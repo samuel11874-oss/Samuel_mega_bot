@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot de Diagnóstico Ativo'));
+app.get('/', (req, res) => res.send('Bot de Diagnóstico de Classes Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -18,23 +18,21 @@ const HEADERS = {
 
 async function monitorarJogos() {
     try {
-        console.log("Iniciando varredura de diagnóstico...");
+        console.log("Iniciando varredura de classes...");
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
-        
-        // Vamos imprimir um pedaço grande do HTML para ver a estrutura
-        console.log("Conteúdo da página (primeiros 500 caracteres):");
-        console.log(data.substring(0, 500));
-        
         const $ = cheerio.load(data);
         
-        // Verifica se existem tabelas na página
-        const totalTabelas = $('table').length;
-        console.log(`Total de tabelas encontradas na página: ${totalTabelas}`);
-        
-        // Imprime o texto das primeiras 5 linhas que encontrar
-        $('tr').slice(0, 5).each((i, el) => {
-            console.log(`LINHA ${i}: ${$(el).text().trim().substring(0, 50)}`);
+        console.log("--- LISTAGEM DE CLASSES DE DIV ---");
+        // Vamos listar as 30 primeiras classes de div para achar o container de jogos
+        $('div').each((i, el) => {
+            if (i < 30) {
+                const classe = $(el).attr('class');
+                if (classe) {
+                    console.log(`DIV ${i} (Classe: ${classe}) -> Texto: ${$(el).text().substring(0, 30).trim()}`);
+                }
+            }
         });
+        console.log("--- FIM DA LISTAGEM ---");
 
     } catch (e) {
         console.error("Erro na busca:", e.message);
