@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Modo Limpeza Ativo'));
+app.get('/', (req, res) => res.send('Bot Operacional - Filtro HOJE Obrigatório'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -38,23 +38,24 @@ async function monitorarJogos() {
         
         $('div').each((i, el) => {
             const texto = $(el).text().trim();
+            const textoLower = texto.toLowerCase();
 
-            // 1. FILTRO ANTI-LIXO: Bloqueia qualquer coisa que pareça menu/título
-            const lixo = ["WinDrawWin", "Palpites", "Jogos", "Estatísticas", "Página", "Total", "Próxima", "Brasileirão", "Mais", "Menos"];
-            const contemLixo = lixo.some(termo => texto.includes(termo));
+            // 1. FILTRO ANTI-LIXO
+            const lixo = ["windrawwin", "palpites", "jogos", "estatísticas", "página", "total", "próxima", "brasileirão", "mais", "menos"];
+            const contemLixo = lixo.some(termo => textoLower.includes(termo));
             
-            // 2. FILTRO DE FORMATO: Precisa de " x " e não pode conter lixo
-            // E vamos procurar por um padrão de time (letras) + x + time (letras)
-            if (texto.includes(' x ') && !contemLixo && texto.length < 60) {
+            // 2. FILTRO RIGOROSO: Precisa de " x " E da palavra "hoje" E não pode conter lixo
+            if (texto.includes(' x ') && textoLower.includes('hoje') && !contemLixo && texto.length < 60) {
                 
-                const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
+                // Limpeza: Remove "Hoje" e espaços extras
+                const linhaLimpa = texto.replace(/Hoje/gi, '').trim();
+                const match = linhaLimpa.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
                 
                 if (match) {
                     const t1 = match[1].trim();
                     const t2 = match[2].trim();
                     const chave = (t1 + t2).toLowerCase().replace(/\s/g, '');
                     
-                    // Só envia se for inédito
                     if (!jogosEnviados.has(chave)) {
                         jogosEnviados.add(chave);
                         
@@ -63,7 +64,7 @@ async function monitorarJogos() {
                                     `⛳ *Média: FT (Verificar no site)*`;
                         
                         bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                        console.log(`✅ ENVIADO (LIMPO): ${t1} x ${t2}`);
+                        console.log(`✅ ENVIADO (HOJE): ${t1} x ${t2}`);
                     }
                 }
             }
