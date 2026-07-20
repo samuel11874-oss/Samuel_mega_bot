@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Operacional - Modo Leitura Total'));
+app.get('/', (req, res) => res.send('Bot Operacional - Multi-Fonte Ativo'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,50 +17,54 @@ const HEADERS = {
 
 let jogosEnviados = new Set();
 
-async function monitorarJogos() {
-    try {
-        const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
-        const $ = cheerio.load(data);
+// Lista de bloqueio de palavras (Anti-Lixo)
+const LIXO = ["WinDrawWin", "Palpites", "Jogos", "Estatísticas", "Página", "Total", "Próxima", "Brasileirão", "Mais", "Menos", "Home", "Odds", "Average", "League", "Results"];
+
+function processarTexto(texto, fonte) {
+    if (texto.includes(' x ') && texto.length < 60) {
+        const contemLixo = LIXO.some(termo => texto.toLowerCase().includes(termo.toLowerCase()));
         
-        // Loop que varre a página procurando por elementos que parecem jogos
-        $('div, a').each((i, el) => {
-            const texto = $(el).text().trim();
-            
-            // Debug: O que o bot está lendo? (Veja isso no Log do Render)
-            if (texto.includes(' x ') && texto.length < 60) {
-                console.log(`Lendo: ${texto}`);
-            }
-
-            // Regra: Tem que ter " x "
-            if (texto.includes(' x ')) {
+        if (!contemLixo) {
+            const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
+            if (match) {
+                const t1 = match[1].trim();
+                const t2 = match[2].trim();
+                const chave = (t1 + t2).toLowerCase().replace(/\s/g, '');
                 
-                // Filtro "Anti-Lixo" (palavras que aparecem em menus)
-                const lixo = ["WinDrawWin", "Palpites", "Jogos", "Estatísticas", "Página", "Total", "Próxima", "Brasileirão", "Mais", "Menos", "Home", "Odds", "Average"];
-                const contemLixo = lixo.some(termo => texto.toLowerCase().includes(termo.toLowerCase()));
-
-                if (!contemLixo && texto.length < 60) {
-                    const match = texto.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
-                    
-                    if (match) {
-                        const t1 = match[1].trim();
-                        const t2 = match[2].trim();
-                        const chave = (t1 + t2).toLowerCase().replace(/\s/g, '');
-                        
-                        if (!jogosEnviados.has(chave)) {
-                            jogosEnviados.add(chave);
-                            const msg = `⚽ *Oportunidade:* ${t1} x ${t2}`;
-                            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                            console.log(`✅ ENVIADO: ${t1} x ${t2}`);
-                        }
-                    }
+                if (!jogosEnviados.has(chave)) {
+                    jogosEnviados.add(chave);
+                    const msg = `⚽ *Oportunidade (${fonte})*\n\n*${t1} x ${t2}*`;
+                    bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                    console.log(`✅ ENVIADO (${fonte}): ${t1} x ${t2}`);
                 }
             }
-        });
-    } catch (e) {
-        console.error("Erro na busca:", e.message);
+        }
     }
 }
 
+async function monitorarWinDrawWin() {
+    try {
+        const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
+        const $ = cheerio.load(data);
+        $('div, a').each((i, el) => processarTexto($(el).text().trim(), 'WinDrawWin'));
+    } catch (e) { console.error("Erro WinDrawWin:", e.message); }
+}
+
+async function monitorarSoccerStats() {
+    try {
+        // Busca na página de resultados de escanteios do Brasil
+        const { data } = await axios.get('https://www.soccerstats.com/results.asp?league=brazil&pmtype=corners', { headers: HEADERS });
+        const $ = cheerio.load(data);
+        // No soccerstats, os jogos ficam geralmente em tabelas
+        $('tr').each((i, el) => processarTexto($(el).text().trim(), 'SoccerStats'));
+    } catch (e) { console.error("Erro SoccerStats:", e.message); }
+}
+
+async function rodarBot() {
+    await monitorarWinDrawWin();
+    setTimeout(monitorarSoccerStats, 5000); // Pausa para não bloquear IP
+}
+
 setInterval(() => { jogosEnviados.clear(); }, 3600000); 
-setInterval(monitorarJogos, 300000); 
-monitorarJogos();
+setInterval(rodarBot, 300000); 
+rodarBot();
