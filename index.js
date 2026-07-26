@@ -6,12 +6,12 @@ const app = express();
 
 const TELEGRAM_TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
-const SPORTMONKS_TOKEN = '1F5ZavyPcLQzyG94Q72iekg3ZblPSlTycQDUZ5ZJ4IrqegDeWm5q4PWTLadD';
+const FOOTBALL_DATA_TOKEN = '0a34421534b24e9f9001d3cf5da69c57';
 
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
 
 app.get('/', (req, res) => {
-    res.send('<h2>Bot SportMonks Operacional 🚀</h2><p>O bot está enviando os jogos automaticamente para o seu Telegram.</p>');
+    res.send('<h2>Bot Football-Data Operacional 🚀</h2><p>O bot está enviando os jogos automaticamente para o seu Telegram.</p>');
 });
 
 // Inicia o servidor e já dispara a varredura logo na partida para testes
@@ -23,38 +23,40 @@ app.listen(process.env.PORT || 3000, () => {
 async function executarVarreduraJogos(tipoRelatorio) {
     try {
         const hoje = new Date().toISOString().split('T')[0];
-        const url = `https://api.sportmonks.com/v3/football/fixtures/date/${hoje}?api_token=${SPORTMONKS_TOKEN}&include=participants`;
+        const url = `https://api.football-data.org/v4/matches?date=${hoje}`;
 
-        console.log(`Buscando jogos na SportMonks para a data: ${hoje}...`);
-        const response = await axios.get(url);
-        const fixtures = response.data.data;
+        console.log(`Buscando jogos na Football-Data para a data: ${hoje}...`);
+        const response = await axios.get(url, {
+            headers: { 'X-Auth-Token': FOOTBALL_DATA_TOKEN }
+        });
+        const matches = response.data.matches;
 
-        if (!fixtures || fixtures.length === 0) {
+        if (!matches || matches.length === 0) {
             console.log(`[${tipoRelatorio}] Nenhum jogo encontrado para hoje.`);
-            await bot.sendMessage(CHAT_ID, `⚠️ Nenhum jogo encontrado na SportMonks para hoje (${hoje}).`);
+            await bot.sendMessage(CHAT_ID, `⚠️ Nenhum jogo encontrado na Football-Data para hoje (${hoje}).`);
             return;
         }
 
-        console.log(`Total de jogos encontrados: ${fixtures.length}. Formatando e enviando...`);
+        console.log(`Total de jogos encontrados: ${matches.length}. Formatando e enviando...`);
 
         let totalEncontrados = 0;
         let mensagemResumo = `⚽ Lista de Jogos de Hoje (${tipoRelatorio})\n📅 Data: ${hoje}\n\n`;
 
-        for (const fixture of fixtures) {
-            const participants = fixture.participants || [];
-            if (participants.length < 2) continue;
-
-            const homeTeam = participants.find(p => p.meta.location === 'home');
-            const awayTeam = participants.find(p => p.meta.location === 'away');
-
-            if (!homeTeam || !awayTeam) continue;
-
-            const t1 = homeTeam.name;
-            const t2 = awayTeam.name;
-            const horaInicio = fixture.starting_at ? fixture.starting_at.split(' ')[1].substring(0, 5) : '00:00';
+        for (const match of matches) {
+            const competicao = match.competition ? match.competition.name : 'Competição';
+            const t1 = match.homeTeam ? match.homeTeam.name : 'Casa';
+            const t2 = match.awayTeam ? match.awayTeam.name : 'Fora';
+            
+            // Converte o horário UTC para o horário de Brasília (UTC-3)
+            const dataMatch = new Date(match.utcDate);
+            const horaInicio = dataMatch.toLocaleTimeString('pt-BR', { 
+                timeZone: 'America/Sao_Paulo', 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
 
             totalEncontrados++;
-            mensagemResumo += `🕒 ${horaInicio} — ${t1} x ${t2}\n\n`;
+            mensagemResumo += `🏆 ${competicao}\n🕒 ${horaInicio} — ${t1} x ${t2}\n\n`;
 
             // Envia em blocos de 15 para não estourar o limite de tamanho do Telegram
             if (totalEncontrados >= 15) {
