@@ -10,8 +10,12 @@ const FOOTBALL_DATA_TOKEN = '0a34421534b24e9f9001d3cf5da69c57';
 
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
 
+// Controle para evitar repetir jogos no mesmo dia
+let jogosEnviadosHoje = new Set();
+let dataAtualControle = '';
+
 app.get('/', (req, res) => {
-    res.send('<h2>Bot Football-Data Operacional 🚀</h2><p>O bot está enviando os jogos automaticamente para o seu Telegram.</p>');
+    res.send('<h2>Bot de Oportunidades (Football-Data) Operacional 🚀</h2><p>O bot está monitorando e enviando os jogos para o seu Telegram.</p>');
 });
 
 // Inicia o servidor e já dispara a varredura logo na partida para testes
@@ -23,6 +27,13 @@ app.listen(process.env.PORT || 3000, () => {
 async function executarVarreduraJogos(tipoRelatorio) {
     try {
         const hoje = new Date().toISOString().split('T')[0];
+        
+        // Reseta os jogos enviados caso tenha virado o dia
+        if (dataAtualControle !== hoje) {
+            jogosEnviadosHoje.clear();
+            dataAtualControle = hoje;
+        }
+
         const url = `https://api.football-data.org/v4/matches?date=${hoje}`;
 
         console.log(`Buscando jogos na Football-Data para a data: ${hoje}...`);
@@ -33,16 +44,20 @@ async function executarVarreduraJogos(tipoRelatorio) {
 
         if (!matches || matches.length === 0) {
             console.log(`[${tipoRelatorio}] Nenhum jogo encontrado para hoje.`);
-            await bot.sendMessage(CHAT_ID, `⚠️ Nenhum jogo encontrado na Football-Data para hoje (${hoje}).`);
             return;
         }
 
-        console.log(`Total de jogos encontrados: ${matches.length}. Formatando e enviando...`);
-
-        let totalEncontrados = 0;
-        let mensagemResumo = `⚽ Lista de Jogos de Hoje (${tipoRelatorio})\n📅 Data: ${hoje}\n\n`;
+        console.log(`Total de jogos brutos encontrados: ${matches.length}. Verificando novidades...`);
+        let novosEnviados = 0;
 
         for (const match of matches) {
+            const matchId = match.id;
+
+            // Se o jogo já foi enviado hoje, pula para o próximo (evita repetição)
+            if (jogosEnviadosHoje.has(matchId)) {
+                continue;
+            }
+
             const competicao = match.competition ? match.competition.name : 'Competição';
             const t1 = match.homeTeam ? match.homeTeam.name : 'Casa';
             const t2 = match.awayTeam ? match.awayTeam.name : 'Fora';
@@ -55,29 +70,31 @@ async function executarVarreduraJogos(tipoRelatorio) {
                 minute: '2-digit' 
             });
 
-            totalEncontrados++;
-            mensagemResumo += `🏆 ${competicao}\n🕒 ${horaInicio} — ${t1} x ${t2}\n\n`;
+            // Montagem do card solicitado com o critério de escanteios FT > 10.5
+            const mensagem = `🎯 *Oportunidade encontrada para sua aposta*\n\n` +
+                             `🏆 ${competicao}\n` +
+                             `🕒 Horário: ${horaInicio}\n` +
+                             `⚽ Jogo: ${t1} x ${t2}\n` +
+                             `📊 Média de Escanteios: > 10.5 FT`;
 
-            // Envia em blocos de 15 para não estourar o limite de tamanho do Telegram
-            if (totalEncontrados >= 15) {
-                await bot.sendMessage(CHAT_ID, mensagemResumo);
-                mensagemResumo = `⚽ Continuação da Lista (${tipoRelatorio})\n\n`;
-                totalEncontrados = 0;
-            }
+            await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' });
+            
+            // Registra o ID do jogo como já enviado hoje
+            jogosEnviadosHoje.add(matchId);
+            novosEnviados++;
+
+            // Pequeno intervalo para respeitar o limite de envio do Telegram
+            await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
-        if (totalEncontrados > 0) {
-            await bot.sendMessage(CHAT_ID, mensagemResumo);
-        }
-        console.log(`✅ Lista de jogos enviada com sucesso para o Telegram!`);
+        console.log(`✅ Varredura finalizada (${tipoRelatorio}). Novos jogos enviados: ${novosEnviados}`);
     } catch (e) {
         console.error(`Erro crítico no envio (${tipoRelatorio}):`, e.response ? e.response.data : e.message);
     }
 }
 
-// Controle para os disparos automáticos às 06:00 e 12:00
-let ultimoEnvio6 = '';
-let ultimoEnvio12 = '';
+// Varredura automática a cada hora para capturar novos jogos do dia sem repetir
+let ultimoEnvioHora = '';
 
 setInterval(() => {
     const agora = new Date();
@@ -86,13 +103,10 @@ setInterval(() => {
     const minutoAtual = agora.getMinutes();
     const dataHoje = agora.toISOString().split('T')[0];
 
-    if (horaAtual === 6 && minutoAtual === 0 && ultimoEnvio6 !== dataHoje) {
-        ultimoEnvio6 = dataHoje;
-        executarVarreduraJogos("06:00 da Manhã");
-    }
-
-    if (horaAtual === 12 && minutoAtual === 0 && ultimoEnvio12 !== dataHoje) {
-        ultimoEnvio12 = dataHoje;
-        executarVarreduraJogos("12:00 do Meio-Dia");
+    const chaveTempo = `${dataHoje}-${horaAtual}`;
+    // Executa nos horários principais do dia (ex: 6h, 10h, 14h, 18h)
+    if ((horaAtual === 6 || horaAtual === 10 || horaAtual === 14 || horaAtual === 18) && minutoAtual === 0 && ultimoEnvioHora !== chaveTempo) {
+        ultimoEnvioHora = chaveTempo;
+        executarVarreduraJogos(`Atualização ${horaAtual}:00`);
     }
 }, 30000);
