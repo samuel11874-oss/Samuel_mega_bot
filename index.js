@@ -12,10 +12,14 @@ const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
 
 // Página inicial do servidor
 app.get('/', (req, res) => {
-    res.send('<h2>Bot SportMonks Operacional 🚀</h2><p>Acesse <a href="/jogos">/jogos</a> para ver a lista completa de partidas de hoje.</p>');
+    res.send(`
+        <h2>Bot SportMonks Operacional 🚀</h2>
+        <p>🔗 <a href="/jogos" target="_blank">Ver todos os jogos de hoje no navegador</a></p>
+        <p>📲 <a href="/enviar-telegram" target="_blank"><b>Enviar a lista de jogos AGORA para o meu Telegram</b></a></p>
+    `);
 });
 
-// Nova rota para visualizar todos os jogos de hoje diretamente no navegador
+// Rota para visualizar todos os jogos de hoje no navegador
 app.get('/jogos', async (req, res) => {
     try {
         const hoje = new Date().toISOString().split('T')[0];
@@ -55,6 +59,16 @@ app.get('/jogos', async (req, res) => {
     }
 });
 
+// Nova rota para forçar o envio imediato para o Telegram via navegador
+app.get('/enviar-telegram', async (req, res) => {
+    try {
+        await executarVarreduraJogos("Envio Manual");
+        res.send('<h2>✅ Sucesso! A lista de jogos de hoje foi enviada para o seu Telegram.</h2><p><a href="/">Voltar</a></p>');
+    } catch (e) {
+        res.status(500).send(`<h3>Erro ao enviar para o Telegram:</h3><p>${e.message}</p>`);
+    }
+});
+
 app.listen(process.env.PORT || 3000);
 
 // Função para identificar bandeira
@@ -65,7 +79,7 @@ function getBandeira(teamName) {
     return list[teamName] || "🏳️";
 }
 
-// Função de disparo automático (06:00 e 12:00)
+// Função principal de varredura e envio para o Telegram
 async function executarVarreduraJogos(tipoRelatorio) {
     try {
         const hoje = new Date().toISOString().split('T')[0];
@@ -74,10 +88,13 @@ async function executarVarreduraJogos(tipoRelatorio) {
         const response = await axios.get(url);
         const fixtures = response.data.data;
 
-        if (!fixtures || fixtures.length === 0) return;
+        if (!fixtures || fixtures.length === 0) {
+            console.log(`[${tipoRelatorio}] Nenhum jogo encontrado para hoje.`);
+            return;
+        }
 
         let totalEncontrados = 0;
-        let mensagemResumo = `⚽ *Lista de Jogos do Dia - ${tipoRelatorio}*\n📅 Data: ${hoje}\n\n`;
+        let mensagemResumo = `⚽ *Lista de Jogos de Hoje - ${tipoRelatorio}*\n📅 Data: ${hoje}\n\n`;
 
         for (const fixture of fixtures) {
             const participants = fixture.participants || [];
@@ -107,14 +124,17 @@ async function executarVarreduraJogos(tipoRelatorio) {
         if (totalEncontrados > 0) {
             await bot.sendMessage(CHAT_ID, mensagemResumo, { parse_mode: 'Markdown' }).catch(() => {});
         }
+        console.log(`✅ Lista enviada com sucesso para o chat ${CHAT_ID}! Total de jogos: ${fixtures.length}`);
     } catch (e) {
-        console.error(`Erro no relatório das ${tipoRelatorio}:`, e.message);
+        console.error(`Erro no envio (${tipoRelatorio}):`, e.message);
+        throw e;
     }
 }
 
 let ultimoEnvio6 = '';
 let ultimoEnvio12 = '';
 
+// Verificador automático às 06:00 e 12:00
 setInterval(() => {
     const agora = new Date();
     const hora = agora.getUTCHours() - 3;
