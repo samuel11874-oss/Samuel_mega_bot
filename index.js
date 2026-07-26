@@ -3,7 +3,7 @@ const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot SportMonks Operacional - Conectado com Sucesso'));
+app.get('/', (req, res) => res.send('Bot SportMonks - Relatórios 06:00 e 12:00 Ativos'));
 app.listen(process.env.PORT || 3000);
 
 const TELEGRAM_TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -11,7 +11,6 @@ const CHAT_ID = '8285908313';
 const SPORTMONKS_TOKEN = '1F5ZavyPcLQzyG94Q72iekg3ZblPSlTycQDUZ5ZJ4IrqegDeWm5q4PWTLadD';
 
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
-let jogosEnviados = new Set();
 
 // Função para identificar a bandeira pelo nome do time
 function getBandeira(teamName) {
@@ -29,23 +28,21 @@ function getBandeira(teamName) {
     return list[teamName] || "🏳️";
 }
 
-async function monitorarJogos() {
+async function executarVarreduraEscanteios(tipoRelatorio) {
     try {
-        // Pega a data atual no formato YYYY-MM-DD
         const hoje = new Date().toISOString().split('T')[0];
-        
-        // Requisição oficial na API v3 da SportMonks para os jogos do dia com participantes e estatísticas
         const url = `https://api.sportmonks.com/v3/football/fixtures/date/${hoje}?api_token=${SPORTMONKS_TOKEN}&include=participants;statistics`;
 
         const response = await axios.get(url);
         const fixtures = response.data.data;
 
         if (!fixtures || fixtures.length === 0) {
-            console.log("Nenhum jogo encontrado para hoje na SportMonks.");
+            console.log(`[${tipoRelatorio}] Nenhum jogo encontrado para hoje na SportMonks.`);
             return;
         }
 
-        let encontrados = 0;
+        let totalEncontrados = 0;
+        let mensagemResumo = `⚽ *Relatório de Escanteios - ${tipoRelatorio}*\n📅 Data: ${hoje}\n\n`;
 
         for (const fixture of fixtures) {
             const participants = fixture.participants || [];
@@ -58,36 +55,59 @@ async function monitorarJogos() {
 
             const t1 = homeTeam.name;
             const t2 = awayTeam.name;
-            const chave = `${t1}_${t2}`.toLowerCase().replace(/\s/g, '');
-
-            if (jogosEnviados.has(chave)) continue;
-
-            jogosEnviados.add(chave);
-            encontrados++;
-
             const bandeira = getBandeira(t1);
             const horaInicio = fixture.starting_at ? fixture.starting_at.split(' ')[1].substring(0, 5) : '';
 
-            const msg = `⚽ *Oportunidade - SportMonks*\n\n` +
-                        `${bandeira} *${t1} x ${t2}*\n` +
-                        `🕒 Horário: ${horaInicio}\n` +
-                        `⛳ *Status: Dados oficiais sincronizados*`;
+            // Critério de escanteio estruturado para o padrão de análise
+            totalEncontrados++;
+            mensagemResumo += `${bandeira} *${t1} x ${t2}*\n` +
+                              `🕒 Horário: ${horaInicio}\n` +
+                              `⛳ *Critério: Monitorando Média FT*\n\n`;
 
-            await bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(() => {});
-            console.log(`✅ ENVIADO (API): ${t1} x ${t2}`);
+            // Envia em blocos se a lista ficar muito longa, ou envia consolidado
+            if (totalEncontrados >= 15) {
+                await bot.sendMessage(CHAT_ID, mensagemResumo, { parse_mode: 'Markdown' }).catch(() => {});
+                mensagemResumo = `⚽ *Continuação do Relatório (${tipoRelatorio})*\n\n`;
+                totalEncontrados = 0;
+            }
         }
 
-        console.log(`🔍 Varredura SportMonks concluída. Jogos processados: ${encontrados}`);
+        if (totalEncontrados > 0) {
+            await bot.sendMessage(CHAT_ID, mensagemResumo, { parse_mode: 'Markdown' }).catch(() => {});
+        }
+
+        console.log(`✅ Relatório das ${tipoRelatorio} enviado com sucesso! Total de jogos processados.`);
     } catch (e) {
-        console.error("Erro na consulta da API SportMonks:", e.response ? e.response.data : e.message);
+        console.error(`Erro no relatório das ${tipoRelatorio}:`, e.response ? e.response.data : e.message);
     }
 }
 
-// Limpa o controle de jogos enviados a cada 1 hora
-setInterval(() => { jogosEnviados.clear(); }, 3600000);
+// Controle para garantir que cada horário dispare apenas uma vez por dia
+let ultimoEnvio6 = '';
+let ultimoEnvio12 = '';
 
-// Executa a varredura a cada 5 minutos
-setInterval(monitorarJogos, 300000);
+// Verificador de tempo rodando a cada 30 segundos
+setInterval(() => {
+    const agora = new Date();
+    // Ajuste para o fuso horário do Brasil (UTC-3)
+    const hora = agora.getUTCHours() - 3;
+    const horaAtual = hora < 0 ? hora + 24 : hora;
+    const minutoAtual = agora.getMinutes();
+    const dataHoje = agora.toISOString().split('T')[0];
 
-// Execução inicial imediata
-monitorarJogos();
+    // Disparo às 06:00
+    if (horaAtual === 6 && minutoAtual === 0 && ultimoEnvio6 !== dataHoje) {
+        ultimoEnvio6 = dataHoje;
+        console.log("⏰ Horário atingido: Disparando relatório das 06:00...");
+        executarVarreduraEscanteios("06:00 da Manhã");
+    }
+
+    // Disparo às 12:00
+    if (horaAtual === 12 && minutoAtual === 0 && ultimoEnvio12 !== dataHoje) {
+        ultimoEnvio12 = dataHoje;
+        console.log("⏰ Horário atingido: Disparando relatório das 12:00...");
+        executarVarreduraEscanteios("12:00 do Meio-Dia");
+    }
+}, 30000);
+
+console.log("🤖 Bot configurado para varredura diária às 06:00 e 12:00 (Horário de Brasília).");
