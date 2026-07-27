@@ -1,98 +1,140 @@
 const express = require('express');
 const axios = require('axios');
+const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Jogos de Hoje ⚽</h2><p>Operando com WinDrawWin e Football-Data.co.uk (Sem API)</p>'));
+app.listen(process.env.PORT || 3000);
 
-const TELEGRAM_TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
+const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
-const FOOTBALL_DATA_TOKEN = '0a34421534b24e9f9001d3cf5da69c57';
+const bot = new TelegramBot(TOKEN, { polling: false });
 
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
+const HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+};
 
-// Controle para evitar repetir jogos no mesmo dia
-let jogosEnviadosHoje = new Set();
-let dataAtualControle = '';
+let jogosEnviados = new Set();
 
-app.get('/', (req, res) => {
-    res.send('<h2>Samuel_mega_bot - Confrontos do Dia ⚽</h2><p>O bot está monitorando e enviando os confrontos de hoje para o seu Telegram.</p>');
-});
+function getBandeira(teamName) {
+    const list = {
+        "Flamengo": "🇧🇷", "Palmeiras": "🇧🇷", "Corinthians": "🇧🇷", "São Paulo": "🇧🇷",
+        "Santos": "🇧🇷", "Cruzeiro": "🇧🇷", "Atlético": "🇧🇷", "Bahia": "🇧🇷",
+        "Vasco": "🇧🇷", "Botafogo": "🇧🇷", "Fluminense": "🇧🇷", "Grêmio": "🇧🇷",
+        "Internacional": "🇧🇷", "Arsenal": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Chelsea": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Liverpool": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", 
+        "Manchester City": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Real Madrid": "🇪🇸", "Barcelona": "🇪🇸", "Juventus": "🇮🇹"
+    };
+    return list[teamName] || "⚽";
+}
 
-// Inicia o servidor e já dispara a varredura logo na inicialização
-app.listen(process.env.PORT || 3000, () => {
-    console.log("Servidor HTTP rodando com sucesso!");
-    executarVarreduraJogos("Inicialização Automática");
-});
-
-async function executarVarreduraJogos(tipoRelatorio) {
+// 1. BUSCA DE JOGOS DE HOJE NO WINDRAWWIN
+async function buscarWinDrawWin() {
     try {
-        const hoje = new Date().toISOString().split('T')[0];
-        
-        // Reseta os jogos enviados caso tenha virado o dia
-        if (dataAtualControle !== hoje) {
-            jogosEnviadosHoje.clear();
-            dataAtualControle = hoje;
-        }
+        const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
+        const $ = cheerio.load(data);
+        let encontrados = 0;
 
-        const url = `https://api.football-data.org/v4/matches?date=${hoje}`;
+        $('div, tr').each((i, el) => {
+            const texto = $(el).text().trim();
+            
+            // Ignora termos que indiquem dias futuros/passados se houver
+            if (/amanhã|ontem/i.test(texto)) return;
 
-        console.log(`Buscando confrontos do dia na Football-Data para a data: ${hoje}...`);
-        const response = await axios.get(url, {
-            headers: { 'X-Auth-Token': FOOTBALL_DATA_TOKEN }
-        });
-        const matches = response.data.matches;
+            if (texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
+                const linhaLimpa = texto.replace(/hoje|amanhã|tomorrow|data/gi, '').trim();
+                const match = linhaLimpa.match(/([A-Za-zÀ-ÿ\s]{3,})\s?x\s?([A-Za-zÀ-ÿ\s]{3,})/i);
+                
+                if (match) {
+                    const t1 = match[1].trim();
+                    const t2 = match[2].trim();
+                    const chave = `wdw_${t1}_${t2}`.toLowerCase().replace(/\s/g, '');
+                    
+                    if (!jogosEnviados.has(chave)) {
+                        jogosEnviados.add(chave);
+                        encontrados++;
 
-        if (!matches || matches.length === 0) {
-            console.log(`[${tipoRelatorio}] Nenhum confronto encontrado para hoje.`);
-            return;
-        }
-
-        console.log(`Total de confrontos encontrados: ${matches.length}. Verificando envios...`);
-        let novosEnviados = 0;
-
-        for (const match of matches) {
-            const matchId = match.id;
-
-            // Se o confronto já foi enviado hoje, pula para o próximo
-            if (jogosEnviadosHoje.has(matchId)) {
-                continue;
+                        const bandeira = getBandeira(t1);
+                        const msg = `⚽ *Confronto de Hoje (WinDrawWin)*\n\n` +
+                                    `${bandeira} *${t1} x ${t2}*`;
+                        
+                        bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                        console.log(`✅ [WinDrawWin] Enviado: ${t1} x ${t2}`);
+                    }
+                }
             }
-
-            const competicao = match.competition ? match.competition.name : 'Competição';
-            const t1 = match.homeTeam ? match.homeTeam.name : 'Casa';
-            const t2 = match.awayTeam ? match.awayTeam.name : 'Fora';
-            
-            // Converte a data UTC para o horário de Brasília (UTC-3)
-            const dataMatch = new Date(match.utcDate);
-            const horaInicio = dataMatch.toLocaleTimeString('pt-BR', { 
-                timeZone: 'America/Sao_Paulo', 
-                hour: '2-digit', 
-                minute: '2-digit' 
-            });
-
-            // Montagem do card limpo focado nos confrontos do dia
-            const mensagem = `⚽ *Confronto do Dia*\n\n` +
-                             `🏆 ${competicao}\n` +
-                             `🕒 Horário: ${horaInicio}\n` +
-                             `⚔️ *${t1} x ${t2}*`;
-
-            await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' });
-            
-            // Registra o ID do jogo como já enviado hoje
-            jogosEnviadosHoje.add(matchId);
-            novosEnviados++;
-
-            // Pequeno intervalo para respeitar o limite de envio do Telegram
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-
-        console.log(`✅ Varredura finalizada (${tipoRelatorio}). Novos confrontos enviados: ${novosEnviados}`);
+        });
+        console.log(`🔍 [WinDrawWin] Varredura de hoje concluída. Novos jogos: ${encontrados}`);
     } catch (e) {
-        console.error(`Erro crítico no envio (${tipoRelatorio}):`, e.response ? e.response.data : e.message);
+        console.error("Erro no WinDrawWin:", e.message);
     }
 }
 
-// Varredura automática a cada 1 hora para capturar novos jogos ou atualizações do dia
+// 2. BUSCA DE JOGOS DE HOJE NOS CSVs DO FOOTBALL-DATA.CO.UK
+async function buscarFootballDataCSV() {
+    try {
+        const ligas = ['E0', 'SP1', 'I1', 'D1', 'F1'];
+        const hojeObj = new Date();
+        const dia = String(hojeObj.getDate()).padStart(2, '0');
+        const mes = String(hojeObj.getMonth() + 1).padStart(2, '0');
+        const ano = hojeObj.getFullYear().toString().slice(-2);
+        const temporada = '2526';
+
+        console.log(`📊 [Football-Data.co.uk] Buscando confrontos para hoje: ${dia}/${mes}/20${ano}`);
+
+        for (const liga of ligas) {
+            const csvUrl = `https://www.football-data.co.uk/mmz4281/${temporada}/${liga}.csv`;
+            const response = await axios.get(csvUrl, { headers: HEADERS }).catch(() => null);
+            if (!response || !response.data) continue;
+
+            const linhas = response.data.split('\n');
+            if (linhas.length < 2) continue;
+
+            const cabecalho = linhas[0].split(',');
+            const idxDate = cabecalho.indexOf('Date');
+            const idxHome = cabecalho.indexOf('HomeTeam');
+            const idxAway = cabecalho.indexOf('AwayTeam');
+
+            if (idxDate === -1 || idxHome === -1 || idxAway === -1) continue;
+
+            for (let i = 1; i < linhas.length; i++) {
+                if (!linhas[i].trim()) continue;
+                const colunas = linhas[i].split(',');
+                const dataJogo = colunas[idxDate]; // Formato DD/MM/YY ou DD/MM/YYYY
+
+                if (dataJogo && (dataJogo === `${dia}/${mes}/${ano}` || dataJogo === `${dia}/${mes}/20${ano}` || dataJogo.startsWith(`${dia}/${mes}`))) {
+                    const t1 = colunas[idxHome];
+                    const t2 = colunas[idxAway];
+                    const chave = `csv_${t1}_${t2}`.toLowerCase().replace(/\s/g, '');
+
+                    if (!jogosEnviados.has(chave)) {
+                        jogosEnviados.add(chave);
+                        const bandeira = getBandeira(t1);
+
+                        const msg = `📊 *Confronto de Hoje (Football-Data.co.uk)*\n\n` +
+                                    `${bandeira} *${t1} x ${t2}*\n` +
+                                    `📅 Data: ${dataJogo}`;
+
+                        bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+                        console.log(`✅ [Football-Data CSV] Enviado: ${t1} x ${t2} (${liga})`);
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Erro no Football-Data CSV:", e.message);
+    }
+}
+
+// Limpa cache a cada 1 hora
+setInterval(() => { jogosEnviados.clear(); }, 3600000);
+
+// Executa as varreduras a cada 5 minutos
 setInterval(() => {
-    executarVarreduraJogos("Varredura Periódica");
-}, 3600000);
+    buscarWinDrawWin();
+    buscarFootballDataCSV();
+}, 300000);
+
+// Execução inicial imediata
+buscarWinDrawWin();
+buscarFootballDataCSV();
