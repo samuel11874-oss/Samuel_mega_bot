@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Escanteios > 10.5 FT ⚽</h2><p>Filtrando apenas jogos de hoje com média > 10.5</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Escanteios > 10.5 FT ⚽</h2><p>Exibindo datas e filtrando jogos de hoje</p>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -28,12 +28,14 @@ function getBandeira(teamName) {
     return list[teamName] || "⚽";
 }
 
-// 1. BUSCA DE JOGOS DE HOJE NO WINDRAWWIN (Filtro > 10.5 FT)
+// 1. BUSCA DE JOGOS NO WINDRAWWIN (Com data explícita e filtro > 10.5 FT)
 async function buscarWinDrawWin() {
     try {
         const { data } = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
         const $ = cheerio.load(data);
         let encontrados = 0;
+
+        const hojeStr = new Date().toLocaleDateString('pt-BR');
 
         $('div, tr').each((i, el) => {
             const texto = $(el).text().trim();
@@ -48,7 +50,6 @@ async function buscarWinDrawWin() {
                 if (match && numeros && numeros.length >= 2) {
                     const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                     
-                    // FILTRO RESTRITO: Apenas média > 10.5 FT
                     if (media > 10.5 && media <= 18.0) {
                         const t1 = match[1].trim();
                         const t2 = match[2].trim();
@@ -61,6 +62,7 @@ async function buscarWinDrawWin() {
                             const bandeira = getBandeira(t1);
                             const msg = `⚽ *Oportunidade Escanteios (> 10.5 FT)*\n\n` +
                                         `${bandeira} *${t1} x ${t2}*\n` +
+                                        `📅 Data: Hoje (${hojeStr})\n` +
                                         `⛳ *Média FT: ${media.toFixed(1)}*`;
                             
                             bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
@@ -76,7 +78,7 @@ async function buscarWinDrawWin() {
     }
 }
 
-// 2. BUSCA DE JOGOS DE HOJE NOS CSVs DO FOOTBALL-DATA.CO.UK (Filtro > 10.5 FT)
+// 2. BUSCA DE JOGOS NOS CSVs DO FOOTBALL-DATA.CO.UK (Com data do arquivo e filtro > 10.5 FT)
 async function buscarFootballDataCSV() {
     try {
         const ligas = ['E0', 'SP1', 'I1', 'D1', 'F1'];
@@ -126,6 +128,7 @@ async function buscarFootballDataCSV() {
 
                             const msg = `📊 *Dataset Football-Data (> 10.5 FT)*\n\n` +
                                         `${bandeira} *${t1} x ${t2}*\n` +
+                                        `📅 Data: ${dataJogo}\n` +
                                         `⛳ *Escanteios Registrados: ${mediaCSV}*`;
 
                             bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
