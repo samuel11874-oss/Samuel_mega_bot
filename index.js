@@ -15,7 +15,7 @@ let jogosEnviadosHoje = new Set();
 let dataAtualControle = '';
 
 app.get('/', (req, res) => {
-    res.send('<h2>Samuel_mega_bot Operacional 🚀</h2><p>O bot está monitorando e enviando todos os jogos do dia para o seu Telegram.</p>');
+    res.send('<h2>Samuel_mega_bot Operacional 🚀</h2><p>O bot está monitorando e enviando os jogos com link de validação.</p>');
 });
 
 // Inicia o servidor e já dispara a varredura logo na partida para testes
@@ -70,11 +70,17 @@ async function executarVarreduraJogos(tipoRelatorio) {
                 minute: '2-digit' 
             });
 
-            // Montagem do card limpo (sem filtros)
+            // Cria um link de busca direta no Google combinando os times com "FootyStats"
+            const queryBusca = encodeURIComponent(`${t1} ${t2} escanteios FootyStats`);
+            const linkBusca = `https://www.google.com/search?q=${queryBusca}`;
+
+            // Montagem do card otimizado com link de checagem rápida
             const mensagem = `⚽ *Partida do Dia*\n\n` +
                              `🏆 ${competicao}\n` +
                              `🕒 Horário: ${horaInicio}\n` +
-                             `⚔️ ${t1} x ${t2}`;
+                             `⚔️ *${t1} x ${t2}*\n` +
+                             `📊 Meta: > 8.5 FT\n\n` +
+                             `🔍 [Checar Estatísticas no FootyStats](${linkBusca})`;
 
             await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' });
             
