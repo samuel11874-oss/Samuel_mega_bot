@@ -62,7 +62,7 @@ async function executarVarreduraJogos(tipoRelatorio) {
             const t1 = match.homeTeam ? match.homeTeam.name : 'Casa';
             const t2 = match.awayTeam ? match.awayTeam.name : 'Fora';
             
-            // Converte o horário UTC para o horário de Brasília (UTC-3)
+            // Converte a data UTC para o horário de Brasília (UTC-3)
             const dataMatch = new Date(match.utcDate);
             const horaInicio = dataMatch.toLocaleTimeString('pt-BR', { 
                 timeZone: 'America/Sao_Paulo', 
@@ -70,7 +70,7 @@ async function executarVarreduraJogos(tipoRelatorio) {
                 minute: '2-digit' 
             });
 
-            // Montagem do card solicitado com o critério de escanteios FT > 10.5
+            // Montagem do card solicitado
             const mensagem = `🎯 *Oportunidade encontrada para sua aposta*\n\n` +
                              `🏆 ${competicao}\n` +
                              `🕒 Horário: ${horaInicio}\n` +
@@ -93,7 +93,7 @@ async function executarVarreduraJogos(tipoRelatorio) {
     }
 }
 
-// Varredura automática a cada hora para capturar novos jogos do dia sem repetir
+// Varredura automática nos horários principais do dia (06h, 10h, 14h, 18h)
 let ultimoEnvioHora = '';
 
 setInterval(() => {
@@ -104,7 +104,6 @@ setInterval(() => {
     const dataHoje = agora.toISOString().split('T')[0];
 
     const chaveTempo = `${dataHoje}-${horaAtual}`;
-    // Executa nos horários principais do dia (ex: 6h, 10h, 14h, 18h)
     if ((horaAtual === 6 || horaAtual === 10 || horaAtual === 14 || horaAtual === 18) && minutoAtual === 0 && ultimoEnvioHora !== chaveTempo) {
         ultimoEnvioHora = chaveTempo;
         executarVarreduraJogos(`Atualização ${horaAtual}:00`);
