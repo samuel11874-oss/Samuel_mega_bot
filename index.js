@@ -70,12 +70,12 @@ async function executarVarreduraJogos(tipoRelatorio) {
                 minute: '2-digit' 
             });
 
-            // Montagem do card solicitado
+            // Montagem do card atualizado com > 8.5 FT
             const mensagem = `🎯 *Oportunidade encontrada para sua aposta*\n\n` +
                              `🏆 ${competicao}\n` +
                              `🕒 Horário: ${horaInicio}\n` +
                              `⚽ Jogo: ${t1} x ${t2}\n` +
-                             `📊 Média de Escanteios: > 10.5 FT`;
+                             `📊 Média de Escanteios: > 8.5 FT`;
 
             await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' });
             
