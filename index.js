@@ -6,7 +6,10 @@ const app = express();
 
 const TELEGRAM_TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
+
+// Seus dois tokens integrados
 const FOOTBALL_DATA_TOKEN = '0a34421534b24e9f9001d3cf5da69c57';
+const API_SPORTS_TOKEN = '7c35cc2deb7a2d5e010379634b2cf0d7';
 
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
 
@@ -15,7 +18,7 @@ let jogosEnviadosHoje = new Set();
 let dataAtualControle = '';
 
 app.get('/', (req, res) => {
-    res.send('<h2>Samuel_mega_bot Operacional 🚀</h2><p>O bot está monitorando e enviando os jogos com link de validação.</p>');
+    res.send('<h2>Samuel_mega_bot Operacional 🚀</h2><p>O bot está monitorando e enviando todos os jogos do dia para o seu Telegram usando múltiplos provedores de dados.</p>');
 });
 
 // Inicia o servidor e já dispara a varredura logo na partida para testes
@@ -70,17 +73,11 @@ async function executarVarreduraJogos(tipoRelatorio) {
                 minute: '2-digit' 
             });
 
-            // Cria um link de busca direta no Google combinando os times com "FootyStats"
-            const queryBusca = encodeURIComponent(`${t1} ${t2} escanteios FootyStats`);
-            const linkBusca = `https://www.google.com/search?q=${queryBusca}`;
-
-            // Montagem do card otimizado com link de checagem rápida
+            // Montagem do card limpo (sem filtros)
             const mensagem = `⚽ *Partida do Dia*\n\n` +
                              `🏆 ${competicao}\n` +
                              `🕒 Horário: ${horaInicio}\n` +
-                             `⚔️ *${t1} x ${t2}*\n` +
-                             `📊 Meta: > 8.5 FT\n\n` +
-                             `🔍 [Checar Estatísticas no FootyStats](${linkBusca})`;
+                             `⚔️ ${t1} x ${t2}`;
 
             await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' });
             
