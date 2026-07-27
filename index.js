@@ -15,7 +15,7 @@ let jogosEnviadosHoje = new Set();
 let dataAtualControle = '';
 
 app.get('/', (req, res) => {
-    res.send('<h2>Bot de Oportunidades (Football-Data) Operacional 🚀</h2><p>O bot está monitorando e enviando os jogos para o seu Telegram.</p>');
+    res.send('<h2>Samuel_mega_bot Operacional 🚀</h2><p>O bot está monitorando e enviando todos os jogos do dia para o seu Telegram.</p>');
 });
 
 // Inicia o servidor e já dispara a varredura logo na partida para testes
@@ -70,12 +70,11 @@ async function executarVarreduraJogos(tipoRelatorio) {
                 minute: '2-digit' 
             });
 
-            // Montagem do card atualizado com > 8.5 FT
-            const mensagem = `🎯 *Oportunidade encontrada para sua aposta*\n\n` +
+            // Montagem do card limpo (sem filtros)
+            const mensagem = `⚽ *Partida do Dia*\n\n` +
                              `🏆 ${competicao}\n` +
                              `🕒 Horário: ${horaInicio}\n` +
-                             `⚽ Jogo: ${t1} x ${t2}\n` +
-                             `📊 Média de Escanteios: > 8.5 FT`;
+                             `⚔️ ${t1} x ${t2}`;
 
             await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' });
             
