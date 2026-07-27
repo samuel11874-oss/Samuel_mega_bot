@@ -7,7 +7,7 @@ const app = express();
 const TELEGRAM_TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 
-// Seus dois tokens integrados
+// Seus tokens
 const FOOTBALL_DATA_TOKEN = '0a34421534b24e9f9001d3cf5da69c57';
 const API_SPORTS_TOKEN = '7c35cc2deb7a2d5e010379634b2cf0d7';
 
@@ -18,10 +18,10 @@ let jogosEnviadosHoje = new Set();
 let dataAtualControle = '';
 
 app.get('/', (req, res) => {
-    res.send('<h2>Samuel_mega_bot Operacional 🚀</h2><p>O bot está monitorando e enviando todos os jogos do dia para o seu Telegram usando múltiplos provedores de dados.</p>');
+    res.send('<h2>Samuel_mega_bot Operacional 🚀</h2><p>O bot está monitorando os jogos do dia via API-Sports.</p>');
 });
 
-// Inicia o servidor e já dispara a varredura logo na partida para testes
+// Inicia o servidor e já dispara a varredura logo na partida
 app.listen(process.env.PORT || 3000, () => {
     console.log("Servidor HTTP rodando com sucesso!");
     executarVarreduraJogos("Inicialização Automática");
@@ -37,43 +37,47 @@ async function executarVarreduraJogos(tipoRelatorio) {
             dataAtualControle = hoje;
         }
 
-        const url = `https://api.football-data.org/v4/matches?date=${hoje}`;
+        // Endpoint oficial da API-Sports para buscar jogos por data
+        const url = `https://v3.football.api-sports.io/fixtures?date=${hoje}`;
 
-        console.log(`Buscando jogos na Football-Data para a data: ${hoje}...`);
+        console.log(`Buscando jogos na API-Sports para a data: ${hoje}...`);
+        
         const response = await axios.get(url, {
-            headers: { 'X-Auth-Token': FOOTBALL_DATA_TOKEN }
+            headers: {
+                'x-apisports-key': API_SPORTS_TOKEN
+            }
         });
-        const matches = response.data.matches;
+
+        const matches = response.data.response;
 
         if (!matches || matches.length === 0) {
-            console.log(`[${tipoRelatorio}] Nenhum jogo encontrado para hoje.`);
+            console.log(`[${tipoRelatorio}] Nenhum jogo encontrado para hoje na API-Sports.`);
             return;
         }
 
-        console.log(`Total de jogos brutos encontrados: ${matches.length}. Verificando novidades...`);
+        console.log(`Total de jogos encontrados: ${matches.length}. Enviando para o Telegram...`);
         let novosEnviados = 0;
 
         for (const match of matches) {
-            const matchId = match.id;
+            const matchId = match.fixture.id;
 
-            // Se o jogo já foi enviado hoje, pula para o próximo (evita repetição)
+            // Se o jogo já foi enviado hoje, pula
             if (jogosEnviadosHoje.has(matchId)) {
                 continue;
             }
 
-            const competicao = match.competition ? match.competition.name : 'Competição';
-            const t1 = match.homeTeam ? match.homeTeam.name : 'Casa';
-            const t2 = match.awayTeam ? match.awayTeam.name : 'Fora';
+            const competicao = match.league ? match.league.name : 'Competição';
+            const t1 = match.teams.home ? match.teams.home.name : 'Casa';
+            const t2 = match.teams.away ? match.teams.away.name : 'Fora';
             
-            // Converte a data UTC para o horário de Brasília (UTC-3)
-            const dataMatch = new Date(match.utcDate);
+            // Converte a data do jogo para o horário de Brasília
+            const dataMatch = new Date(match.fixture.date);
             const horaInicio = dataMatch.toLocaleTimeString('pt-BR', { 
                 timeZone: 'America/Sao_Paulo', 
                 hour: '2-digit', 
                 minute: '2-digit' 
             });
 
-            // Montagem do card limpo (sem filtros)
             const mensagem = `⚽ *Partida do Dia*\n\n` +
                              `🏆 ${competicao}\n` +
                              `🕒 Horário: ${horaInicio}\n` +
@@ -81,11 +85,10 @@ async function executarVarreduraJogos(tipoRelatorio) {
 
             await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' });
             
-            // Registra o ID do jogo como já enviado hoje
             jogosEnviadosHoje.add(matchId);
             novosEnviados++;
 
-            // Pequeno intervalo para respeitar o limite de envio do Telegram
+            // Pausa de 1 segundo para não sobrecarregar o Telegram
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
@@ -95,7 +98,7 @@ async function executarVarreduraJogos(tipoRelatorio) {
     }
 }
 
-// Varredura automática nos horários principais do dia (06h, 10h, 14h, 18h)
+// Varredura automática nos horários principais
 let ultimoEnvioHora = '';
 
 setInterval(() => {
