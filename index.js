@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro de Jogos de Hoje Ativo ⚽📅</h2><p>WinDrawWin + Football-Data CSV + Football-Data.org API</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Com Horários Padronizados ⚽⏰</h2><p>WinDrawWin + Football-Data CSV + Football-Data.org API</p>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -30,7 +30,7 @@ function getBandeira(teamName) {
     return list[teamName] || "⚽";
 }
 
-// 1. WIN-DRAW-WIN (Filtro estrito apenas para jogos da data de hoje)
+// 1. WIN-DRAW-WIN (Extrai data, horário e valida apenas jogos de hoje)
 async function buscarWinDrawWin() {
     try {
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
@@ -39,22 +39,28 @@ async function buscarWinDrawWin() {
         const $ = cheerio.load(response.data);
         let encontrados = 0;
         
-        // Pega exatamente a data de hoje no formato DD/MM
         const hojeObj = new Date();
         const diaAtual = String(hojeObj.getDate()).padStart(2, '0');
         const mesAtual = String(hojeObj.getMonth() + 1).padStart(2, '0');
         const dataHojeStr = `${diaAtual}/${mesAtual}`;
         
         let dataContexto = dataHojeStr;
+        let horaContexto = "A definir";
 
         $('div, tr, h2, h3').each((i, el) => {
             const texto = $(el).text().trim();
+            
             const matchDataTexto = texto.match(/(\d{2}\/\d{2})/);
             if (matchDataTexto) {
                 dataContexto = matchDataTexto[1];
             }
 
-            // RIGOROSO: Se a data do bloco não for hoje, ignora completamente
+            const matchHoraTexto = texto.match(/(\d{2}:\d{2})/);
+            if (matchHoraTexto) {
+                horaContexto = matchHoraTexto[1];
+            }
+
+            // Ignora se não for de hoje
             if (dataContexto !== dataHojeStr) {
                 return;
             }
@@ -77,25 +83,26 @@ async function buscarWinDrawWin() {
                             encontrados++;
 
                             const bandeira = getBandeira(t1);
-                            const msg = `⚽ *Oportunidade WinDrawWin (Hoje > 10.5 FT)*\n\n` +
+                            const msg = `⚽ *Oportunidade WinDrawWin (> 10.5 FT)*\n\n` +
                                         `${bandeira} *${t1} x ${t2}*\n` +
                                         `📅 Data: ${dataHojeStr} (Hoje)\n` +
+                                        `⏰ Horário: ${horaContexto}\n` +
                                         `⛳ *Média FT: ${media.toFixed(1)}*`;
                             
                             bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                            console.log(`✅ [WinDrawWin Hoje] Enviado: ${t1} x ${t2}`);
+                            console.log(`✅ [WinDrawWin] Enviado: ${t1} x ${t2} às ${horaContexto}`);
                         }
                     }
                 }
             }
         });
-        console.log(`🔍 [WinDrawWin] Varredura concluída para ${dataHojeStr}. Jogos de hoje enviados: ${encontrados}`);
+        console.log(`🔍 [WinDrawWin] Concluído. Jogos de hoje enviados: ${encontrados}`);
     } catch (e) {
         console.error("Erro no WinDrawWin:", e.message);
     }
 }
 
-// 2. FOOTBALL-DATA.CO.UK (Filtro estrito para o dia de hoje nos CSVs)
+// 2. FOOTBALL-DATA.CO.UK (Extrai dados dos CSVs com horário padrão)
 async function buscarFootballDataCSV() {
     try {
         const ligas = ['E0', 'SP1', 'I1', 'D1', 'F1'];
@@ -116,6 +123,7 @@ async function buscarFootballDataCSV() {
 
             const cabecalho = linhas[0].split(',');
             const idxDate = cabecalho.indexOf('Date');
+            const idxTime = cabecalho.indexOf('Time');
             const idxHome = cabecalho.indexOf('HomeTeam');
             const idxAway = cabecalho.indexOf('AwayTeam');
             const idxHC = cabecalho.indexOf('HC');
@@ -127,8 +135,8 @@ async function buscarFootballDataCSV() {
                 if (!linhas[i].trim()) continue;
                 const colunas = linhas[i].split(',');
                 const dataJogo = colunas[idxDate]; 
+                const horaJogo = idxTime !== -1 && colunas[idxTime] ? colunas[idxTime] : 'A definir';
 
-                // Validação exata para a data de hoje
                 const ehHoje = dataJogo && (
                     dataJogo === `${dia}/${mes}/${ano}` || 
                     dataJogo === `${dia}/${mes}/${anoCompleto}` || 
@@ -151,13 +159,14 @@ async function buscarFootballDataCSV() {
                             jogosEnviados.add(chave);
                             const bandeira = getBandeira(t1);
 
-                            const msg = `📊 *Dataset CSV (Hoje > 10.5 FT)*\n\n` +
+                            const msg = `📊 *Dataset CSV (> 10.5 FT)*\n\n` +
                                         `${bandeira} *${t1} x ${t2}*\n` +
                                         `📅 Data: ${dataJogo} (Hoje)\n` +
+                                        `⏰ Horário: ${horaJogo}\n` +
                                         `⛳ *Escanteios Registrados: ${mediaCSV}*`;
 
                             bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                            console.log(`✅ [Football-Data CSV Hoje] Enviado: ${t1} x ${t2}`);
+                            console.log(`✅ [Football-Data CSV] Enviado: ${t1} x ${t2} às ${horaJogo}`);
                         }
                     }
                 }
@@ -168,10 +177,10 @@ async function buscarFootballDataCSV() {
     }
 }
 
-// 3. FOOTBALL-DATA.ORG API (Busca nativa estrita para a data de hoje)
+// 3. FOOTBALL-DATA.ORG API (Converte horário UTC para o horário local brasileiro de Brasília)
 async function buscarFootballDataOrgApi() {
     try {
-        const hojeIso = new Date().toISOString().split('T')[0]; // Formato YYYY-MM-DD exigido pela API
+        const hojeIso = new Date().toISOString().split('T')[0];
         const response = await axios.get(`https://api.football-data.org/v4/matches?date=${hojeIso}`, {
             headers: { 'X-Auth-Token': FOOTBALL_DATA_ORG_TOKEN }
         });
@@ -184,6 +193,14 @@ async function buscarFootballDataOrgApi() {
             const t1 = match.homeTeam.name;
             const t2 = match.awayTeam.name;
             const competencia = match.competition.name;
+            
+            // Converte o horário UTC da API para a hora local correta (Brasília)
+            const horaJogo = new Date(match.utcDate).toLocaleTimeString('pt-BR', {
+                timeZone: 'America/Sao_Paulo',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
             const chave = `fdorg_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
 
             if (!jogosEnviados.has(chave)) {
@@ -191,13 +208,14 @@ async function buscarFootballDataOrgApi() {
                 encontrados++;
 
                 const bandeira = getBandeira(t1);
-                const msg = `📡 *API Football-Data.org (Jogos de Hoje)*\n\n` +
+                const msg = `📡 *API Football-Data.org (Hoje)*\n\n` +
                             `${bandeira} *${t1} x ${t2}*\n` +
                             `🏆 Competição: ${competencia}\n` +
-                            `📅 Data: Hoje`;
+                            `📅 Data: Hoje\n` +
+                            `⏰ Horário: ${horaJogo}`;
 
                 bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-                console.log(`✅ [Football-Data.org Hoje] Enviado: ${t1} x ${t2}`);
+                console.log(`✅ [Football-Data.org] Enviado: ${t1} x ${t2} às ${horaJogo}`);
             }
         }
         console.log(`🔍 [Football-Data.org] Concluído para ${hojeIso}. Jogos de hoje enviados: ${encontrados}`);
@@ -206,7 +224,7 @@ async function buscarFootballDataOrgApi() {
     }
 }
 
-// Limpa cache a cada 1 hora para renovar a lista do dia seguinte quando virar o dia
+// Limpa cache a cada 1 hora para renovar os jogos no dia seguinte
 setInterval(() => { jogosEnviados.clear(); }, 3600000);
 
 // Executa as varreduras a cada 5 minutos
