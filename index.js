@@ -3,7 +3,7 @@ const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Multi-Fontes (CSV + APIs) Ativo ⚽🔥</h2><p>Foco exclusivo em escanteios > 10.5 FT para jogos de hoje.</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - As 3 Fontes Ativas ⚽🔥</h2><p>Football-Data CSV + Football-Data.org API + API-Sports (Foco em Escanteios > 10.5 FT)</p>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -138,7 +138,22 @@ async function buscarFootballDataOrgApi() {
         });
 
         if (!response.data || !response.data.matches) return;
-        console.log("🔍 [Football-Data.org] Verificação de agenda concluída.");
+        const matches = response.data.matches;
+
+        for (const match of matches) {
+            const t1 = match.homeTeam.name;
+            const t2 = match.awayTeam.name;
+            const competencia = match.competition.name;
+            
+            const horaJogo = new Date(match.utcDate).toLocaleTimeString('pt-BR', {
+                timeZone: 'America/Sao_Paulo',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+            processarEEnviarJogo('Football-Data.org API', t1, t2, horaJogo, `Partida Oficial Agendada`, competencia);
+        }
+        console.log("🔍 [Football-Data.org] Varredura concluída.");
     } catch (e) {
         console.error("Erro na API Football-Data.org:", e.message);
     }
