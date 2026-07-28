@@ -1,5 +1,7 @@
 process.env.PUPPETEER_CACHE_DIR = '/opt/render/.cache/puppeteer';
 
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
@@ -15,14 +17,33 @@ const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
+function encontrarChrome() {
+    const baseDir = '/opt/render/.cache/puppeteer/chrome';
+    try {
+        if (fs.existsSync(baseDir)) {
+            const versoes = fs.readdirSync(baseDir);
+            for (const ver of versoes) {
+                const caminhoBinario = path.join(baseDir, ver, 'chrome-linux64', 'chrome');
+                if (fs.existsSync(caminhoBinario)) {
+                    return caminhoBinario;
+                }
+            }
+        }
+    } catch (e) {}
+    return puppeteer.executablePath();
+}
+
 async function investigarEBurlarSoccerway() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Investigação] Iniciando navegador com cache fixo, emulação móvel e Stealth...");
+        console.log("🕵️‍♂️ [Investigação] Iniciando navegador com localizador automático, emulação móvel e Stealth...");
         
+        const executablePath = encontrarChrome();
+        console.log(`📂 Caminho do Chrome detectado: ${executablePath}`);
+
         browser = await puppeteer.launch({
             headless: true,
-            executablePath: puppeteer.executablePath(),
+            executablePath: executablePath,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
