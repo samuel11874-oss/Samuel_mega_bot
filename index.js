@@ -1,3 +1,7 @@
+const path = require('path');
+// Define a pasta do Chrome para ser DENTRO da pasta do projeto
+process.env.PUPPETEER_CACHE_DIR = path.join(__dirname, '.cache', 'puppeteer');
+
 const express = require('express');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
@@ -6,7 +10,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigador Ativo ⚽🕵️‍♂️</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Online ⚽🕵️‍♂️</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -16,9 +20,8 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function investigarEBurlarSoccerway() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ Iniciando navegador de forma nativa e automática...");
+        console.log("🕵️‍♂️ [Bot] Iniciando navegador com caminho do projeto...");
         
-        // Sem forçar caminhos. O Puppeteer usa a instalação limpa do 'npm install'
         browser = await puppeteer.launch({
             headless: true,
             args: [
@@ -35,7 +38,7 @@ async function investigarEBurlarSoccerway() {
         await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1');
         await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
 
-        console.log("🌐 Acessando o Soccerway...");
+        console.log("🌐 [Bot] Acessando o Soccerway...");
         const response = await page.goto('https://br.soccerway.com/', {
             waitUntil: 'domcontentloaded',
             timeout: 60000
@@ -48,14 +51,14 @@ async function investigarEBurlarSoccerway() {
         console.log(`📊 Status HTTP: ${status} | 📌 Título: ${tituloPagina}`);
 
         if (bodyTexto.includes('Verifying you are human') || bodyTexto.includes('Cloudflare')) {
-            bot.sendMessage(CHAT_ID, `⚠️ *Bloqueio Detectado:*\nStatus: ${status}\nSite exigiu verificação.`, { parse_mode: 'Markdown' }).catch(()=>{});
+            bot.sendMessage(CHAT_ID, `⚠️ *Soccerway - Bloqueio Detectado:*\nStatus: ${status}\nO site exigiu verificação humana.`, { parse_mode: 'Markdown' }).catch(()=>{});
         } else {
-            bot.sendMessage(CHAT_ID, `✅ *Acesso Liberado!*\nStatus: ${status}\nTítulo: ${tituloPagina}`, { parse_mode: 'Markdown' }).catch(()=>{});
+            bot.sendMessage(CHAT_ID, `✅ *Soccerway - Acesso Liberado!*\nStatus: ${status}\nTítulo: ${tituloPagina}`, { parse_mode: 'Markdown' }).catch(()=>{});
         }
 
     } catch (error) {
         console.error("❌ Erro:", error.message);
-        bot.sendMessage(CHAT_ID, `❌ *Erro fatal:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
+        bot.sendMessage(CHAT_ID, `❌ *Erro no Bot:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
     } finally {
         if (browser) await browser.close();
     }
