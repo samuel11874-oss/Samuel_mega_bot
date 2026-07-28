@@ -3,7 +3,7 @@ const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro de Escanteios > 10.5 FT ⚽🔥</h2><p>WinDrawWin removido. Foco exclusivo em API-Sports e Football-Data.</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Multi-Fontes (CSV + APIs) Ativo ⚽🔥</h2><p>Foco exclusivo em escanteios > 10.5 FT para jogos de hoje.</p>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -12,6 +12,10 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 
 const FOOTBALL_DATA_ORG_TOKEN = '0a34421534b24e9f9001d3cf5da69c57';
 const API_SPORTS_TOKEN = '7c35cc2deb7a2d5e010379634b2cf0d7';
+
+const HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+};
 
 let jogosEnviados = new Set();
 
@@ -63,7 +67,69 @@ function processarEEnviarJogo(fonte, t1, t2, hora, detalhes, competencia = '') {
     console.log(`✅ [${fonte}] Enviado: ${t1} x ${t2} às ${hora} (${detalhes})`);
 }
 
-// 1. FOOTBALL-DATA.ORG API
+// 1. FOOTBALL-DATA.CO.UK (CSV)
+async function buscarFootballDataCSV() {
+    try {
+        const ligas = ['E0', 'SP1', 'I1', 'D1', 'F1'];
+        const hojeObj = new Date();
+        const dia = String(hojeObj.getDate()).padStart(2, '0');
+        const mes = String(hojeObj.getMonth() + 1).padStart(2, '0');
+        const ano = hojeObj.getFullYear().toString().slice(-2);
+        const anoCompleto = hojeObj.getFullYear().toString();
+        const temporada = '2627';
+
+        for (const liga of ligas) {
+            const csvUrl = `https://www.football-data.co.uk/mmz4281/${temporada}/${liga}.csv`;
+            const response = await axios.get(csvUrl, { headers: HEADERS }).catch(() => null);
+            if (!response || !response.data) continue;
+
+            const linhas = response.data.split('\n');
+            if (linhas.length < 2) continue;
+
+            const cabecalho = linhas[0].split(',');
+            const idxDate = cabecalho.indexOf('Date');
+            const idxTime = cabecalho.indexOf('Time');
+            const idxHome = cabecalho.indexOf('HomeTeam');
+            const idxAway = cabecalho.indexOf('AwayTeam');
+            const idxHC = cabecalho.indexOf('HC');
+            const idxAC = cabecalho.indexOf('AC');
+
+            if (idxDate === -1 || idxHome === -1 || idxAway === -1) continue;
+
+            for (let i = 1; i < linhas.length; i++) {
+                if (!linhas[i].trim()) continue;
+                const colunas = linhas[i].split(',');
+                const dataJogo = colunas[idxDate]; 
+                const horaJogo = idxTime !== -1 && colunas[idxTime] ? colunas[idxTime] : 'A definir';
+
+                const ehHoje = dataJogo && (
+                    dataJogo === `${dia}/${mes}/${ano}` || 
+                    dataJogo === `${dia}/${mes}/${anoCompleto}` || 
+                    dataJogo === `${dia}/${mes}`
+                );
+
+                if (ehHoje) {
+                    const t1 = colunas[idxHome];
+                    const t2 = colunas[idxAway];
+                    
+                    let mediaCSV = 0;
+                    if (idxHC !== -1 && idxAC !== -1 && colunas[idxHC] && colunas[idxAC]) {
+                        mediaCSV = (parseFloat(colunas[idxHC]) || 0) + (parseFloat(colunas[idxAC]) || 0);
+                    }
+
+                    if (mediaCSV > 10.5) {
+                        processarEEnviarJogo('Football-Data CSV', t1, t2, horaJogo, `Média FT: ${mediaCSV.toFixed(1)}`);
+                    }
+                }
+            }
+        }
+        console.log("🔍 [Football-Data CSV] Varredura concluída.");
+    } catch (e) {
+        console.error("Erro no Football-Data CSV:", e.message);
+    }
+}
+
+// 2. FOOTBALL-DATA.ORG API
 async function buscarFootballDataOrgApi() {
     try {
         const hojeIso = new Date().toISOString().split('T')[0];
@@ -78,7 +144,7 @@ async function buscarFootballDataOrgApi() {
     }
 }
 
-// 2. API-SPORTS COM FILTRO DE ESCANTEIOS > 10.5 FT
+// 3. API-SPORTS COM FILTRO DE ESCANTEIOS > 10.5 FT
 async function buscarApiSportsComFiltroEscanteios() {
     try {
         const hojeIso = new Date().toISOString().split('T')[0];
@@ -90,7 +156,7 @@ async function buscarApiSportsComFiltroEscanteios() {
         const fixtures = response.data.response;
 
         let requisicoesFeitas = 0;
-        const limiteRequisicoes = 30; // Protege o limite de 100 requisições diárias do plano gratuito
+        const limiteRequisicoes = 30;
 
         for (const item of fixtures) {
             if (requisicoesFeitas >= limiteRequisicoes) break;
@@ -128,13 +194,12 @@ async function buscarApiSportsComFiltroEscanteios() {
                     const awayTeamStats = pred.teams?.away?.league?.stats?.corners || 0;
                     const mediaFinal = mediaEscanteios > 0 ? mediaEscanteios : (homeTeamStats + awayTeamStats);
 
-                    // Filtro estrito exigido: Apenas médias superiores a 10.5 FT
                     if (mediaFinal > 10.5) {
                         processarEEnviarJogo('API-Sports (Previsões)', t1, t2, horaJogo, `Média FT: ${mediaFinal.toFixed(1)}`, competencia);
                     }
                 }
             } catch (err) {
-                // Ignora erros individuais de partidas sem previsões cadastradas
+                // Ignora partidas sem previsões cadastradas
             }
         }
         console.log(`🔍 [API-Sports] Varredura com filtro > 10.5 FT concluída. Requisições usadas: ${requisicoesFeitas}`);
@@ -145,10 +210,12 @@ async function buscarApiSportsComFiltroEscanteios() {
 
 // Executa as varreduras a cada 30 minutos
 setInterval(() => {
+    buscarFootballDataCSV();
     buscarFootballDataOrgApi();
     buscarApiSportsComFiltroEscanteios();
 }, 1800000);
 
 // Execução inicial imediata ao ligar o bot
+buscarFootballDataCSV();
 buscarFootballDataOrgApi();
 buscarApiSportsComFiltroEscanteios();
