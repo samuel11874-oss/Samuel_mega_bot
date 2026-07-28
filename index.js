@@ -14,8 +14,6 @@ const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-let jogosEnviados = new Set();
-
 // Script de Investigação e Raspagem Avançada para Soccerway
 async function investigarEBurlarSoccerway() {
     let browser = null;
@@ -24,6 +22,8 @@ async function investigarEBurlarSoccerway() {
         
         browser = await puppeteer.launch({
             headless: true,
+            // Caminho exato onde o Chrome foi baixado no Render
+            executablePath: '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -70,7 +70,6 @@ async function investigarEBurlarSoccerway() {
             // 4. Varredura de dados na página (Exemplo de extração)
             const partidasEncontradas = await page.evaluate(() => {
                 const lista = [];
-                // Seletor genérico para testes de investigação
                 document.querySelectorAll('.match-item, tr.match, div.match').forEach(el => {
                     lista.push(el.innerText.trim());
                 });
@@ -80,7 +79,7 @@ async function investigarEBurlarSoccerway() {
             if (partidasEncontradas.length > 0) {
                 console.log(`⚽ [Investigação] Encontrados ${partidasEncontradas.length} elementos de partidas.`);
             } else {
-                console.log("ℹ️ [Investigação] Nenhum elemento de partida visível no seletor atual. Necessário inspecionar o HTML da página.");
+                console.log("ℹ️ [Investigação] Nenhum elemento de partida visível no seletor atual.");
             }
         }
 
