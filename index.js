@@ -1,3 +1,7 @@
+// Ordem direta: Procura o navegador APENAS dentro da pasta blindada do projeto
+const path = require('path');
+process.env.PUPPETEER_CACHE_DIR = path.join(__dirname, '.cache');
+
 const express = require('express');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
@@ -16,7 +20,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function investigarEBurlarSoccerway() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot] Iniciando navegador com configuração nativa (.puppeteerrc.cjs)...");
+        console.log("🕵️‍♂️ [Bot] Iniciando navegador com cache blindado da pasta do projeto...");
         
         browser = await puppeteer.launch({
             headless: true,
