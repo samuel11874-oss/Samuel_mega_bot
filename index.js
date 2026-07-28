@@ -1,3 +1,5 @@
+process.env.PUPPETEER_CACHE_DIR = '/opt/render/.cache/puppeteer';
+
 const express = require('express');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
@@ -16,9 +18,8 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function investigarEBurlarSoccerway() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Investigação] Iniciando navegador com detecção automática, emulação móvel e Stealth...");
+        console.log("🕵️‍♂️ [Investigação] Iniciando navegador com cache fixo, emulação móvel e Stealth...");
         
-        // Deixa o Puppeteer encontrar o caminho do Chrome automaticamente
         browser = await puppeteer.launch({
             headless: true,
             executablePath: puppeteer.executablePath(),
