@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Antiduplicidade Ativo ⚽🛡️</h2><p>WinDrawWin + Football-Data CSV + Football-Data.org API</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Antiduplicidade Ativo ⚽🛡️</h2><p>WinDrawWin + Football-Data CSV + Football-Data.org API + API-Sports</p>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -12,6 +12,7 @@ const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
 const FOOTBALL_DATA_ORG_TOKEN = '0a34421534b24e9f9001d3cf5da69c57';
+const API_SPORTS_TOKEN = '7c35cc2deb7a2d5e010379634b2cf0d7';
 
 const HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -204,14 +205,45 @@ async function buscarFootballDataOrgApi() {
     }
 }
 
+// 4. API-SPORTS
+async function buscarApiSports() {
+    try {
+        const hojeIso = new Date().toISOString().split('T')[0];
+        const response = await axios.get(`https://v3.football.api-sports.io/fixtures?date=${hojeIso}`, {
+            headers: { 'x-apisports-key': API_SPORTS_TOKEN }
+        });
+
+        if (!response.data || !response.data.response) return;
+        const fixtures = response.data.response;
+
+        for (const item of fixtures) {
+            const t1 = item.teams.home.name;
+            const t2 = item.teams.away.name;
+            const competencia = item.league.name;
+            
+            const horaJogo = new Date(item.fixture.date).toLocaleTimeString('pt-BR', {
+                timeZone: 'America/Sao_Paulo',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+            processarEEnviarJogo('API-Sports', t1, t2, horaJogo, `Partida Oficial Ao Vivo / Hoje`, competencia);
+        }
+    } catch (e) {
+        console.error("Erro na API-Sports:", e.message);
+    }
+}
+
 // Executa as varreduras a cada 5 minutos
 setInterval(() => {
     buscarWinDrawWin();
     buscarFootballDataCSV();
     buscarFootballDataOrgApi();
+    buscarApiSports();
 }, 300000);
 
 // Execução inicial imediata ao ligar o bot
 buscarWinDrawWin();
 buscarFootballDataCSV();
 buscarFootballDataOrgApi();
+buscarApiSports();
