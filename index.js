@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Escanteios > 10.5 FT ⚽</h2><p>WinDrawWin + Football-Data.co.uk (Datas Corrigidas)</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Escanteios > 10.5 FT ⚽</h2><p>WinDrawWin + Football-Data.co.uk Ativos</p>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -44,7 +44,6 @@ async function buscarWinDrawWin() {
         $('div, tr, h2, h3').each((i, el) => {
             const texto = $(el).text().trim();
             
-            // Tenta identificar se o bloco possui indicação de data
             const matchDataTexto = texto.match(/(\d{2}\/\d{2})/);
             if (matchDataTexto) {
                 dataContexto = matchDataTexto[1];
@@ -94,7 +93,7 @@ async function buscarFootballDataCSV() {
         const dia = String(hojeObj.getDate()).padStart(2, '0');
         const mes = String(hojeObj.getMonth() + 1).padStart(2, '0');
         const ano = hojeObj.getFullYear().toString().slice(-2);
-        const temporada = '2526';
+        const temporada = '2627';
 
         for (const liga of ligas) {
             const csvUrl = `https://www.football-data.co.uk/mmz4281/${temporada}/${liga}.csv`;
