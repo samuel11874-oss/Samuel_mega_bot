@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot Live] Iniciando varredura geral de partidas...");
+        console.log("🕵️‍♂️ [Bot Live] Iniciando varredura com carregamento profundo...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -34,63 +34,73 @@ async function buscarJogosAoVivo() {
         });
 
         const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1');
-        await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
+        await page.setViewport({ width: 1280, height: 800 });
 
         console.log("🌐 [Bot Live] Acessando Soccerway...");
         await page.goto('https://br.soccerway.com/livescores/', {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'networkidle0',
             timeout: 60000
         });
 
-        // Espera 6 segundos para a renderização do JS carregar os dados na tela
-        await new Promise(r => setTimeout(r, 6000));
-
-        // Leitura ampla de linhas de jogos e blocos no DOM
-        const resultados = await page.evaluate(() => {
-            const extraidos = [];
-            
-            // Varre todas as linhas e elementos que contenham texto de jogo
-            const elementos = document.querySelectorAll('tr, .match, .match-row, [class*="match"]');
-
-            elementos.forEach(el => {
-                const texto = el.innerText ? el.innerText.trim() : '';
-                // Filtra blocos de texto que possuem quebras de linha e dados de partidas
-                if (texto.includes('\n') && texto.length > 5 && texto.length < 150) {
-                    const linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                    if (linhas.length >= 2) {
-                        extraidos.push(linhas.join(' | '));
+        // Simula rolagem para forçar o carregamento dinâmico das partidas
+        await page.evaluate(async () => {
+            await new Promise((resolve) => {
+                let totalHeight = 0;
+                const distance = 300;
+                const timer = setInterval(() => {
+                    const scrollHeight = document.body.scrollHeight;
+                    window.scrollBy(0, distance);
+                    totalHeight += distance;
+                    if (totalHeight >= scrollHeight || totalHeight > 1500) {
+                        clearInterval(timer);
+                        resolve();
                     }
+                }, 200);
+            });
+        });
+
+        // Aguarda 5 segundos extras após a rolagem
+        await new Promise(r => setTimeout(r, 5000));
+
+        // Extrai todo o texto da página referente a jogos
+        const dadosJogos = await page.evaluate(() => {
+            const linhas = Array.from(document.querySelectorAll('tr, div, article'));
+            const partidas = [];
+
+            linhas.forEach(el => {
+                const txt = el.innerText ? el.innerText.trim() : '';
+                // Procura por blocos que contêm padrão de placar ex: "1 - 0" ou "VS" ou minutos
+                if (txt.includes('\n') && (txt.match(/\d+\s*[-x:]\s*\d+/) || txt.includes("'"))) {
+                    partidas.push(txt.replace(/\n+/g, ' | '));
                 }
             });
 
-            // Remove duplicados
-            return [...new Set(extraidos)];
+            return [...new Set(partidas)].filter(p => p.length > 8 && p.length < 120);
         });
 
-        console.log(`⚽ [Bot Live] Elementos de partidas encontrados: ${resultados.length}`);
+        console.log(`⚽ [Bot Live] Total de jogos filtrados: ${dadosJogos.length}`);
 
-        if (resultados.length > 0) {
-            let mensagem = `🔴 *JOGOS / EVENTOS CAPTURADOS (${resultados.length})*\n\n`;
-            resultados.slice(0, 10).forEach((item, index) => {
-                mensagem += `📌 *Jogo ${index + 1}:*\n${item}\n\n`;
+        if (dadosJogos.length > 0) {
+            let msg = `🔴 *JOGOS CAPTURADOS (${dadosJogos.length})*\n\n`;
+            dadosJogos.slice(0, 10).forEach((j, i) => {
+                msg += `📌 *${i + 1}:* ${j}\n\n`;
             });
-
-            bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(()=>{});
+            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(()=>{});
         } else {
-            // Em último caso, extrai o título e o status para diagnosticar a tela
-            const titulo = await page.title();
-            bot.sendMessage(CHAT_ID, `⚠️ *Varredura finalizada sem linhas explícitas.*\nTítulo carregado: ${titulo}`, { parse_mode: 'Markdown' }).catch(()=>{});
+            // Caso não ache, extrai trecho do HTML para diagnosticar o que foi renderizado
+            const htmlPreview = await page.evaluate(() => document.body.innerText.substring(0, 300));
+            console.log("Prévia do conteúdo da página:", htmlPreview);
+            bot.sendMessage(CHAT_ID, `⚠️ *Página carregou, mas sem jogos visíveis.*\nPrévia: ${htmlPreview.replace(/\n/g, ' ')}`, { parse_mode: 'Markdown' }).catch(()=>{});
         }
 
     } catch (error) {
-        console.error("❌ Erro ao buscar jogos:", error.message);
-        bot.sendMessage(CHAT_ID, `❌ *Erro na busca:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
+        console.error("❌ Erro:", error.message);
+        bot.sendMessage(CHAT_ID, `❌ *Erro no Bot:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Roda a cada 10 minutos
 setInterval(buscarJogosAoVivo, 600000);
 buscarJogosAoVivo();
