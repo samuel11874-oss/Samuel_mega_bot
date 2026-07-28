@@ -1,7 +1,3 @@
-const path = require('path');
-// Define a pasta do Chrome para ser DENTRO da pasta do projeto
-process.env.PUPPETEER_CACHE_DIR = path.join(__dirname, '.cache', 'puppeteer');
-
 const express = require('express');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
@@ -20,7 +16,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function investigarEBurlarSoccerway() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot] Iniciando navegador com caminho do projeto...");
+        console.log("🕵️‍♂️ [Bot] Iniciando navegador com configuração nativa (.puppeteerrc.cjs)...");
         
         browser = await puppeteer.launch({
             headless: true,
