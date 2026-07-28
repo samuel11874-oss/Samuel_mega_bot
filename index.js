@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Card Padrão Ativo ⚽📋</h2><p>WinDrawWin + Football-Data CSV + Football-Data.org API</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Antiduplicidade Ativo ⚽🛡️</h2><p>WinDrawWin + Football-Data CSV + Football-Data.org API</p>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,6 +17,7 @@ const HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 };
 
+// Conjunto global para bloquear repetições definitivas no dia
 let jogosEnviados = new Set();
 
 function getBandeira(teamName) {
@@ -30,8 +31,28 @@ function getBandeira(teamName) {
     return list[teamName] || "⚽";
 }
 
-// 📋 FUNÇÃO DO CARD PADRÃO PARA TODAS AS FONTES
-function enviarCard(fonte, t1, t2, hora, detalhes, competencia = '') {
+// Normaliza o nome do time para evitar duplicidade por pequenas variações de escrita
+function normalizarNome(nome) {
+    return nome.toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/fc|cf|ec|ac|sad/g, '')
+        .replace(/[^a-z0-9]/g, '');
+}
+
+// 📋 CARD PADRÃO UNIFICADO COM CHAVE ÚNICA ANTI-REPETIÇÃO
+function processarEEnviarJogo(fonte, t1, t2, hora, detalhes, competencia = '') {
+    const hojeObj = new Date();
+    const dataHojeStr = `${String(hojeObj.getDate()).padStart(2, '0')}/${String(hojeObj.getMonth() + 1).padStart(2, '0')}`;
+    
+    // Chave única baseada nos nomes limpos dos times + data de hoje (independente da fonte)
+    const chaveUnica = `${normalizarNome(t1)}_${normalizarNome(t2)}_${dataHojeStr}`;
+
+    if (jogosEnviados.has(chaveUnica)) {
+        return; // Jogo já foi enviado por qualquer fonte, ignora para não repetir
+    }
+
+    jogosEnviados.add(chaveUnica);
+
     const bandeira = getBandeira(t1);
     let msg = `📋 *CARD DE OPORTUNIDADE* ⚽\n\n` +
               `${bandeira} *${t1} x ${t2}*\n`;
@@ -47,6 +68,7 @@ function enviarCard(fonte, t1, t2, hora, detalhes, competencia = '') {
            `──────────────────`;
 
     bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+    console.log(`✅ [${fonte}] Enviado (Único): ${t1} x ${t2} às ${hora}`);
 }
 
 // 1. WIN-DRAW-WIN
@@ -56,12 +78,8 @@ async function buscarWinDrawWin() {
         if (!response || !response.data) return;
 
         const $ = cheerio.load(response.data);
-        let encontrados = 0;
-        
         const hojeObj = new Date();
-        const diaAtual = String(hojeObj.getDate()).padStart(2, '0');
-        const mesAtual = String(hojeObj.getMonth() + 1).padStart(2, '0');
-        const dataHojeStr = `${diaAtual}/${mesAtual}`;
+        const dataHojeStr = `${String(hojeObj.getDate()).padStart(2, '0')}/${String(hojeObj.getMonth() + 1).padStart(2, '0')}`;
         
         let dataContexto = dataHojeStr;
         let horaContexto = "A definir";
@@ -86,21 +104,11 @@ async function buscarWinDrawWin() {
                     const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                     
                     if (media > 10.5 && media <= 18.0) {
-                        const t1 = match[1].trim();
-                        const t2 = match[2].trim();
-                        const chave = `wdw_${t1}_${t2}_${dataHojeStr}`.toLowerCase().replace(/\s/g, '');
-                        
-                        if (!jogosEnviados.has(chave)) {
-                            jogosEnviados.add(chave);
-                            encontrados++;
-                            enviarCard('WinDrawWin', t1, t2, horaContexto, `Média FT: ${media.toFixed(1)}`);
-                            console.log(`✅ [WinDrawWin] Enviado: ${t1} x ${t2} às ${horaContexto}`);
-                        }
+                        processarEEnviarJogo('WinDrawWin', match[1].trim(), match[2].trim(), horaContexto, `Média FT: ${media.toFixed(1)}`);
                     }
                 }
             }
         });
-        console.log(`🔍 [WinDrawWin] Concluído. Jogos de hoje enviados: ${encontrados}`);
     } catch (e) {
         console.error("Erro no WinDrawWin:", e.message);
     }
@@ -157,13 +165,7 @@ async function buscarFootballDataCSV() {
                     }
 
                     if (mediaCSV > 10.5) {
-                        const chave = `csv_${t1}_${t2}_${dia}/${mes}`.toLowerCase().replace(/\s/g, '');
-
-                        if (!jogosEnviados.has(chave)) {
-                            jogosEnviados.add(chave);
-                            enviarCard('Football-Data CSV', t1, t2, horaJogo, `Escanteios Registrados: ${mediaCSV}`);
-                            console.log(`✅ [Football-Data CSV] Enviado: ${t1} x ${t2} às ${horaJogo}`);
-                        }
+                        processarEEnviarJogo('Football-Data CSV', t1, t2, horaJogo, `Escanteios Registrados: ${mediaCSV}`);
                     }
                 }
             }
@@ -183,7 +185,6 @@ async function buscarFootballDataOrgApi() {
 
         if (!response.data || !response.data.matches) return;
         const matches = response.data.matches;
-        let encontrados = 0;
 
         for (const match of matches) {
             const t1 = match.homeTeam.name;
@@ -196,24 +197,12 @@ async function buscarFootballDataOrgApi() {
                 minute: '2-digit'
             });
 
-            const chave = `fdorg_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
-
-            if (!jogosEnviados.has(chave)) {
-                jogosEnviados.add(chave);
-                encontrados++;
-
-                enviarCard('Football-Data.org API', t1, t2, horaJogo, `Partida Oficial Agendada`, competencia);
-                console.log(`✅ [Football-Data.org] Enviado: ${t1} x ${t2} às ${horaJogo}`);
-            }
+            processarEEnviarJogo('Football-Data.org API', t1, t2, horaJogo, `Partida Oficial Agendada`, competencia);
         }
-        console.log(`🔍 [Football-Data.org] Concluído para ${hojeIso}. Jogos de hoje enviados: ${encontrados}`);
     } catch (e) {
         console.error("Erro na API Football-Data.org:", e.message);
     }
 }
-
-// Limpa cache a cada 1 hora
-setInterval(() => { jogosEnviados.clear(); }, 3600000);
 
 // Executa as varreduras a cada 5 minutos
 setInterval(() => {
