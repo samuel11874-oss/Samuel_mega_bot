@@ -1,225 +1,99 @@
 const express = require('express');
-const axios = require('axios');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const TelegramBot = require('node-telegram-bot-api');
 
+// Ativa o plugin de stealth para ocultar rastros de automação
+puppeteer.use(StealthPlugin());
+
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Global + CSV Ativo ⚽🔥</h2><p>CSV Europeu + APIs Globais (Brasileirão, Série B, Libertadores e Ligas > 10.5 FT)</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigador Soccerway ⚽🕵️‍♂️</h2><p>Modo de investigação de proteção e raspagem avançada ativo.</p>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-const FOOTBALL_DATA_ORG_TOKEN = '0a34421534b24e9f9001d3cf5da69c57';
-const API_SPORTS_TOKEN = '7c35cc2deb7a2d5e010379634b2cf0d7';
-
-const HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-};
-
 let jogosEnviados = new Set();
 
-function getBandeira(teamName, competencia = '') {
-    if (competencia.includes('Brazil') || competencia.includes('Brasileiro') || competencia.includes('Copa do Brasil')) return '🇧🇷';
-    if (competencia.includes('Argentina')) return '🇦🇷';
-    if (competencia.includes('Libertadores') || competencia.includes('Sudamericana')) return '🌎';
-    
-    const list = {
-        "Flamengo": "🇧🇷", "Palmeiras": "🇧🇷", "Corinthians": "🇧🇷", "São Paulo": "🇧🇷",
-        "Santos": "🇧🇷", "Cruzeiro": "🇧🇷", "Atlético": "🇧🇷", "Bahia": "🇧🇷",
-        "Vasco": "🇧🇷", "Botafogo": "🇧🇷", "Fluminense": "🇧🇷", "Grêmio": "🇧🇷",
-        "Internacional": "🇧🇷", "Arsenal": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Chelsea": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Liverpool": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", 
-        "Manchester City": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Real Madrid": "🇪🇸", "Barcelona": "🇪🇸", "Juventus": "🇮🇹"
-    };
-    return list[teamName] || "⚽";
-}
-
-function normalizarNome(nome) {
-    return nome.toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-        .replace(/fc|cf|ec|ac|sad/g, '')
-        .replace(/[^a-z0-9]/g, '');
-}
-
-function processarEEnviarJogo(fonte, t1, t2, hora, detalhes, competencia = '') {
-    const hojeObj = new Date();
-    const dataHojeStr = `${String(hojeObj.getDate()).padStart(2, '0')}/${String(hojeObj.getMonth() + 1).padStart(2, '0')}`;
-    
-    const chaveUnica = `${normalizarNome(t1)}_${normalizarNome(t2)}_${dataHojeStr}`;
-
-    if (jogosEnviados.has(chaveUnica)) {
-        return;
-    }
-
-    jogosEnviados.add(chaveUnica);
-
-    const bandeira = getBandeira(t1, competencia);
-    let msg = `📋 *CARD DE OPORTUNIDADE (Média > 10.5 FT)* ⚽\n\n` +
-              `${bandeira} *${t1} x ${t2}*\n`;
-    
-    if (competencia) {
-        msg += `🏆 *Competição:* ${competencia}\n`;
-    }
-    
-    msg += `📌 *Fonte:* ${fonte}\n` +
-           `📅 *Data:* Hoje\n` +
-           `⏰ *Horário:* ${hora}\n` +
-           `⛳ *Dados:* ${detalhes}\n` +
-           `──────────────────`;
-
-    bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
-    console.log(`✅ [${fonte}] Enviado: ${t1} x ${t2} às ${hora} (${detalhes})`);
-}
-
-// 1. FOOTBALL-DATA.CO.UK (CSV - Ligas Europeias)
-async function buscarFootballDataCSV() {
+// Script de Investigação e Raspagem Avançada para Soccerway
+async function investigarEBurlarSoccerway() {
+    let browser = null;
     try {
-        const ligas = ['E0', 'SP1', 'I1', 'D1', 'F1'];
-        const hojeObj = new Date();
-        const dia = String(hojeObj.getDate()).padStart(2, '0');
-        const mes = String(hojeObj.getMonth() + 1).padStart(2, '0');
-        const ano = hojeObj.getFullYear().toString().slice(-2);
-        const anoCompleto = hojeObj.getFullYear().toString();
-        const temporada = '2627';
-
-        for (const liga of ligas) {
-            const csvUrl = `https://www.football-data.co.uk/mmz4281/${temporada}/${liga}.csv`;
-            const response = await axios.get(csvUrl, { headers: HEADERS }).catch(() => null);
-            if (!response || !response.data) continue;
-
-            const linhas = response.data.split('\n');
-            if (linhas.length < 2) continue;
-
-            const cabecalho = linhas[0].split(',');
-            const idxDate = cabecalho.indexOf('Date');
-            const idxTime = cabecalho.indexOf('Time');
-            const idxHome = cabecalho.indexOf('HomeTeam');
-            const idxAway = cabecalho.indexOf('AwayTeam');
-            const idxHC = cabecalho.indexOf('HC');
-            const idxAC = cabecalho.indexOf('AC');
-
-            if (idxDate === -1 || idxHome === -1 || idxAway === -1) continue;
-
-            for (let i = 1; i < linhas.length; i++) {
-                if (!linhas[i].trim()) continue;
-                const colunas = linhas[i].split(',');
-                const dataJogo = colunas[idxDate]; 
-                const horaJogo = idxTime !== -1 && colunas[idxTime] ? colunas[idxTime] : 'A definir';
-
-                const ehHoje = dataJogo && (
-                    dataJogo === `${dia}/${mes}/${ano}` || 
-                    dataJogo === `${dia}/${mes}/${anoCompleto}` || 
-                    dataJogo === `${dia}/${mes}`
-                );
-
-                if (ehHoje) {
-                    const t1 = colunas[idxHome];
-                    const t2 = colunas[idxAway];
-                    
-                    let mediaEscanteios = 0;
-                    if (idxHC !== -1 && idxAC !== -1 && colunas[idxHC] && colunas[idxAC]) {
-                        mediaEscanteios = (parseFloat(colunas[idxHC]) || 0) + (parseFloat(colunas[idxAC]) || 0);
-                    }
-
-                    if (mediaEscanteios > 10.5) {
-                        processarEEnviarJogo('Football-Data CSV', t1, t2, horaJogo, `Média FT: ${mediaEscanteios.toFixed(1)}`, `Liga Europeia (${liga})`);
-                    }
-                }
-            }
-        }
-        console.log("🔍 [Football-Data CSV] Varredura concluída.");
-    } catch (e) {
-        console.error("Erro no Football-Data CSV:", e.message);
-    }
-}
-
-// 2. FOOTBALL-DATA.ORG API
-async function buscarFootballDataOrgApi() {
-    try {
-        const hojeIso = new Date().toISOString().split('T')[0];
-        const response = await axios.get(`https://api.football-data.org/v4/matches?date=${hojeIso}`, {
-            headers: { 'X-Auth-Token': FOOTBALL_DATA_ORG_TOKEN }
+        console.log("🕵️‍♂️ [Investigação] Iniciando navegador com emulação móvel e Stealth...");
+        
+        browser = await puppeteer.launch({
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu'
+            ]
         });
 
-        if (!response.data || !response.data.matches) return;
-        console.log("🔍 [Football-Data.org] Verificação concluída.");
-    } catch (e) {
-        console.error("Erro na API Football-Data.org:", e.message);
-    }
-}
+        const page = await browser.newPage();
 
-// 3. API-SPORTS (Cobre Brasil Série A/B, Libertadores e Sul-Americana com filtro > 10.5 FT)
-async function buscarApiSportsComFiltroEscanteios() {
-    try {
-        const hojeIso = new Date().toISOString().split('T')[0];
-        const response = await axios.get(`https://v3.football.api-sports.io/fixtures?date=${hojeIso}`, {
-            headers: { 'x-apisports-key': API_SPORTS_TOKEN }
+        // 1. Emulação rigorosa de Dispositivo Móvel (Celular real)
+        await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1');
+        await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+
+        // 2. Cabeçalhos HTTP customizados
+        await page.setExtraHTTPHeaders({
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
         });
 
-        if (!response.data || !response.data.response) return;
-        const fixtures = response.data.response;
+        console.log("🌐 Acessando o Soccerway para investigação de segurança...");
+        const response = await page.goto('https://br.soccerway.com/', {
+            waitUntil: 'domcontentloaded',
+            timeout: 60000
+        });
 
-        let requisicoesFeitas = 0;
-        const limiteRequisicoes = 40; // Otimizado para cobrir mais jogos globais e sul-americanos
+        // 3. Código de Investigação: Análise de Resposta
+        const status = response.status();
+        const bodyTexto = await page.evaluate(() => document.body.innerText);
+        const tituloPagina = await page.title();
 
-        for (const item of fixtures) {
-            if (requisicoesFeitas >= limiteRequisicoes) break;
+        console.log(`📊 [Investigação] Status HTTP: ${status}`);
+        console.log(`📌 [Investigação] Título capturado: ${tituloPagina}`);
 
-            const fixtureId = item.fixture.id;
-            const t1 = item.teams.home.name;
-            const t2 = item.teams.away.name;
-            const competencia = item.league.name;
-            
-            const horaJogo = new Date(item.fixture.date).toLocaleTimeString('pt-BR', {
-                timeZone: 'America/Sao_Paulo',
-                hour: '2-digit',
-                minute: '2-digit'
+        // Verificação de barreiras de proteção (Cloudflare / Bloqueio)
+        if (bodyTexto.includes('Verifying you are human') || bodyTexto.includes('Cloudflare') || status === 403 || status === 503) {
+            console.warn("⚠️ [Investigação] Alerta: O Soccerway barrou o acesso com tela de proteção.");
+            bot.sendMessage(CHAT_ID, `⚠️ *Soccerway - Alerta de Bloqueio:*\nStatus HTTP: ${status}\nO site exigiu verificação humana. Ajustando estratégias de bypass.`, { parse_mode: 'Markdown' }).catch(()=>{});
+        } else {
+            console.log("✅ [Investigação] Acesso liberado sem barreiras de Cloudflare!");
+            bot.sendMessage(CHAT_ID, `✅ *Soccerway Acessado com Sucesso!*\nTítulo: ${tituloPagina}`, { parse_mode: 'Markdown' }).catch(()=>{});
+
+            // 4. Varredura de dados na página (Exemplo de extração)
+            const partidasEncontradas = await page.evaluate(() => {
+                const lista = [];
+                // Seletor genérico para testes de investigação
+                document.querySelectorAll('.match-item, tr.match, div.match').forEach(el => {
+                    lista.push(el.innerText.trim());
+                });
+                return lista.slice(0, 10);
             });
 
-            try {
-                const predResponse = await axios.get(`https://v3.football.api-sports.io/predictions?fixture=${fixtureId}`, {
-                    headers: { 'x-apisports-key': API_SPORTS_TOKEN }
-                });
-                requisicoesFeitas++;
-
-                if (predResponse.data && predResponse.data.response && predResponse.data.response.length > 0) {
-                    const pred = predResponse.data.response[0];
-                    
-                    let mediaEscanteios = 0;
-                    const comparisons = pred.comparisons;
-                    
-                    if (comparisons && comparisons.corners) {
-                        const homeCorner = parseFloat(comparisons.corners.home) || 0;
-                        const awayCorner = parseFloat(comparisons.corners.away) || 0;
-                        mediaEscanteios = homeCorner + awayCorner; 
-                    }
-
-                    const homeTeamStats = pred.teams?.home?.league?.stats?.corners || 0;
-                    const awayTeamStats = pred.teams?.away?.league?.stats?.corners || 0;
-                    const mediaFinal = mediaEscanteios > 0 ? mediaEscanteios : (homeTeamStats + awayTeamStats);
-
-                    if (mediaFinal > 10.5) {
-                        processarEEnviarJogo('API-Sports (Previsões)', t1, t2, horaJogo, `Média FT: ${mediaFinal.toFixed(1)}`, competencia);
-                    }
-                }
-            } catch (err) {
-                // Ignora partidas sem previsões cadastradas
+            if (partidasEncontradas.length > 0) {
+                console.log(`⚽ [Investigação] Encontrados ${partidasEncontradas.length} elementos de partidas.`);
+            } else {
+                console.log("ℹ️ [Investigação] Nenhum elemento de partida visível no seletor atual. Necessário inspecionar o HTML da página.");
             }
         }
-        console.log(`🔍 [API-Sports Global] Varredura concluída. Requisições usadas: ${requisicoesFeitas}`);
-    } catch (e) {
-        console.error("Erro na API-Sports:", e.message);
+
+    } catch (error) {
+        console.error("❌ Erro na execução do script de investigação:", error.message);
+        bot.sendMessage(CHAT_ID, `❌ *Erro no Script de Investigação:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
+    } finally {
+        if (browser) {
+            await browser.close();
+        }
     }
 }
 
-// Executa as varreduras a cada 30 minutos
-setInterval(() => {
-    buscarFootballDataCSV();
-    buscarFootballDataOrgApi();
-    buscarApiSportsComFiltroEscanteios();
-}, 1800000);
-
-// Execução inicial imediata ao ligar o bot
-buscarFootballDataCSV();
-buscarFootballDataOrgApi();
-buscarApiSportsComFiltroEscanteios();
+// Executa a investigação a cada 1 hora e na inicialização
+setInterval(investigarEBurlarSoccerway, 3600000);
+investigarEBurlarSoccerway();
