@@ -43,31 +43,31 @@ async function buscarJogosAoVivo() {
         await page.setUserAgent(userAgent);
         await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
 
-        // Acessa a página de jogos ao vivo
         console.log("🌐 [Bot Live] Navegando para a seção Ao Vivo do Soccerway...");
         await page.goto('https://br.soccerway.com/livescores/', {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        // Espera 4 segundos para os elementos dinâmicos carregarem na tela
-        await new Promise(r => setTimeout(r, 4000));
+        // Aguarda a tabela de partidas carregar no DOM
+        await page.waitForSelector('table.matches, .livescores', { timeout: 15000 }).catch(() => console.log("Aviso: Tempo limite do seletor atingido."));
 
-        // Extrai as partidas diretamente do DOM dinâmico
+        // Extração ajustada para a estrutura real de tabelas do Soccerway
         const jogos = await page.evaluate(() => {
             const lista = [];
-            // Seletores comuns da tabela de jogos do Soccerway
-            const linhas = document.querySelectorAll('table.matches tr.match, div.match-card, .match');
+            
+            // Busca por todas as linhas de partida na tabela oficial
+            const linhas = document.querySelectorAll('table.matches tr.match');
 
             linhas.forEach(linha => {
-                const tempo = linha.querySelector('.minute, .status, .time')?.innerText?.trim() || '';
-                const timeCasa = linha.querySelector('.team-a, .home-team, .team-home')?.innerText?.trim() || '';
-                const timeFora = linha.querySelector('.team-b, .away-team, .team-away')?.innerText?.trim() || '';
-                const placar = linha.querySelector('.score, .result')?.innerText?.trim() || 'x';
+                const tempo = linha.querySelector('td.minute, td.status, td.score-time')?.innerText?.trim() || '';
+                const timeCasa = linha.querySelector('td.team-a a, td.team-a')?.innerText?.trim() || '';
+                const timeFora = linha.querySelector('td.team-b a, td.team-b')?.innerText?.trim() || '';
+                const placar = linha.querySelector('td.score-time a, td.score')?.innerText?.trim() || 'x';
 
                 if (timeCasa && timeFora) {
                     lista.push({
-                        tempo,
+                        tempo: tempo.replace(/\n/g, ' '),
                         jogo: `${timeCasa} ${placar} ${timeFora}`
                     });
                 }
@@ -86,7 +86,18 @@ async function buscarJogosAoVivo() {
 
             bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'Markdown' }).catch(()=>{});
         } else {
-            bot.sendMessage(CHAT_ID, "ℹ️ *Nenhuma partida ao vivo encontrada no momento.*", { parse_mode: 'Markdown' }).catch(()=>{});
+            // Tenta extração alternativa caso o layout mobile seja renderizado em blocos div
+            const blocosTexto = await page.evaluate(() => {
+                const elementos = Array.from(document.querySelectorAll('.match, .match-card'));
+                return elementos.map(e => e.innerText.trim()).filter(t => t.length > 0).slice(0, 10);
+            });
+
+            if (blocosTexto.length > 0) {
+                let msg = `🔴 *JOGOS ENCONTRADOS (Layout Alternativo):*\n\n` + blocosTexto.join('\n---\n');
+                bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(()=>{});
+            } else {
+                bot.sendMessage(CHAT_ID, "ℹ️ *Nenhuma partida ao vivo encontrada na varredura.*", { parse_mode: 'Markdown' }).catch(()=>{});
+            }
         }
 
     } catch (error) {
