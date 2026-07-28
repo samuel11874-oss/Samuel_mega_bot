@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Antiduplicidade Ativo ⚽🛡️</h2><p>WinDrawWin + Football-Data CSV + Football-Data.org API + API-Sports</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Scanner Ativo ⚽🔥</h2><p>WinDrawWin (Foco em Escanteios > 10.5) + APIs de Apoio</p>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -18,7 +18,6 @@ const HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 };
 
-// Conjunto global para bloquear repetições definitivas no dia
 let jogosEnviados = new Set();
 
 function getBandeira(teamName) {
@@ -32,7 +31,6 @@ function getBandeira(teamName) {
     return list[teamName] || "⚽";
 }
 
-// Normaliza o nome do time para evitar duplicidade por pequenas variações de escrita
 function normalizarNome(nome) {
     return nome.toLowerCase()
         .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -40,16 +38,14 @@ function normalizarNome(nome) {
         .replace(/[^a-z0-9]/g, '');
 }
 
-// 📋 CARD PADRÃO UNIFICADO COM CHAVE ÚNICA ANTI-REPETIÇÃO
 function processarEEnviarJogo(fonte, t1, t2, hora, detalhes, competencia = '') {
     const hojeObj = new Date();
     const dataHojeStr = `${String(hojeObj.getDate()).padStart(2, '0')}/${String(hojeObj.getMonth() + 1).padStart(2, '0')}`;
     
-    // Chave única baseada nos nomes limpos dos times + data de hoje (independente da fonte)
     const chaveUnica = `${normalizarNome(t1)}_${normalizarNome(t2)}_${dataHojeStr}`;
 
     if (jogosEnviados.has(chaveUnica)) {
-        return; // Jogo já foi enviado por qualquer fonte, ignora para não repetir
+        return;
     }
 
     jogosEnviados.add(chaveUnica);
@@ -72,7 +68,7 @@ function processarEEnviarJogo(fonte, t1, t2, hora, detalhes, competencia = '') {
     console.log(`✅ [${fonte}] Enviado (Único): ${t1} x ${t2} às ${hora}`);
 }
 
-// 1. WIN-DRAW-WIN
+// 1. WIN-DRAW-WIN (Varredura Profunda de Escanteios > 10.5)
 async function buscarWinDrawWin() {
     try {
         const response = await axios.get('https://www.windrawwin.com/br/estatisticas/escanteios/', { headers: HEADERS });
@@ -85,7 +81,8 @@ async function buscarWinDrawWin() {
         let dataContexto = dataHojeStr;
         let horaContexto = "A definir";
 
-        $('div, tr, h2, h3').each((i, el) => {
+        // Varredura rigorosa em linhas de tabelas e blocos de texto
+        $('tr, div.match-row, li').each((i, el) => {
             const texto = $(el).text().trim();
             
             const matchDataTexto = texto.match(/(\d{2}\/\d{2})/);
@@ -94,7 +91,8 @@ async function buscarWinDrawWin() {
             const matchHoraTexto = texto.match(/(\d{2}:\d{2})/);
             if (matchHoraTexto) horaContexto = matchHoraTexto[1];
 
-            if (dataContexto !== dataHojeStr) return;
+            // Garante que é jogo para hoje
+            if (dataContexto !== dataHojeStr && !texto.toLowerCase().includes('hoje')) return;
 
             if (texto.includes(' x ') && /\d[.,]\d/.test(texto)) {
                 const linhaLimpa = texto.replace(/hoje|amanhã|tomorrow|data/gi, '').trim();
@@ -104,18 +102,20 @@ async function buscarWinDrawWin() {
                 if (match && numeros && numeros.length >= 2) {
                     const media = parseFloat(numeros[0].replace(',', '.')) + parseFloat(numeros[1].replace(',', '.'));
                     
+                    // Filtro estrito: Média FT maior que 10.5
                     if (media > 10.5 && media <= 18.0) {
                         processarEEnviarJogo('WinDrawWin', match[1].trim(), match[2].trim(), horaContexto, `Média FT: ${media.toFixed(1)}`);
                     }
                 }
             }
         });
+        console.log("🔍 [WinDrawWin] Varredura de escanteios concluída.");
     } catch (e) {
         console.error("Erro no WinDrawWin:", e.message);
     }
 }
 
-// 2. FOOTBALL-DATA.CO.UK (CSV)
+// 2. FOOTBALL-DATA.CO.UK (CSV Histórico)
 async function buscarFootballDataCSV() {
     try {
         const ligas = ['E0', 'SP1', 'I1', 'D1', 'F1'];
