@@ -5,7 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro Ajustado com Logs ⚽🔥</h2><p>Monitorando ligas principais de hoje</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro de Data Local Ativo ⚽🔥</h2><p>Apenas partidas de hoje no horário do Brasil</p>'));
 
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
@@ -23,17 +23,13 @@ const API_HEADERS = {
 let jogosEnviados = new Set();
 let ultimaDataExecucao = '';
 
+// Retorna a data atual rigorosamente no Horário de Brasília (YYYY-MM-DD)
 function getDataBrasil() {
     const agora = new Date();
     return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 }
 
-function getDataAmanhaBrasil() {
-    const agora = new Date();
-    agora.setDate(agora.getDate() + 1);
-    return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-}
-
+// Converte a data da API (UTC) para a data real no fuso do Brasil
 function getDataJogoBrasil(utcDateString) {
     const dateObj = new Date(utcDateString);
     return dateObj.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -50,7 +46,7 @@ function getBandeira(teamName) {
     return list[teamName] || "⚽";
 }
 
-// 🚫 Bloqueia estritamente feminino, base e divisões inferiores
+// 🚫 Bloqueia estritamente feminino, base, amistosos e divisões inferiores
 function contemTermoProibido(nomeLiga) {
     const termos = [
         "women", "feminino", "u19", "u20", "u21", "u23", "sub-", "sub ", 
@@ -67,7 +63,7 @@ function contemTermoProibido(nomeLiga) {
     return false;
 }
 
-// ✅ Validação flexível e abrangente para divisões principais
+// ✅ Validação de ligas principais de elite
 function ehLigaDeElite(nomeLiga) {
     if (contemTermoProibido(nomeLiga)) {
         return false;
@@ -100,16 +96,16 @@ function enviarCard(fonte, t1, t2, hora, competencia, mediaReal) {
 
 async function buscarJogosApiSports() {
     const hojeIso = getDataBrasil();
-    const amanhaIso = getDataAmanhaBrasil();
     
     if (ultimaDataExecucao === hojeIso) {
         return;
     }
 
     try {
-        console.log(`🔍 [API-Sports] Consultando jogos válidos para hoje no Brasil (${hojeIso})...`);
+        console.log(`🔍 [API-Sports] Consultando jogos do dia ${hojeIso}...`);
         
-        const response = await axios.get(`https://v3.football.api-sports.io/fixtures?from=${hojeIso}&to=${amanhaIso}`, {
+        // Endpoint padrão suportado perfeitamente pela API-Sports
+        const response = await axios.get(`https://v3.football.api-sports.io/fixtures?date=${hojeIso}`, {
             headers: API_HEADERS
         });
 
@@ -121,21 +117,21 @@ async function buscarJogosApiSports() {
         ultimaDataExecucao = hojeIso;
         const matches = response.data.response;
         let encontrados = 0;
-        let totalAnalisados = matches.length;
 
-        console.log(`📊 [API-Sports] Total bruto retornado pela API: ${totalAnalisados} partidas.`);
+        console.log(`📊 [API-Sports] Total bruto retornado pela API: ${matches.length} partidas.`);
 
         for (const match of matches) {
+            // CORREÇÃO DE FUSO: Converte a data do jogo para o horário local do Brasil
             const dataJogoBrasil = getDataJogoBrasil(match.fixture.date);
             
-            // Filtro rigoroso de data local do Brasil
+            // Descarta qualquer jogo que não pertença exatamente ao dia de hoje no Brasil (elimina ontem)
             if (dataJogoBrasil !== hojeIso) {
                 continue; 
             }
 
             const competencia = match.league.name;
 
-            // Filtro de ligas principais
+            // Filtro de ligas principais (sem base, feminino ou divisões inferiores)
             if (!ehLigaDeElite(competencia)) {
                 continue;
             }
@@ -150,7 +146,7 @@ async function buscarJogosApiSports() {
             });
 
             const mediaRealCalculada = (10.6 + (Math.abs(t1.length - t2.length) % 2.5)).toFixed(1);
-            const chave = `apisports_v3_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
+            const chave = `apisports_local_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
 
             if (!jogosEnviados.has(chave)) {
                 jogosEnviados.add(chave);
