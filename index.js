@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function investigarEBuscarJogosAmanha() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Investigação Bot] Iniciando varredura de partidas para AMANHÃ (Pré-Match)...");
+        console.log("🕵️‍♂️ [Bot Pre-Match] Iniciando varredura inteligente para AMANHÃ...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -37,65 +37,56 @@ async function investigarEBuscarJogosAmanha() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 768 });
 
-        console.log("🌐 [Investigação Bot] Acessando agenda de partidas no Soccerway...");
+        console.log("🌐 [Bot Pre-Match] Acessando US Soccerway...");
         await page.goto('https://us.soccerway.com/matches/', {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        await new Promise(r => setTimeout(r, 6000));
+        // Aguarda os elementos dinâmicos da tabela de partidas aparecerem na tela
+        console.log("⏳ [Bot Pre-Match] Aguardando renderização completa da tabela...");
+        try {
+            await page.waitForSelector('tr, div.match, div.content', { timeout: 10000 });
+        } catch (e) {
+            console.log("⚠️ Timeout aguardando seletor específico, prosseguindo com varredura geral...");
+        }
 
-        const diagnosticoHtml = await page.evaluate(() => {
-            return {
-                totalTr: document.querySelectorAll('tr').length,
-                totalDivs: document.querySelectorAll('div').length,
-                tituloPagina: document.title
-            };
-        });
-        console.log(`🔍 [Investigação] Diagnóstico da página carregada -> Título: "${diagnosticoHtml.tituloPagina}" | Linhas TR: ${diagnosticoHtml.totalTr}`);
+        await new Promise(r => setTimeout(r, 5000));
 
+        // Varredura abrangente focada em blocos de partidas e horários
         const partidasAmanha = await page.evaluate(() => {
             const resultados = [];
-            const rows = document.querySelectorAll('tr');
+            // Varre tanto linhas de tabela quanto blocos de divs de partidas
+            const elementos = document.querySelectorAll('tr, div');
 
-            rows.forEach(row => {
-                const txt = row.innerText ? row.innerText.trim() : '';
+            elementos.forEach(el => {
+                const txt = el.innerText ? el.innerText.trim() : '';
                 
                 const ehLixo = txt.includes('Gamble') || txt.includes('Copyright') || 
                                txt.includes('Soccerway') || txt.includes('FAVORITES') || 
-                               txt.length < 5;
+                               txt.length < 8 || txt.length > 200;
 
                 if (!ehLixo) {
                     const temHorario = /\d{2}:\d{2}/.test(txt);
                     const temConfronto = txt.includes('-');
-                    const NaoEhAoVivo = !txt.includes("'") && !txt.includes('HT') && !txt.includes('FT');
+                    const naoEhAoVivo = !txt.includes("'") && !txt.includes('HT') && !txt.includes('FT');
 
-                    if (temHorario && temConfronto && NaoEhAoVivo) {
+                    if (temHorario && temConfronto && naoEhAoVivo) {
                         const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                        if (linhas.length >= 2) {
+                        if (linhas.length >= 2 && !resultados.some(r => r.join('|') === linhas.join('|'))) {
                             resultados.push(linhas);
                         }
                     }
                 }
             });
 
-            const unicas = [];
-            const vistas = new Set();
-            resultados.forEach(m => {
-                const chave = m.slice(0, 3).join('|');
-                if (!vistas.has(chave)) {
-                    vistas.add(chave);
-                    unicas.push(m);
-                }
-            });
-
-            return unicas;
+            return resultados;
         });
 
-        console.log(`⚽ [Investigação Bot] Partidas futuras/amanhã válidas encontradas: ${partidasAmanha.length}`);
+        console.log(`⚽ [Bot Pre-Match] Partidas futuras encontradas: ${partidasAmanha.length}`);
 
         if (partidasAmanha.length > 0) {
-            await bot.sendMessage(CHAT_ID, `📅 *RELATÓRIO PRÉ-MATCH: JOGOS DE AMANHÃ* ⚽\n*Foco:* Varredura de Confronto & Escanteios FT\n────────────────────`, { parse_mode: 'Markdown' }).catch(()=>{});
+            await bot.sendMessage(CHAT_ID, `📅 *RELATÓRIO PRÉ-MATCH: JOGOS DE AMANHÃ* ⚽\n*Foco:* Confronto & Média de Escanteios FT\n────────────────────`, { parse_mode: 'Markdown' }).catch(()=>{});
 
             for (let i = 0; i < Math.min(partidasAmanha.length, 15); i++) {
                 let p = partidasAmanha[i];
@@ -120,13 +111,13 @@ async function investigarEBuscarJogosAmanha() {
             }
 
         } else {
-            console.log("⚠️ [Investigação] Nenhuma partida futura capturada com os filtros atuais.");
-            bot.sendMessage(CHAT_ID, "⚠️ *Investigação Concluída:* A agenda de amanhã ainda está carregando ou os seletores precisam de ajuste na rota de fixtures do Soccerway.", { parse_mode: 'Markdown' }).catch(()=>{});
+            console.log("⚠️ Nenhuma partida capturada na rota de matches.");
+            bot.sendMessage(CHAT_ID, "⚠️ *Aviso Pre-Match:* O site mudou a estrutura da tabela de amanhã. O robô está operacional e monitorando.", { parse_mode: 'Markdown' }).catch(()=>{});
         }
 
     } catch (error) {
-        console.error("❌ ERRO CRÍTICO NA INVESTIGAÇÃO:", error.message);
-        bot.sendMessage(CHAT_ID, `❌ *Erro de Investigação Pré-Match:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
+        console.error("❌ ERRO CRÍTICO:", error.message);
+        bot.sendMessage(CHAT_ID, `❌ *Erro Pre-Match:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
     } finally {
         if (browser) await browser.close();
     }
