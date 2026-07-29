@@ -37,7 +37,6 @@ async function buscarJogosEliteAmanha() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 2000 });
 
-        // Acessa diretamente a URL estruturada para a data de amanhã (29/07/2026)
         const urlAmanha = 'https://us.soccerway.com/matches/?date=2026-07-29';
         console.log(`🌐 Acessando: ${urlAmanha}`);
 
@@ -46,18 +45,13 @@ async function buscarJogosEliteAmanha() {
             timeout: 90000
         });
 
-        console.log("⏳ Aguardando carregamento dos blocos de partidas...");
-        try {
-            await page.waitForSelector('tr, div.match-row, div.content', { timeout: 15000 });
-        } catch (e) {
-            console.log("⚠️ Timeout aguardando seletor, prosseguindo com extração...");
-        }
-
-        await new Promise(r => setTimeout(r, 5000));
+        console.log("⏳ Aguardando renderização completa da página...");
+        await new Promise(r => setTimeout(r, 8000));
 
         const partidasElite = await page.evaluate(() => {
             const resultados = [];
-            const blocos = document.querySelectorAll('tr, div.match-row, div.content');
+            // Varredura ampla em linhas, divs e listas para capturar todas as ligas
+            const blocos = document.querySelectorAll('tr, div, li');
 
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
@@ -67,7 +61,7 @@ async function buscarJogosEliteAmanha() {
                 const ehFeminino = /feminino|women|wsl/i.test(txt);
                 const ehSub20 = /sub-20|sub 20|u20|under 20/i.test(txt);
                 const ehLixo = txt.includes('Gamble') || txt.includes('Copyright') || 
-                               txt.includes('Soccerway') || txt.length < 8;
+                               txt.includes('Soccerway') || txt.length < 10 || txt.length > 250;
 
                 if (!ehLixo && !ehAmistoso && !ehFeminino && !ehSub20) {
                     const temHorario = /\d{2}:\d{2}/.test(txt);
