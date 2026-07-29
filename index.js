@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Operacional Ativo ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro Anti-Feminino Máximo ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -30,7 +30,7 @@ async function buscarJogosDoDia() {
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Bot Produção] Acessando agenda para: ${hoje}`);
+        console.log(`🕵️‍♂️ [Bot Anti-Feminino] Acessando agenda para: ${hoje}`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -72,8 +72,8 @@ async function buscarJogosDoDia() {
                 const horario = matchHorario[0];
                 const textoBaixo = text.toLowerCase();
                 
-                // Filtros restritos para bloquear lixo, feminino, base e amistosos
-                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\(w\)|sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub-21|u21|reserves|amador/i.test(textoBaixo);
+                // Filtros rigorosos cobrindo W isolado, women, feminino, sub-idades e amistosos
+                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub-21|u21|reserves|amador/i.test(textoBaixo);
 
                 if (ehLixo) return;
 
@@ -84,10 +84,10 @@ async function buscarJogosDoDia() {
                     let timeA = limpos[0];
                     let timeB = limpos[1];
 
-                    // Evita capturar termos residuais nos nomes
-                    const nomeTimesInvalido = /women|feminino|\(w\)|sub-|u20|u19|u17|u21|reserves/i.test(timeA + timeB);
+                    // Validação cirúrgica nos nomes dos times para pegar casos como "Ghana W"
+                    const contemFemininoNoNome = /\b(w)\b|\(w\)|women|feminino|sub-|u20|u19|u17|u21|reserves/i.test(timeA + " " + timeB);
 
-                    if (!nomeTimesInvalido && timeA.length > 2 && timeB.length > 2) {
+                    if (!contemFemininoNoNome && timeA.length > 2 && timeB.length > 2) {
                         resultados.push([horario, timeA, timeB]);
                     }
                 }
@@ -106,7 +106,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Produção] Partidas limpas e filtradas: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Anti-Feminino] Partidas realmente masculinas/principais: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -138,11 +138,11 @@ async function buscarJogosDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Produção] ${novosEnviados} novos jogos enviados no Telegram.`);
+                console.log(`✅ [Bot Anti-Feminino] ${novosEnviados} novos jogos enviados no Telegram.`);
             }
 
         } else {
-            console.log("⚠️ [Bot Produção] Nenhuma partida correspondente após os filtros.");
+            console.log("⚠️ [Bot Anti-Feminino] Nenhuma partida correspondente após o filtro reforçado.");
         }
 
     } catch (error) {
