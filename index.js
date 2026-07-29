@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Varredura Robusta ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigação de Layout ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -30,7 +30,7 @@ async function buscarJogosDoDia() {
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Bot Robusto] Acessando agenda para: ${hoje}`);
+        console.log(`🕵️‍♂️ [Bot Investigação] Acessando agenda para: ${hoje}`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -57,14 +57,22 @@ async function buscarJogosDoDia() {
         });
 
         console.log("⏳ Aguardando renderização completa da página...");
-        await new Promise(r => setTimeout(r, 7000));
+        await new Promise(r => setTimeout(r, 8000));
+
+        // DIAGNÓSTICO: Captura uma amostra do texto bruto da página para o log
+        const debugAmostra = await page.evaluate(() => {
+            return document.body ? document.body.innerText.substring(0, 500) : "Corpo vazio";
+        });
+        console.log("🔍 [Debug Amostra do Site]:", debugAmostra.replace(/\n/g, ' | '));
 
         const dadosExtraidos = await page.evaluate(() => {
             const resultados = [];
-            const rows = document.querySelectorAll('tr');
+            
+            // Varredura ampla em qualquer elemento que contenha texto de partidas
+            const elementos = document.querySelectorAll('tr, div, li');
 
-            rows.forEach(tr => {
-                const text = tr.innerText ? tr.innerText.trim() : '';
+            elementos.forEach(el => {
+                const text = el.innerText ? el.innerText.trim() : '';
                 
                 const matchHorario = text.match(/\d{2}:\d{2}/);
                 if (!matchHorario) return;
@@ -77,30 +85,16 @@ async function buscarJogosDoDia() {
 
                 if (ehLixo) return;
 
-                const tds = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim()).filter(t => t.length > 0);
-                
-                let timeA = '';
-                let timeB = '';
+                const linhasTexto = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                const limpos = linhasTexto.filter(l => !/\d{2}:\d{2}/.test(l) && !/^\d+-\d+$/.test(l) && l !== '-' && l.length > 2);
 
-                if (tds.length >= 3) {
-                    const limpos = tds.filter(t => !/\d{2}:\d{2}/.test(t) && !/^\d+-\d+$/.test(t) && t !== '-' && t.length > 2);
-                    if (limpos.length >= 2) {
-                        timeA = limpos[0];
-                        timeB = limpos[1];
+                if (limpos.length >= 2) {
+                    let timeA = limpos[0];
+                    let timeB = limpos[1];
+
+                    if (timeA && timeB && timeA.length > 2 && timeB.length > 2) {
+                        resultados.push([horario, timeA, timeB]);
                     }
-                }
-
-                if (!timeA || !timeB) {
-                    const linhasTexto = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                    const limpos = linhasTexto.filter(l => !/\d{2}:\d{2}/.test(l) && !/^\d+-\d+$/.test(l) && l !== '-' && l.length > 2);
-                    if (limpos.length >= 2) {
-                        timeA = limpos[0];
-                        timeB = limpos[1];
-                    }
-                }
-
-                if (timeA && timeB && timeA.length > 2 && timeB.length > 2) {
-                    resultados.push([horario, timeA, timeB]);
                 }
             });
 
@@ -117,7 +111,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Robusto] Partidas limpas encontradas: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Investigação] Partidas encontradas: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -136,7 +130,7 @@ async function buscarJogosDoDia() {
 
                     let mediaRealCantos = (Math.random() * (11.5 - 9.5) + 9.5).toFixed(1);
 
-                    let card = `🔥 *Partida Aprovada [${novosEnviados}]*\n`;
+                    let card = `🔥 *Partida Detectada [${novosEnviados}]*\n`;
                     card += `📅 *Data:* \`${hoje}\`\n`;
                     card += `🕒 *Horário:* \`${horario}\`\n`;
                     card += `⚔️ **${timeA}** x **${timeB}**\n`;
@@ -149,15 +143,15 @@ async function buscarJogosDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Robusto] ${novosEnviados} novos jogos enviados com sucesso.`);
+                console.log(`✅ [Bot Investigação] ${novosEnviados} novos jogos enviados.`);
             }
 
         } else {
-            console.log("⚠️ [Bot Robusto] Nenhuma partida correspondente encontrada.");
+            console.log("⚠️ [Bot Investigação] Nenhuma partida capturada na varredura ampla.");
         }
 
     } catch (error) {
-        console.error("❌ ERRO CRÍTICO NA VARREDURA:", error.message);
+        console.error("❌ ERRO CRÍTICO NA INVESTIGAÇÃO:", error.message);
     } finally {
         if (browser) await browser.close();
     }
