@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosEliteAmanha() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot Elite] Iniciando varredura nas principais ligas (Excluindo Sub-20, Feminino e Amistosos)...");
+        console.log("🕵️‍♂️ [Bot Elite] Acessando central de partidas e selecionando AMANHÃ...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -37,14 +37,35 @@ async function buscarJogosEliteAmanha() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 2000 });
 
-        console.log("🌐 [Bot Elite] Acessando central de partidas...");
-        // 'domcontentloaded' e 90s evitam o erro de timeout no Render gratuito
         await page.goto('https://us.soccerway.com/matches/', {
             waitUntil: 'domcontentloaded',
             timeout: 90000
         });
 
-        await new Promise(r => setTimeout(r, 6000));
+        await new Promise(r => setTimeout(r, 4000));
+
+        // Clica automaticamente no botão/aba de "Tomorrow" (Amanhã) no calendário do site
+        console.log("📅 [Bot Elite] Mudando a data para os jogos de AMANHÃ...");
+        try {
+            await page.evaluate(() => {
+                const elementos = Array.from(document.querySelectorAll('a, span, div, li, button'));
+                // Procura pelo link ou botão que corresponda a amanhã
+                const botaoAmanha = elementos.find(el => {
+                    const texto = el.innerText ? el.innerText.trim().toLowerCase() : '';
+                    return texto === 'tomorrow' || texto === 'amanhã' || texto.includes('->');
+                });
+                if (botaoAmanha) {
+                    botaoAmanha.click();
+                } else {
+                    // Tenta clicar no segundo botão de data (geralmente Hoje é o 1º, Amanhã é o 2º)
+                    const datas = document.querySelectorAll('.date-navigator ul li, .navigation-container a, div.datepicker a');
+                    if (datas.length >= 2) datas[1].click();
+                }
+            });
+            await new Promise(r => setTimeout(r, 6000)); // Aguarda carregar os jogos de amanhã
+        } catch (e) {
+            console.log("⚠️ Não foi possível clicar no botão de amanhã automaticamente, seguindo com os dados visíveis.");
+        }
 
         const partidasElite = await page.evaluate(() => {
             const resultados = [];
@@ -53,7 +74,7 @@ async function buscarJogosEliteAmanha() {
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
                 
-                // Filtros de Exclusão Solicitados
+                // Filtros de Exclusão Rigorosos
                 const ehAmistoso = /amistoso|friendly/i.test(txt);
                 const ehFeminino = /feminino|women|wsl/i.test(txt);
                 const ehSub20 = /sub-20|sub 20|u20|under 20/i.test(txt);
@@ -87,7 +108,7 @@ async function buscarJogosEliteAmanha() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Elite] Partidas válidas encontradas após filtros: ${partidasElite.length}`);
+        console.log(`⚽ [Bot Elite] Partidas de amanhã encontradas após filtros: ${partidasElite.length}`);
 
         if (partidasElite.length > 0) {
             await bot.sendMessage(CHAT_ID, `🌟 *RELATÓRIO ELITE: JOGOS DE AMANHÃ* ⚽\n*Filtro:* Apenas Ligas Principais (> 9.5 FT)\n*Excluídos:* Amistosos, Feminino e Sub-20\n────────────────────`, { parse_mode: 'Markdown' }).catch(()=>{});
@@ -126,7 +147,7 @@ async function buscarJogosEliteAmanha() {
             }
 
         } else {
-            bot.sendMessage(CHAT_ID, "⚠️ *Aviso:* Nenhuma partida correspondente aos filtros de elite foi encontrada no momento.", { parse_mode: 'Markdown' }).catch(()=>{});
+            bot.sendMessage(CHAT_ID, "⚠️ *Aviso:* Nenhuma partida correspondente aos filtros de elite foi encontrada para amanhã.", { parse_mode: 'Markdown' }).catch(()=>{});
         }
 
     } catch (error) {
