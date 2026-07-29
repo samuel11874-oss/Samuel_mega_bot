@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosEliteAmanha() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot Elite] Acessando central de partidas e selecionando AMANHÃ...");
+        console.log("🕵️‍♂️ [Bot Elite] Acessando diretamente a agenda de AMANHÃ...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -37,35 +37,23 @@ async function buscarJogosEliteAmanha() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 2000 });
 
-        await page.goto('https://us.soccerway.com/matches/', {
+        // Acessa diretamente a URL estruturada para a data de amanhã (29/07/2026)
+        const urlAmanha = 'https://us.soccerway.com/matches/?date=2026-07-29';
+        console.log(`🌐 Acessando: ${urlAmanha}`);
+
+        await page.goto(urlAmanha, {
             waitUntil: 'domcontentloaded',
             timeout: 90000
         });
 
-        await new Promise(r => setTimeout(r, 4000));
-
-        // Clica automaticamente no botão/aba de "Tomorrow" (Amanhã) no calendário do site
-        console.log("📅 [Bot Elite] Mudando a data para os jogos de AMANHÃ...");
+        console.log("⏳ Aguardando carregamento dos blocos de partidas...");
         try {
-            await page.evaluate(() => {
-                const elementos = Array.from(document.querySelectorAll('a, span, div, li, button'));
-                // Procura pelo link ou botão que corresponda a amanhã
-                const botaoAmanha = elementos.find(el => {
-                    const texto = el.innerText ? el.innerText.trim().toLowerCase() : '';
-                    return texto === 'tomorrow' || texto === 'amanhã' || texto.includes('->');
-                });
-                if (botaoAmanha) {
-                    botaoAmanha.click();
-                } else {
-                    // Tenta clicar no segundo botão de data (geralmente Hoje é o 1º, Amanhã é o 2º)
-                    const datas = document.querySelectorAll('.date-navigator ul li, .navigation-container a, div.datepicker a');
-                    if (datas.length >= 2) datas[1].click();
-                }
-            });
-            await new Promise(r => setTimeout(r, 6000)); // Aguarda carregar os jogos de amanhã
+            await page.waitForSelector('tr, div.match-row, div.content', { timeout: 15000 });
         } catch (e) {
-            console.log("⚠️ Não foi possível clicar no botão de amanhã automaticamente, seguindo com os dados visíveis.");
+            console.log("⚠️ Timeout aguardando seletor, prosseguindo com extração...");
         }
+
+        await new Promise(r => setTimeout(r, 5000));
 
         const partidasElite = await page.evaluate(() => {
             const resultados = [];
