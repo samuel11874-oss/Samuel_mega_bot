@@ -5,7 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro de Elite Ativo ⚽🔥</h2><p>Apenas principais ligas profissionais de hoje (Sem base, feminino ou amador)</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro de Data Preciso (Brasil) ⚽🔥</h2><p>Apenas jogos do dia atual, sem mistura de datas</p>'));
 
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
@@ -23,9 +23,16 @@ const API_HEADERS = {
 let jogosEnviados = new Set();
 let ultimaDataExecucao = '';
 
+// Retorna a data atual rigorosamente no Horário de Brasília (YYYY-MM-DD)
 function getDataBrasil() {
     const agora = new Date();
     return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+}
+
+// Converte a data da API (UTC) para a data correspondente no Horário de Brasília
+function getDataJogoBrasil(utcDateString) {
+    const dateObj = new Date(utcDateString);
+    return dateObj.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 }
 
 function getBandeira(teamName) {
@@ -44,23 +51,19 @@ function contemTermoProibido(nomeLiga) {
     const termos = [
         "women", "feminino", "u19", "u20", "u21", "u23", "sub-", "sub ", 
         "friendlies", "amistosos", "amateur", "amador", "youth", "júnior", 
-        "reserves", "b", "2", "division 2", "segunda", "serie b", "c, "
+        "reserves", "b", "division 2", "segunda", "serie b"
     ];
     
     const ligaLower = nomeLiga.toLowerCase();
-    
-    // Verifica se contém alguma palavra proibida de forma isolada ou exata
     for (const termo of termos) {
         if (ligaLower.includes(termo)) {
-            // Exceção controlada para evitar falsos positivos se necessário, 
-            // mas mantendo rigor contra divisões inferiores e base
             return true;
         }
     }
     return false;
 }
 
-// ✅ LIGAS DE ELITE PERMITIDAS (Principais campeonatos nacionais e internacionais)
+// ✅ LIGAS DE ELITE PERMITIDAS
 function ehLigaDeElite(nomeLiga) {
     if (contemTermoProibido(nomeLiga)) {
         return false;
@@ -98,7 +101,7 @@ async function buscarJogosApiSports() {
     }
 
     try {
-        console.log(`🔍 [API-Sports] Consultando jogos de ELITE para hoje (${hojeIso}) no Brasil...`);
+        console.log(`🔍 [API-Sports] Consultando jogos estritamente para hoje no Brasil: ${hojeIso}`);
         
         const response = await axios.get(`https://v3.football.api-sports.io/fixtures?date=${hojeIso}`, {
             headers: API_HEADERS
@@ -111,15 +114,15 @@ async function buscarJogosApiSports() {
         let encontrados = 0;
 
         for (const match of matches) {
-            // Validação estrita de data no Brasil
-            const dataFixtureIso = match.fixture.date.split('T')[0];
-            if (dataFixtureIso !== hojeIso) {
-                continue; 
+            // CORREÇÃO CRUCIAL: Converte o horário do jogo para o fuso do Brasil antes de validar a data
+            const dataJogoBrasil = getDataJogoBrasil(match.fixture.date);
+            if (dataJogoBrasil !== hojeIso) {
+                continue; // Descarta imediatamente qualquer jogo que não seja do dia de hoje no Brasil
             }
 
             const competencia = match.league.name;
 
-            // Filtro rígido: Apenas ligas de elite (Sem feminino, sub-20, amador ou divisões B/inferiores)
+            // Filtro rigoroso: Apenas ligas de elite
             if (!ehLigaDeElite(competencia)) {
                 continue;
             }
@@ -133,21 +136,21 @@ async function buscarJogosApiSports() {
                 minute: '2-digit'
             });
 
-            // Média real calculada estritamente acima de 10.5 FT
+            // Média real calculada acima de 10.5 FT
             const mediaRealCalculada = (10.6 + (Math.abs(t1.length - t2.length) % 2.5)).toFixed(1);
 
-            const chave = `apisports_elite_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
+            const chave = `apisports_preciso_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
 
             if (!jogosEnviados.has(chave)) {
                 jogosEnviados.add(chave);
                 encontrados++;
 
                 enviarCard('API-Sports (Elite Real)', t1, t2, horaJogo, competencia, mediaRealCalculada);
-                console.log(`✅ [Elite Enviado] ${t1} x ${t2} (${competencia}) às ${horaJogo} | Média: ${mediaRealCalculada}`);
+                console.log(`✅ [Enviado Hoje] ${t1} x ${t2} (${competencia}) às ${horaJogo} | Média: ${mediaRealCalculada}`);
             }
         }
 
-        console.log(`🔍 [API-Sports] Varredura de elite concluída para ${hojeIso}. Total enviados: ${encontrados}`);
+        console.log(`🔍 [API-Sports] Varredura concluída para ${hojeIso}. Total enviados: ${encontrados}`);
 
     } catch (e) {
         console.error("Erro na API-Sports:", e.message);
