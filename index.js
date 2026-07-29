@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Extraindo e formatando cards de jogos AO VIVO...");
+        console.log("🕵️‍♂️ [Bot US] Extraindo campeonatos, partidas e escanteios AO VIVO...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -56,65 +56,89 @@ async function buscarJogosAoVivo() {
             console.log("⚠️ Seguindo com varredura geral.");
         }
 
-        // Extração e limpeza detalhada dos blocos
+        // Extração avançada capturando o campeonato e as linhas da partida
         const partidas = await page.evaluate(() => {
-            const resultados = [];
-            const blocos = document.querySelectorAll('tr, div, li');
-
-            blocos.forEach(b => {
-                const txt = b.innerText ? b.innerText.trim() : '';
+            const matches = [];
+            let currentComp = "Futebol Ao Vivo";
+            
+            const elements = document.querySelectorAll('tr, h3, h4, div');
+            elements.forEach(el => {
+                const text = el.innerText ? el.innerText.trim() : '';
                 
-                const ehLixo = txt.includes('Gamble') || txt.includes('Copyright') || txt.includes('Soccerway') || 
-                               txt.includes('FAVORITES') || txt.includes('PREMIER LEAGUE') || txt.includes('LALIGA') ||
-                               txt.length < 10 || txt.length > 130;
-
-                if (!ehLixo && txt.includes('\n')) {
-                    if (txt.includes("'") || txt.includes('Half Time') || txt.includes('FT') || /\d+[\s-]+\d+/.test(txt)) {
-                        const formatado = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0).join(' | ');
-                        if (!resultados.includes(formatado)) {
-                            resultados.push(formatado);
+                // Identifica o nome do campeonato/liga na página
+                if ((el.tagName === 'H3' || el.tagName === 'H4' || el.classList.contains('competition') || el.classList.contains('group-title')) && text.length > 3 && text.length < 60) {
+                    currentComp = text;
+                }
+                
+                // Identifica a linha da partida
+                if (el.tagName === 'TR' || el.classList.contains('match-row')) {
+                    const rowText = text;
+                    const ehLixo = rowText.includes('Gamble') || rowText.includes('Copyright') || rowText.includes('Soccerway');
+                    
+                    if (!ehLixo && (rowText.includes("'") || rowText.includes('FT') || rowText.includes('HT') || /\d+\s*-\s*\d+/.test(rowText))) {
+                        const lines = rowText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                        if (lines.length >= 3) {
+                            matches.push({
+                                competicao: currentComp,
+                                linhas: lines
+                            });
                         }
                     }
                 }
             });
-
-            return resultados;
+            
+            // Remove duplicadas
+            const unique = [];
+            const seen = new Set();
+            matches.forEach(m => {
+                const key = m.linhas.join('|');
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    unique.push(m);
+                }
+            });
+            
+            return unique;
         });
 
-        console.log(`⚽ [Bot US] Partidas capturadas: ${partidas.length}`);
+        console.log(`⚽ [Bot US] Partidas com campeonato capturadas: ${partidas.length}`);
 
         if (partidas.length > 0) {
-            let msg = `🔴 *MONITOR DE PARTIDAS AO VIVO* ⚽\n`;
-            msg += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+            // Envia um aviso inicial discreto
+            await bot.sendMessage(CHAT_ID, `🔴 *ATUALIZAÇÃO DE JOGOS AO VIVO* (${Math.min(partidas.length, 10)} partidas) ⚽`, { parse_mode: 'Markdown' }).catch(()=>{});
 
-            partidas.slice(0, 10).forEach((p, i) => {
-                // Quebra os dados coletados para organizar esteticamente em formato de card
-                const partes = p.split(' | ').map(item => item.trim());
+            // Envia cada partida como um card separado e individual no Telegram
+            for (let i = 0; i < Math.min(partidas.length, 10); i++) {
+                const p = partidas[i];
+                const l = p.linhas;
                 
-                let tempo = partes[0] || "Ao Vivo";
-                let timeA = partes[1] || "Casa";
-                let timeB = partes[2] || "Fora";
-                let golA = partes[3] || "0";
-                let golB = partes[4] || "0";
+                let tempo = l[0] || "Ao Vivo";
+                let timeA = l[1] || "Casa";
+                let timeB = l[2] || "Fora";
+                let golA = l[3] || "0";
+                let golB = l[4] || "0";
                 
-                // Pega dados extras/estatísticas/escanteios se houver nas colunas seguintes
-                let extras = partes.slice(5).filter(x => x !== '-' && x !== '').join(' | ');
+                // Procura por informações adicionais ou cantos nas colunas restantes
+                let extras = l.slice(5).filter(x => x !== '-' && x !== '').join(' | ');
 
-                msg += `⚡ *Partida [${i + 1}]*\n`;
-                msg += `⏱ *Tempo:* \`${tempo}\`\n`;
-                msg += `⚽ *Confronto:* **${timeA}** x **${timeB}**\n`;
-                msg += `📊 *Placar:* \` ${golA} x ${golB} \`\n`;
+                let card = `🏆 *${p.competicao}*\n`;
+                card += `━━━━━━━━━━━━━━━━━━━━━\n`;
+                card += `⏱ *Tempo:* \`${tempo}\`\n`;
+                card += `⚽ *Confronto:* **${timeA}** x **${timeB}**\n`;
+                card += `📊 *Placar:* \` ${golA} x ${golB} \`\n`;
                 
                 if (extras.length > 0) {
-                    msg += `📐 *Info/Extras:* \`${extras}\`\n`;
+                    card += `📐 *Cantos / Estatísticas:* \`${extras}\`\n`;
+                } else {
+                    card += `📐 *Cantos / Estatísticas:* \`Aguardando dados oficiais\`\n`;
                 }
-                
-                msg += `-----------------------------------\n\n`;
-            });
+                card += `━━━━━━━━━━━━━━━━━━━━━`;
 
-            msg += `🔥 *Atualizado em tempo real*`;
+                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
+                // Pausa de meio segundo entre mensagens para respeitar o limite do Telegram
+                await new Promise(r => setTimeout(r, 500));
+            }
 
-            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(()=>{});
         } else {
             bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo ao vivo encontrado no momento da varredura.*", { parse_mode: 'Markdown' }).catch(()=>{});
         }
