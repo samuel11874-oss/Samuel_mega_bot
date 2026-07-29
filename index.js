@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Operacional ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Monitor de Partidas ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Extraindo partidas visíveis da tela...");
+        console.log("🕵️‍♂️ [Bot US] Extraindo e filtrando partidas do Soccerway...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -43,23 +43,22 @@ async function buscarJogosAoVivo() {
             timeout: 60000
         });
 
-        // Aguarda 5 segundos para a lista de jogos renderizar completamente
         await new Promise(r => setTimeout(r, 5000));
 
-        // Varredura cirúrgica nos blocos visíveis de partidas
+        // Varredura cirúrgica descartando cabeçalhos de menu
         const partidas = await page.evaluate(() => {
             const resultados = [];
-            
-            // Pega todos os cartões e blocos de jogos da tela
             const blocos = document.querySelectorAll('a, div, li, tr');
 
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
                 
-                // Procura por textos que tenham nomes de times/placares (linhas com quebra de texto)
-                if (txt.includes('\n') && txt.length > 10 && txt.length < 120) {
-                    // Se contém números (placar) ou indicação de tempo/versus
-                    if (/\d+/.test(txt) || txt.includes('FT') || txt.includes('AET') || txt.includes('-')) {
+                // Filtro para garantir que é uma linha de jogo e NÃO um botão do menu
+                const ehMenu = txt.includes('FAVORITES') || txt.includes('PREMIER LEAGUE') || txt.includes('FULL-TIME | SCHEDULED');
+                
+                if (!ehMenu && txt.includes('\n') && txt.length > 12 && txt.length < 130) {
+                    // Verifica se tem estrutura de jogo (placar ou tempo)
+                    if (/\d+/.test(txt) && (txt.includes('|') || txt.includes('-') || txt.includes('Full-time') || txt.includes('After'))) {
                         const formatado = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0).join(' | ');
                         if (!resultados.includes(formatado)) {
                             resultados.push(formatado);
@@ -71,16 +70,16 @@ async function buscarJogosAoVivo() {
             return resultados;
         });
 
-        console.log(`⚽ [Bot US] Jogos/Placares mapeados: ${partidas.length}`);
+        console.log(`⚽ [Bot US] Jogos reais filtrados: ${partidas.length}`);
 
         if (partidas.length > 0) {
-            let msg = `🔴 *JOGOS CAPTURADOS NO SOCCERWAY (${partidas.length})*\n\n`;
+            let msg = `⚽ *PARTIDAS CAPTURADAS (${partidas.length})*\n\n`;
             partidas.slice(0, 15).forEach((p, i) => {
-                msg += `⚽ *${i + 1}:* ${p}\n\n`;
+                msg += `📌 *${i + 1}:* ${p}\n\n`;
             });
             bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(()=>{});
         } else {
-            bot.sendMessage(CHAT_ID, "⚠️ *Nenhum bloco de partida encontrado na extração.*", { parse_mode: 'Markdown' }).catch(()=>{});
+            bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo filtrado encontrado nesta rodada.*", { parse_mode: 'Markdown' }).catch(()=>{});
         }
 
     } catch (error) {
@@ -91,5 +90,6 @@ async function buscarJogosAoVivo() {
     }
 }
 
+// Roda a verificação a cada 10 minutos
 setInterval(buscarJogosAoVivo, 600000);
 buscarJogosAoVivo();
