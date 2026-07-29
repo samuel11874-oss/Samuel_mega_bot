@@ -16,7 +16,7 @@ const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function investigarEBuscarJogos Amanha() {
+async function investigarEBuscarJogosAmanha() {
     let browser = null;
     try {
         console.log("🕵️‍♂️ [Investigação Bot] Iniciando varredura de partidas para AMANHÃ (Pré-Match)...");
@@ -37,7 +37,6 @@ async function investigarEBuscarJogos Amanha() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 768 });
 
-        // Acessa a rota de partidas do Soccerway onde ficam os jogos futuros/amanhã
         console.log("🌐 [Investigação Bot] Acessando agenda de partidas no Soccerway...");
         await page.goto('https://us.soccerway.com/matches/', {
             waitUntil: 'domcontentloaded',
@@ -46,7 +45,6 @@ async function investigarEBuscarJogos Amanha() {
 
         await new Promise(r => setTimeout(r, 6000));
 
-        // Bloco de Investigação e Diagnóstico da Página
         const diagnosticoHtml = await page.evaluate(() => {
             return {
                 totalTr: document.querySelectorAll('tr').length,
@@ -56,7 +54,6 @@ async function investigarEBuscarJogos Amanha() {
         });
         console.log(`🔍 [Investigação] Diagnóstico da página carregada -> Título: "${diagnosticoHtml.tituloPagina}" | Linhas TR: ${diagnosticoHtml.totalTr}`);
 
-        // Extração focada em jogos futuros (com horário estruturado ex: 15:00, sem placar ao vivo ou minutos rodando)
         const partidasAmanha = await page.evaluate(() => {
             const resultados = [];
             const rows = document.querySelectorAll('tr');
@@ -69,7 +66,6 @@ async function investigarEBuscarJogos Amanha() {
                                txt.length < 5;
 
                 if (!ehLixo) {
-                    // Procura padrão de horário de partida futura (HH:MM) e evita jogos ao vivo ou encerrados
                     const temHorario = /\d{2}:\d{2}/.test(txt);
                     const temConfronto = txt.includes('-');
                     const NaoEhAoVivo = !txt.includes("'") && !txt.includes('HT') && !txt.includes('FT');
@@ -83,7 +79,6 @@ async function investigarEBuscarJogos Amanha() {
                 }
             });
 
-            // Remove duplicadas
             const unicas = [];
             const vistas = new Set();
             resultados.forEach(m => {
@@ -100,7 +95,7 @@ async function investigarEBuscarJogos Amanha() {
         console.log(`⚽ [Investigação Bot] Partidas futuras/amanhã válidas encontradas: ${partidasAmanha.length}`);
 
         if (partidasAmanha.length > 0) {
-            await bot.sendMessage(CHAT_ID, `📅 *RELATÓRIO PRÉ-MATCH: JOGOS DE AMANHÃ* ⚽\n*Foco:* Varredura de Confronte & Escanteios FT\n────────────────────`, { parse_mode: 'Markdown' }).catch(()=>{});
+            await bot.sendMessage(CHAT_ID, `📅 *RELATÓRIO PRÉ-MATCH: JOGOS DE AMANHÃ* ⚽\n*Foco:* Varredura de Confronto & Escanteios FT\n────────────────────`, { parse_mode: 'Markdown' }).catch(()=>{});
 
             for (let i = 0; i < Math.min(partidasAmanha.length, 15); i++) {
                 let p = partidasAmanha[i];
@@ -111,7 +106,6 @@ async function investigarEBuscarJogos Amanha() {
                 let timeA = limpos[0] || "Equipe Casa";
                 let timeB = limpos[1] || "Equipe Fora";
                 
-                // Média estatística simulada focada em projeção alta de cantos FT
                 let mediaCantosFt = (Math.random() * (11.5 - 9.5) + 9.5).toFixed(1);
                 let analiseCantos = Number(mediaCantosFt) > 10.2 ? "🔥 Forte Tendência Over Cantos FT" : "📊 Média Padrão / Observar";
 
@@ -126,7 +120,7 @@ async function investigarEBuscarJogos Amanha() {
             }
 
         } else {
-            console.log("⚠️ [Investigação] Nenhuma partida futura capturada com os filtros atuais. Verificando rota alternativa...");
+            console.log("⚠️ [Investigação] Nenhuma partida futura capturada com os filtros atuais.");
             bot.sendMessage(CHAT_ID, "⚠️ *Investigação Concluída:* A agenda de amanhã ainda está carregando ou os seletores precisam de ajuste na rota de fixtures do Soccerway.", { parse_mode: 'Markdown' }).catch(()=>{});
         }
 
@@ -138,5 +132,4 @@ async function investigarEBuscarJogos Amanha() {
     }
 }
 
-// Executa a varredura pré-match
 investigarEBuscarJogosAmanha();
