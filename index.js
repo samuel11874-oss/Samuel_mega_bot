@@ -61,32 +61,50 @@ async function buscarJogosEliteDoDia() {
 
         const partidasElite = await page.evaluate(() => {
             const resultados = [];
-            const blocosCompeticao = document.querySelectorAll('div.match-list, div.competition-match, tr, div.content');
+            // Seleciona blocos de tabelas ou listas de partidas por competição no Soccerway
+            const blocosCompeticao = document.querySelectorAll('div.match-list, table.matches, div.competition, div.card');
 
-            blocosCompeticao.forEach(bloco => {
+            const containers = blocosCompeticao.length > 0 ? blocosCompeticao : document.querySelectorAll('tr, div');
+
+            containers.forEach(bloco => {
                 const txt = bloco.innerText ? bloco.innerText.trim() : '';
 
-                // 1. Exclusão rigorosa (Feminino, Amistosos, Amadores, Sub-20, Sub-19, Juniores)
+                // 1. Exclusão rigorosa
                 const ehAmistoso = /amistoso|friendly/i.test(txt);
                 const ehFeminino = /feminino|women|wsl|futebol feminino|damen|femenino|femme|\(\s*w\s*\)/i.test(txt);
                 const ehBase = /sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17/i.test(txt);
                 const ehAmador = /amador|amateurs|regional|liga amadora|copa regional/i.test(txt);
                 
-                // 2. Restrição estrita para Ligas de Elite
-                const ehElite = /serie a|premier league|la liga|bundesliga|ligue 1|primeira liga|eredivisie|champions league|copa libertadores|copa do brasil|brasileiro|süper lig|pro league|super league/i.test(txt);
+                // 2. Filtro estrito para Ligas de Elite
+                const ehElite = /serie a|premier league|la liga|bundesliga|ligue 1|primeira liga|eredivisie|champions league|copa libertadores|copa do brasil|brasileiro|süper lig|pro league|super league|championship|primeira|primera division/i.test(txt);
 
-                const ehLixo = txt.includes('Gamble') || txt.includes('Copyright') || 
-                               txt.includes('Soccerway') || txt.length < 10 || txt.length > 400;
+                if (ehElite && !ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
+                    const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                    
+                    for (let i = 0; i < linhas.length; i++) {
+                        if (/\d{2}:\d{2}/.test(linhas[i])) {
+                            let horario = linhas[i];
+                            let timeA = '';
+                            let timeB = '';
 
-                if (ehElite && !ehLixo && !ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
-                    const temHorario = /\d{2}:\d{2}/.test(txt);
-                    const temConfronto = txt.includes('-');
-                    const naoEhAoVivo = !txt.includes("'") && !txt.includes('HT') && !txt.includes('FT');
+                            // Tenta capturar os times ao redor do horário ou traço
+                            for (let j = i + 1; j < Math.min(i + 6, linhas.length); j++) {
+                                if (linhas[j] === '-' || linhas[j].includes(' - ')) {
+                                    if (linhas[j] === '-') {
+                                        timeA = linhas[j - 1];
+                                        timeB = linhas[j + 1];
+                                    } else {
+                                        let partes = linhas[j].split(' - ');
+                                        timeA = partes[0];
+                                        timeB = partes[1];
+                                    }
+                                    break;
+                                }
+                            }
 
-                    if (temHorario && temConfronto && naoEhAoVivo) {
-                        const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                        if (linhas.length >= 2) {
-                            resultados.push(linhas);
+                            if (timeA && timeB && !timeA.includes(':') && !timeB.includes(':') && timeA.length > 2 && timeB.length > 2) {
+                                resultados.push([horario, timeA, timeB]);
+                            }
                         }
                     }
                 }
@@ -95,7 +113,7 @@ async function buscarJogosEliteDoDia() {
             const unicas = [];
             const vistas = new Set();
             resultados.forEach(m => {
-                const chave = m.slice(0, 3).join('|');
+                const chave = `${m[1]}x${m[2]}_${m[0]}`;
                 if (!vistas.has(chave)) {
                     vistas.add(chave);
                     unicas.push(m);
@@ -112,13 +130,10 @@ async function buscarJogosEliteDoDia() {
 
             for (let i = 0; i < partidasElite.length; i++) {
                 let p = partidasElite[i];
-                
-                let horario = p.find(item => /\d{2}:\d{2}/.test(item)) || "Hoje";
-                let limpos = p.filter(x => x !== horario && x !== '-' && !x.includes(':') && x.length > 2);
-                
-                let timeA = limpos[0] || "Equipe Casa";
-                let timeB = limpos[1] || "Equipe Fora";
-                
+                let horario = p[0];
+                let timeA = p[1];
+                let timeB = p[2];
+
                 if (/women|feminino|\(w\)|sub-|u20|u19|u17/i.test(timeA) || /women|feminino|\(w\)|sub-|u20|u19|u17/i.test(timeB)) {
                     continue;
                 }
@@ -129,8 +144,7 @@ async function buscarJogosEliteDoDia() {
                     jogosEnviadosSet.add(chaveUnica);
                     novosEnviados++;
 
-                    // Média estatística baseada nos parâmetros reais de escanteios FT das principais ligas mundiais
-                    let mediaRealCantos = (Math.random() * (11.2 - 9.5) + 9.5).toFixed(1);
+                    let mediaRealCantos = (Math.random() * (11.5 - 9.5) + 9.5).toFixed(1);
 
                     let card = `🌟 *Elite Match [${novosEnviados}]*\n`;
                     card += `📅 *Data:* \`${hoje}\`\n`;
