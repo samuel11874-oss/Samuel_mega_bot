@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Varredura completa de partidas AO VIVO (Desktop Layout)...");
+        console.log("🕵️‍♂️ [Bot US] Acessando e buscando jogos AO VIVO...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -34,7 +34,6 @@ async function buscarJogosAoVivo() {
         });
 
         const page = await browser.newPage();
-        // Restaurado para o layout desktop para capturar todos os jogos ao vivo
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 768 });
 
@@ -47,6 +46,7 @@ async function buscarJogosAoVivo() {
         await new Promise(r => setTimeout(r, 4000));
         
         try {
+            console.log("🔍 [Bot US] Procurando e clicando na aba 'LIVE'...");
             await page.evaluate(() => {
                 const links = Array.from(document.querySelectorAll('a, span, div'));
                 const abaLive = links.find(el => el.innerText && el.innerText.trim() === 'LIVE');
@@ -54,41 +54,44 @@ async function buscarJogosAoVivo() {
             });
             await new Promise(r => setTimeout(r, 5000));
         } catch (e) {
-            console.log("⚠️ Seguindo com varredura geral.");
+            console.log("⚠️ Não foi possível clicar na aba Live diretamente, seguindo com varredura geral.");
         }
 
-        // Varredura ampla e estruturada para pegar todas as partidas ao vivo
+        // Varredura completa focada em capturar todas as partidas ativas em blocos individuais
         const partidas = await page.evaluate(() => {
             const matches = [];
-            const elements = document.querySelectorAll('tr, div');
-            
-            elements.forEach(el => {
-                const rowText = el.innerText ? el.innerText.trim() : '';
-                const ehLixo = rowText.includes('Gamble') || rowText.includes('Copyright') || rowText.includes('Soccerway') || rowText.includes('FAVORITES');
+            const blocos = document.querySelectorAll('tr, div, li');
+
+            blocos.forEach(b => {
+                const txt = b.innerText ? b.innerText.trim() : '';
                 
-                if (!ehLixo && (rowText.includes("'") || rowText.includes('FT') || rowText.includes('HT') || /\d+\s*-\s*\d+/.test(rowText))) {
-                    const lines = rowText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                    if (lines.length >= 3 && lines.length <= 15) {
-                        matches.push(lines);
+                const ehMenu = txt.includes('FAVORITES') || txt.includes('PREMIER LEAGUE') || txt.includes('LALIGA') || txt.includes('Gamble') || txt.includes('Copyright');
+                
+                if (!ehMenu && txt.length > 15 && txt.length < 180) {
+                    if (txt.includes("'") || txt.includes('HT') || txt.includes('FT') || /\d+\s*-\s*\d+/.test(txt)) {
+                        const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                        if (linhas.length >= 3 && linhas.length <= 15) {
+                            matches.push(linhas);
+                        }
                     }
                 }
             });
             
             // Remove duplicadas
-            const unique = [];
-            const seen = new Set();
+            const unicas = [];
+            const vistas = new Set();
             matches.forEach(m => {
-                const key = m.join('|');
-                if (!seen.has(key)) {
-                    seen.add(key);
-                    unique.push(m);
+                const chave = m.slice(0, 3).join('-');
+                if (!vistas.has(chave)) {
+                    vistas.add(chave);
+                    unicas.push(m);
                 }
             });
             
-            return unique;
+            return unicas;
         });
 
-        console.log(`⚽ [Bot US] Partidas capturadas: ${partidas.length}`);
+        console.log(`⚽ [Bot US] Partidas ao vivo capturadas: ${partidas.length}`);
 
         if (partidas.length > 0) {
             await bot.sendMessage(CHAT_ID, `🔴 *MONITOR DE PARTIDAS AO VIVO* (${Math.min(partidas.length, 15)} jogos) ⚽`, { parse_mode: 'Markdown' }).catch(()=>{});
@@ -103,7 +106,7 @@ async function buscarJogosAoVivo() {
                 let golB = l[4] || "0";
                 
                 let extras = l.slice(5).filter(x => x !== '-' && x !== '' && !x.includes('+') && x.length < 15).join(' | ');
-                if (!extras) extras = "Aguardando dados oficiais";
+                if (!extras) extras = "Aguardando dados oficiais / Cantos";
 
                 let card = `⚡ *Partida [${i + 1}]*\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━\n`;
