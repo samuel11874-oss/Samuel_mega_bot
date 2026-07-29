@@ -38,14 +38,17 @@ async function buscarJogosAoVivo() {
         await page.setViewport({ width: 1366, height: 768 });
 
         console.log("🌐 [Bot US] Acessando us.soccerway.com...");
+        
+        // waitUntil: 'domcontentloaded' evita travamentos com conexões ativas de anúncios
         await page.goto('https://us.soccerway.com/', {
-            waitUntil: 'networkidle2',
-            timeout: 60000
+            waitUntil: 'domcontentloaded',
+            timeout: 45000
         });
 
-        await new Promise(r => setTimeout(r, 5000));
+        // Aguarda 6 segundos fixos para o JavaScript montar a lista na tela
+        await new Promise(r => setTimeout(r, 6000));
 
-        // Varredura cirúrgica descartando cabeçalhos de menu
+        // Varredura dos blocos de jogos
         const partidas = await page.evaluate(() => {
             const resultados = [];
             const blocos = document.querySelectorAll('a, div, li, tr');
@@ -53,11 +56,9 @@ async function buscarJogosAoVivo() {
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
                 
-                // Filtro para garantir que é uma linha de jogo e NÃO um botão do menu
                 const ehMenu = txt.includes('FAVORITES') || txt.includes('PREMIER LEAGUE') || txt.includes('FULL-TIME | SCHEDULED');
                 
                 if (!ehMenu && txt.includes('\n') && txt.length > 12 && txt.length < 130) {
-                    // Verifica se tem estrutura de jogo (placar ou tempo)
                     if (/\d+/.test(txt) && (txt.includes('|') || txt.includes('-') || txt.includes('Full-time') || txt.includes('After'))) {
                         const formatado = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0).join(' | ');
                         if (!resultados.includes(formatado)) {
