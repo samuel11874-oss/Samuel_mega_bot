@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigação de Layout ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Operacional Ativo ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -30,7 +30,7 @@ async function buscarJogosDoDia() {
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Bot Investigação] Acessando agenda para: ${hoje}`);
+        console.log(`🕵️‍♂️ [Bot Produção] Acessando agenda para: ${hoje}`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -59,16 +59,8 @@ async function buscarJogosDoDia() {
         console.log("⏳ Aguardando renderização completa da página...");
         await new Promise(r => setTimeout(r, 8000));
 
-        // DIAGNÓSTICO: Captura uma amostra do texto bruto da página para o log
-        const debugAmostra = await page.evaluate(() => {
-            return document.body ? document.body.innerText.substring(0, 500) : "Corpo vazio";
-        });
-        console.log("🔍 [Debug Amostra do Site]:", debugAmostra.replace(/\n/g, ' | '));
-
         const dadosExtraidos = await page.evaluate(() => {
             const resultados = [];
-            
-            // Varredura ampla em qualquer elemento que contenha texto de partidas
             const elementos = document.querySelectorAll('tr, div, li');
 
             elementos.forEach(el => {
@@ -80,7 +72,7 @@ async function buscarJogosDoDia() {
                 const horario = matchHorario[0];
                 const textoBaixo = text.toLowerCase();
                 
-                // Filtros de exclusão
+                // Filtros restritos para bloquear lixo, feminino, base e amistosos
                 const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\(w\)|sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub-21|u21|reserves|amador/i.test(textoBaixo);
 
                 if (ehLixo) return;
@@ -92,7 +84,10 @@ async function buscarJogosDoDia() {
                     let timeA = limpos[0];
                     let timeB = limpos[1];
 
-                    if (timeA && timeB && timeA.length > 2 && timeB.length > 2) {
+                    // Evita capturar termos residuais nos nomes
+                    const nomeTimesInvalido = /women|feminino|\(w\)|sub-|u20|u19|u17|u21|reserves/i.test(timeA + timeB);
+
+                    if (!nomeTimesInvalido && timeA.length > 2 && timeB.length > 2) {
                         resultados.push([horario, timeA, timeB]);
                     }
                 }
@@ -111,7 +106,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Investigação] Partidas encontradas: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Produção] Partidas limpas e filtradas: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -130,7 +125,7 @@ async function buscarJogosDoDia() {
 
                     let mediaRealCantos = (Math.random() * (11.5 - 9.5) + 9.5).toFixed(1);
 
-                    let card = `🔥 *Partida Detectada [${novosEnviados}]*\n`;
+                    let card = `🔥 *Partida Aprovada [${novosEnviados}]*\n`;
                     card += `📅 *Data:* \`${hoje}\`\n`;
                     card += `🕒 *Horário:* \`${horario}\`\n`;
                     card += `⚔️ **${timeA}** x **${timeB}**\n`;
@@ -143,15 +138,15 @@ async function buscarJogosDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Investigação] ${novosEnviados} novos jogos enviados.`);
+                console.log(`✅ [Bot Produção] ${novosEnviados} novos jogos enviados no Telegram.`);
             }
 
         } else {
-            console.log("⚠️ [Bot Investigação] Nenhuma partida capturada na varredura ampla.");
+            console.log("⚠️ [Bot Produção] Nenhuma partida correspondente após os filtros.");
         }
 
     } catch (error) {
-        console.error("❌ ERRO CRÍTICO NA INVESTIGAÇÃO:", error.message);
+        console.error("❌ ERRO CRÍTICO NA EXECUÇÃO:", error.message);
     } finally {
         if (browser) await browser.close();
     }
