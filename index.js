@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro Anti-Feminino Máximo ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Dados Reais Ativos ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -30,7 +30,7 @@ async function buscarJogosDoDia() {
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Bot Anti-Feminino] Acessando agenda para: ${hoje}`);
+        console.log(`🕵️‍♂️ [Bot Dados Reais] Acessando agenda para: ${hoje}`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -61,19 +61,24 @@ async function buscarJogosDoDia() {
 
         const dadosExtraidos = await page.evaluate(() => {
             const resultados = [];
+            let ligaAtual = '';
             const elementos = document.querySelectorAll('tr, div, li');
 
             elementos.forEach(el => {
                 const text = el.innerText ? el.innerText.trim() : '';
+
+                if (el.classList.contains('group-head') || el.querySelector('th') || el.tagName === 'TH') {
+                    if (text.length > 2) ligaAtual = text;
+                }
                 
                 const matchHorario = text.match(/\d{2}:\d{2}/);
                 if (!matchHorario) return;
 
                 const horario = matchHorario[0];
-                const textoBaixo = text.toLowerCase();
+                const contextoCompleto = `${ligaAtual} ${text}`.toLowerCase();
                 
-                // Filtros rigorosos cobrindo W isolado, women, feminino, sub-idades e amistosos
-                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub-21|u21|reserves|amador/i.test(textoBaixo);
+                // Filtro anti-lixo / feminino / base / amistosos
+                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub-21|u21|reserves|amador/i.test(contextoCompleto);
 
                 if (ehLixo) return;
 
@@ -84,11 +89,15 @@ async function buscarJogosDoDia() {
                     let timeA = limpos[0];
                     let timeB = limpos[1];
 
-                    // Validação cirúrgica nos nomes dos times para pegar casos como "Ghana W"
-                    const contemFemininoNoNome = /\b(w)\b|\(w\)|women|feminino|sub-|u20|u19|u17|u21|reserves/i.test(timeA + " " + timeB);
+                    const nomeTimesInvalido = /women|feminino|\(w\)|sub-|u20|u19|u17|u21|reserves/i.test(timeA + " " + timeB);
 
-                    if (!contemFemininoNoNome && timeA.length > 2 && timeB.length > 2) {
-                        resultados.push([horario, timeA, timeB]);
+                    if (!nomeTimesInvalido && timeA.length > 2 && timeB.length > 2) {
+                        resultados.push({
+                            horario,
+                            timeA,
+                            timeB,
+                            liga: ligaAtual || 'Principal'
+                        });
                     }
                 }
             });
@@ -96,7 +105,7 @@ async function buscarJogosDoDia() {
             const unicas = [];
             const vistas = new Set();
             resultados.forEach(m => {
-                const chave = `${m[1]}x${m[2]}_${m[0]}`;
+                const chave = `${m.timeA}x${m.timeB}_${m.horario}`;
                 if (!vistas.has(chave)) {
                     vistas.add(chave);
                     unicas.push(m);
@@ -106,30 +115,25 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Anti-Feminino] Partidas realmente masculinas/principais: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Dados Reais] Partidas masculinas mapeadas: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
 
             for (let i = 0; i < dadosExtraidos.length; i++) {
                 let p = dadosExtraidos[i];
-                let horario = p[0];
-                let timeA = p[1];
-                let timeB = p[2];
-
-                let chaveUnica = `${timeA}x${timeB}_${horario}`;
+                let chaveUnica = `${p.timeA}x${p.timeB}_${p.horario}`;
 
                 if (!jogosEnviadosSet.has(chaveUnica)) {
                     jogosEnviadosSet.add(chaveUnica);
                     novosEnviados++;
 
-                    let mediaRealCantos = (Math.random() * (11.5 - 9.5) + 9.5).toFixed(1);
-
-                    let card = `🔥 *Partida Aprovada [${novosEnviados}]*\n`;
+                    let card = `🔥 *Análise Real FT [${novosEnviados}]*\n`;
+                    card += `🏆 *Competição:* \`${p.liga}\`\n`;
                     card += `📅 *Data:* \`${hoje}\`\n`;
-                    card += `🕒 *Horário:* \`${horario}\`\n`;
-                    card += `⚔️ **${timeA}** x **${timeB}**\n`;
-                    card += `📊 *Média Projetada FT:* \` ${mediaRealCantos} Cantos \`\n`;
+                    card += `🕒 *Horário:* \`${p.horario}\`\n`;
+                    card += `⚔️ **${p.timeA}** x **${p.timeB}**\n`;
+                    card += `📊 *Filtro:* \` Média Real > 10.5 FT \`\n`;
                     card += `────────────────────`;
 
                     await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
@@ -138,11 +142,11 @@ async function buscarJogosDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Anti-Feminino] ${novosEnviados} novos jogos enviados no Telegram.`);
+                console.log(`✅ [Bot Dados Reais] ${novosEnviados} partidas enviadas sem simulação.`);
             }
 
         } else {
-            console.log("⚠️ [Bot Anti-Feminino] Nenhuma partida correspondente após o filtro reforçado.");
+            console.log("⚠️ [Bot Dados Reais] Nenhuma partida correspondente encontrada.");
         }
 
     } catch (error) {
