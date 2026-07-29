@@ -38,14 +38,14 @@ async function buscarJogosEliteAmanha() {
         await page.setViewport({ width: 1366, height: 2000 });
 
         console.log("🌐 [Bot Elite] Acessando central de partidas...");
+        // 'domcontentloaded' e 90s evitam o erro de timeout no Render gratuito
         await page.goto('https://us.soccerway.com/matches/', {
-            waitUntil: 'networkidle2',
-            timeout: 60000
+            waitUntil: 'domcontentloaded',
+            timeout: 90000
         });
 
         await new Promise(r => setTimeout(r, 6000));
 
-        // Varredura com filtros estritos de exclusão
         const partidasElite = await page.evaluate(() => {
             const resultados = [];
             const blocos = document.querySelectorAll('tr, div.match-row, div.content');
@@ -74,7 +74,6 @@ async function buscarJogosEliteAmanha() {
                 }
             });
 
-            // Remove duplicatas
             const unicas = [];
             const vistas = new Set();
             resultados.forEach(m => {
@@ -104,10 +103,8 @@ async function buscarJogosEliteAmanha() {
                 let timeA = limpos[0] || "Equipe Casa";
                 let timeB = limpos[1] || "Equipe Fora";
                 
-                // Projeção baseada em estatísticas de cantos FT de alto rendimento
                 let mediaCantosFt = (Math.random() * (12.0 - 9.6) + 9.6).toFixed(1);
 
-                // Aplicação rigorosa da média > 9.5 FT
                 if (Number(mediaCantosFt) > 9.5) {
                     enviados++;
                     let card = `🔥 *Elite Match [${enviados}]*\n`;
