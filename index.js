@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro Otimizado ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Varredura Robusta ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -30,7 +30,7 @@ async function buscarJogosDoDia() {
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Bot Otimizado] Acessando agenda para: ${hoje}`);
+        console.log(`🕵️‍♂️ [Bot Robusto] Acessando agenda para: ${hoje}`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -51,59 +51,56 @@ async function buscarJogosDoDia() {
         const urlDia = `https://us.soccerway.com/matches/?date=${hoje}`;
         console.log(`🌐 URL: ${urlDia}`);
 
-        // Usando domcontentloaded para evitar travamentos de rede
         await page.goto(urlDia, {
             waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
         console.log("⏳ Aguardando renderização completa da página...");
-        await new Promise(r => setTimeout(r, 6000));
+        await new Promise(r => setTimeout(r, 7000));
 
         const dadosExtraidos = await page.evaluate(() => {
             const resultados = [];
-            let ligaAtual = '';
+            const rows = document.querySelectorAll('tr');
 
-            const blocos = document.querySelectorAll('tr, div.match-list, div.competition');
+            rows.forEach(tr => {
+                const text = tr.innerText ? tr.innerText.trim() : '';
+                
+                const matchHorario = text.match(/\d{2}:\d{2}/);
+                if (!matchHorario) return;
 
-            blocos.forEach(el => {
-                const txt = el.innerText ? el.innerText.trim() : '';
+                const horario = matchHorario[0];
+                const textoBaixo = text.toLowerCase();
+                
+                // Filtros de exclusão
+                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\(w\)|sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub-21|u21|reserves|amador/i.test(textoBaixo);
 
-                if (el.classList.contains('group-head') || el.querySelector('th') || el.tagName === 'TH') {
-                    if (txt.length > 2) ligaAtual = txt;
+                if (ehLixo) return;
+
+                const tds = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim()).filter(t => t.length > 0);
+                
+                let timeA = '';
+                let timeB = '';
+
+                if (tds.length >= 3) {
+                    const limpos = tds.filter(t => !/\d{2}:\d{2}/.test(t) && !/^\d+-\d+$/.test(t) && t !== '-' && t.length > 2);
+                    if (limpos.length >= 2) {
+                        timeA = limpos[0];
+                        timeB = limpos[1];
+                    }
                 }
 
-                if (/\d{2}:\d{2}/.test(txt) && txt.includes('-')) {
-                    const contextoCompleto = `${ligaAtual} ${txt}`.toLowerCase();
-
-                    const ehAmistoso = /amistoso|friendly|friendlies/i.test(contextoCompleto);
-                    const ehFeminino = /feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|women's/i.test(contextoCompleto);
-                    const ehBase = /sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub 17|sub-21|u21|sub-15|u15|reserves|b team/i.test(contextoCompleto);
-                    const ehAmador = /amador|amateurs|regional|liga amadora/i.test(contextoCompleto);
-
-                    if (!ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
-                        const celulas = Array.from(el.querySelectorAll('td')).map(td => td.innerText.trim()).filter(t => t.length > 0);
-                        
-                        let horario = celulas.find(c => /\d{2}:\d{2}/.test(c));
-                        let times = celulas.filter(c => c !== horario && c !== '-' && !c.includes(':') && c.length > 2);
-
-                        if (!horario) {
-                            const partes = txt.split('\n').map(p => p.trim()).filter(p => p.length > 0);
-                            horario = partes.find(p => /\d{2}:\d{2}/.test(p));
-                            times = partes.filter(p => p !== horario && p !== '-' && !p.includes(':') && p.length > 2);
-                        }
-
-                        if (horario && times.length >= 2) {
-                            let timeA = times[0];
-                            let timeB = times[1];
-
-                            const nomeTimesLixo = /women|feminino|\(w\)|sub-|u20|u19|u17|u21|reserves/i.test(timeA + timeB);
-
-                            if (!nomeTimesLixo) {
-                                resultados.push([horario, timeA, timeB]);
-                            }
-                        }
+                if (!timeA || !timeB) {
+                    const linhasTexto = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                    const limpos = linhasTexto.filter(l => !/\d{2}:\d{2}/.test(l) && !/^\d+-\d+$/.test(l) && l !== '-' && l.length > 2);
+                    if (limpos.length >= 2) {
+                        timeA = limpos[0];
+                        timeB = limpos[1];
                     }
+                }
+
+                if (timeA && timeB && timeA.length > 2 && timeB.length > 2) {
+                    resultados.push([horario, timeA, timeB]);
                 }
             });
 
@@ -120,7 +117,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Otimizado] Partidas limpas encontradas: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Robusto] Partidas limpas encontradas: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -152,11 +149,11 @@ async function buscarJogosDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Otimizado] ${novosEnviados} novos jogos enviados com sucesso.`);
+                console.log(`✅ [Bot Robusto] ${novosEnviados} novos jogos enviados com sucesso.`);
             }
 
         } else {
-            console.log("⚠️ [Bot Otimizado] Nenhuma partida correspondente encontrada.");
+            console.log("⚠️ [Bot Robusto] Nenhuma partida correspondente encontrada.");
         }
 
     } catch (error) {
