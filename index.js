@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Acessando e buscando jogos AO VIVO...");
+        console.log("🕵️‍♂️ [Bot US] Buscando jogos AO VIVO e organizando cards...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -43,55 +43,88 @@ async function buscarJogosAoVivo() {
             timeout: 45000
         });
 
-        // Aguarda a página carregar e tenta clicar na aba "LIVE" para filtrar os jogos do momento
         await new Promise(r => setTimeout(r, 4000));
         
         try {
-            console.log("🔍 [Bot US] Procurando e clicando na aba 'LIVE'...");
             await page.evaluate(() => {
                 const links = Array.from(document.querySelectorAll('a, span, div'));
                 const abaLive = links.find(el => el.innerText && el.innerText.trim() === 'LIVE');
                 if (abaLive) abaLive.click();
             });
-            // Espera a listagem ao vivo carregar após o clique
             await new Promise(r => setTimeout(r, 5000));
         } catch (e) {
-            console.log("⚠️ Não foi possível clicar na aba Live diretamente, seguindo com varredura geral.");
+            console.log("⚠️ Seguindo com varredura geral.");
         }
 
-        // Varredura focada em capturar placares, tempos de jogo e confrontos
+        // Varredura cirúrgica para isolar partidas reais e descartar lixo
         const partidas = await page.evaluate(() => {
-            const resultados = [];
+            const matches = [];
             const blocos = document.querySelectorAll('tr, div, li');
 
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
                 
-                // Ignora menus e lixo
-                const ehMenu = txt.includes('FAVORITES') || txt.includes('PREMIER LEAGUE') || txt.includes('LALIGA');
-                
-                if (!ehMenu && txt.includes('\n') && txt.length > 10 && txt.length < 140) {
-                    // Procura por indicadores de partidas em andamento (minutos como 45', 78', ou placares com traço)
-                    if ((txt.includes("'") || /\d+[\s-]+\d+/.test(txt)) && !resultados.includes(txt)) {
-                        const formatado = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0).join(' | ');
-                        if (formatado.length > 10 && !resultados.includes(formatado)) {
-                            resultados.push(formatado);
+                // Filtros rigorosos para ignorar rodapés e menus
+                const ehLixo = txt.includes('Gamble') || txt.includes('Copyright') || txt.includes('Soccerway') || 
+                               txt.includes('FAVORITES') || txt.includes('PREMIER LEAGUE') || txt.includes('LALIGA') ||
+                               txt.length < 15 || txt.length > 150;
+
+                if (!ehLixo) {
+                    // Verifica se tem indicativo de jogo (minuto com apóstrofo, HT, FT ou placar)
+                    if (txt.includes("'") || txt.includes('Half Time') || txt.includes('FT') || txt.includes('HT') || /\d+\s*-\s*\d+/.test(txt)) {
+                        const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                        
+                        // Garante que temos dados suficientes para montar o confronto
+                        if (linhas.length >= 4) {
+                            matches.push(linhas);
                         }
                     }
                 }
             });
-
-            return resultados;
+            
+            // Remove duplicadas baseadas no time da casa e visitante
+            const unicas = [];
+            const vistas = new Set();
+            matches.forEach(m => {
+                // Tenta pegar os dois nomes de times como chave única
+                const chave = `${m[1]}|${m[2]}`;
+                if (!vistas.has(chave) && m[1] && m[2]) {
+                    vistas.add(chave);
+                    unicas.push(m);
+                }
+            });
+            
+            return unicas;
         });
 
-        console.log(`⚽ [Bot US] Partidas ao vivo/recentes filtradas: ${partidas.length}`);
+        console.log(`⚽ [Bot US] Partidas válidas encontradas: ${partidas.length}`);
 
         if (partidas.length > 0) {
-            let msg = `🔴 *JOGOS AO VIVO / RECENTES (${partidas.length})*\n\n`;
-            partidas.slice(0, 15).forEach((p, i) => {
-                msg += `⚽ *${i + 1}:* ${p}\n\n`;
-            });
-            bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(()=>{});
+            for (let i = 0; i < Math.min(partidas.length, 15); i++) {
+                const l = partidas[i];
+                
+                let tempo = l[0] || "Ao Vivo";
+                let timeA = l[1] || "Casa";
+                let timeB = l[2] || "Fora";
+                let golA = l[3] || "0";
+                let golB = l[4] || "0";
+                
+                // Extrai cantos / estatísticas adicionais se houverem na linha
+                let extras = l.slice(5).filter(x => x !== '-' && x !== '' && !x.includes('+')).join(' | ');
+                if (!extras || extras.length < 2) extras = "Aguardando dados oficiais";
+
+                let card = `⚡ *Partida [${i + 1}]*\n`;
+                card += `━━━━━━━━━━━━━━━━━━━━━\n`;
+                card += `⏱ *Tempo:* \`${tempo}\`\n`;
+                card += `⚽ *Confronto:* **${timeA}** x **${timeB}**\n`;
+                card += `📊 *Placar:* \` ${golA} x ${golB} \`\n`;
+                card += `📐 *Cantos / Estatísticas:* \`${extras}\`\n`;
+                card += `━━━━━━━━━━━━━━━━━━━━━`;
+
+                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
+                await new Promise(r => setTimeout(r, 600));
+            }
+
         } else {
             bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo ao vivo encontrado no momento da varredura.*", { parse_mode: 'Markdown' }).catch(()=>{});
         }
