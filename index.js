@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Iniciando varredura robusta de partidas AO VIVO...");
+        console.log("🕵️‍♂️ [Bot US] Iniciando varredura otimizada de partidas AO VIVO...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -37,16 +37,15 @@ async function buscarJogosAoVivo() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 768 });
 
-        console.log("🌐 [Bot US] Acessando us.soccerway.com...");
+        console.log("🌐 [Bot US] Acessando us.soccerway.com (Timeout estendido)...");
         await page.goto('https://us.soccerway.com/', {
-            waitUntil: 'networkidle2',
-            timeout: 45000
+            waitUntil: 'domcontentloaded',
+            timeout: 60000
         });
 
-        // Aguarda a página carregar completamente
-        await new Promise(r => setTimeout(r, 6000));
+        await new Promise(r => setTimeout(r, 4000));
 
-        // Tenta encontrar e clicar na aba/botão LIVE de forma abrangente
+        // Tenta clicar na aba LIVE
         try {
             console.log("🔍 [Bot US] Tentando ativar filtro LIVE...");
             await page.evaluate(() => {
@@ -56,12 +55,12 @@ async function buscarJogosAoVivo() {
                     liveEl.click();
                 }
             });
-            await new Promise(r => setTimeout(r, 6000));
+            await new Promise(r => setTimeout(r, 5000));
         } catch (e) {
             console.log("⚠️ Filtro LIVE não acionado via clique, prosseguindo com varredura geral.");
         }
 
-        // Varredura flexível que captura qualquer linha de jogo ativa na página
+        // Varredura flexível de partidas ativas
         const partidas = await page.evaluate(() => {
             const matches = [];
             const rows = document.querySelectorAll('tr, div.match, .row');
