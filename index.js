@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Ligas de Elite & Escanteios FT ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Varredura Confiável ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 let jogosEnviadosSet = new Set();
 let ultimaDataRegistrada = '';
 
-async function buscarJogosEliteDoDia() {
+async function buscarJogosDoDia() {
     let browser = null;
     try {
         const hoje = new Date().toISOString().split('T')[0];
@@ -30,7 +30,7 @@ async function buscarJogosEliteDoDia() {
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Bot Elite] Buscando jogos de ELITE para hoje: ${hoje}`);
+        console.log(`🕵️‍♂️ [Bot Varredura] Buscando partidas para hoje: ${hoje}`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -59,61 +59,51 @@ async function buscarJogosEliteDoDia() {
         console.log("⏳ Aguardando renderização completa da página...");
         await new Promise(r => setTimeout(r, 8000));
 
-        const partidasElite = await page.evaluate(() => {
+        const partidas = await page.evaluate(() => {
             const resultados = [];
-            let ultimaLiga = '';
-            
-            // Varre todas as linhas da página mantendo o contexto da liga atual
-            const allRows = document.querySelectorAll('tr');
+            const linhasTabela = document.querySelectorAll('tr');
 
-            allRows.forEach(row => {
-                const text = row.innerText ? row.innerText.trim() : '';
+            linhasTabela.forEach(tr => {
+                const txt = tr.innerText ? tr.innerText.trim() : '';
 
-                // Identifica cabeçalhos de ligas/competições na tabela
-                if (row.classList.contains('group-head') || row.querySelector('th') || (row.className && row.className.includes('competition'))) {
-                    ultimaLiga = text;
-                }
+                // Filtros de exclusão rigorosos (Feminino, Sub-20/19/17, Amistosos, Amador)
+                const ehAmistoso = /amistoso|friendly/i.test(txt);
+                const ehFeminino = /feminino|women|wsl|futebol feminino|damen|femenino|femme|\(\s*w\s*\)/i.test(txt);
+                const ehBase = /sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub 17/i.test(txt);
+                const ehAmador = /amador|amateurs|regional|liga amadora|copa regional/i.test(txt);
 
-                // Se a linha contém horário e traço de confronto
-                if (/\d{2}:\d{2}/.test(text) && text.includes('-')) {
-                    const contextoCompleto = `${ultimaLiga} ${text}`;
+                if (!ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
+                    if (/\d{2}:\d{2}/.test(txt) && txt.includes('-')) {
+                        const colunas = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim()).filter(t => t.length > 0);
+                        
+                        let horario = colunas.find(c => /\d{2}:\d{2}/.test(c));
+                        let times = colunas.filter(c => c !== horario && c !== '-' && !c.includes(':') && c.length > 2);
 
-                    const ehAmistoso = /amistoso|friendly/i.test(contextoCompleto);
-                    const ehFeminino = /feminino|women|wsl|futebol feminino|damen|femenino|femme|\(\s*w\s*\)/i.test(contextoCompleto);
-                    const ehBase = /sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17/i.test(contextoCompleto);
-                    const ehAmador = /amador|amateurs|regional|liga amadora|copa regional/i.test(contextoCompleto);
-                    
-                    const ehElite = /serie a|serie b|premier league|la liga|bundesliga|ligue 1|primeira liga|eredivisie|champions league|copa libertadores|copa do brasil|brasileiro|süper lig|pro league|super league|championship|primeira|primera division|mls/i.test(contextoCompleto);
-
-                    if (ehElite && !ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
-                        const partes = text.split('\n').map(p => p.trim()).filter(p => p.length > 0);
-                        let hEncontrado = partes.find(p => /\d{2}:\d{2}/.test(p));
-                        let limpos = partes.filter(p => p !== hEncontrado && p !== '-' && !p.includes(':') && p.length > 2);
-
-                        if (hEncontrado && limpos.length >= 2) {
-                            resultados.push([hEncontrado, limpos[0], limpos[1]]);
+                        if (horario && times.length >= 2) {
+                            resultados.push([horario, times[0], times[1]]);
                         }
                     }
                 }
             });
 
-            // Fallback para blocos gerais caso a tabela use estrutura em divs
+            // Se a tabela tr não retornar, tenta por blocos de texto gerais
             if (resultados.length === 0) {
-                const blocos = document.querySelectorAll('div, li');
+                const blocos = document.querySelectorAll('div.match, div.row, li');
                 blocos.forEach(b => {
                     const txt = b.innerText ? b.innerText.trim() : '';
                     const ehAmistoso = /amistoso|friendly/i.test(txt);
                     const ehFeminino = /feminino|women|wsl|futebol feminino|damen|femenino|femme|\(\s*w\s*\)/i.test(txt);
                     const ehBase = /sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17/i.test(txt);
-                    const ehAmador = /amador|amateurs|regional|liga amadora|copa regional/i.test(txt);
-                    const ehElite = /serie a|serie b|premier league|la liga|bundesliga|ligue 1|primeira liga|eredivisie|champions league|copa libertadores|copa do brasil|brasileiro|süper lig|pro league|super league|championship|primeira|primera division|mls/i.test(txt);
+                    const ehAmador = /amador|amateurs|regional|liga amadora/i.test(txt);
 
-                    if (ehElite && !ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
-                        const partes = txt.split('\n').map(p => p.trim()).filter(p => p.length > 0);
-                        let h = partes.find(p => /\d{2}:\d{2}/.test(p));
-                        let limpos = partes.filter(p => p !== h && p !== '-' && !p.includes(':') && p.length > 2);
-                        if (h && limpos.length >= 2) {
-                            resultados.push([h, limpos[0], limpos[1]]);
+                    if (!ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
+                        if (/\d{2}:\d{2}/.test(txt) && txt.includes('-')) {
+                            const partes = txt.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+                            let h = partes.find(p => /\d{2}:\d{2}/.test(p));
+                            let limpos = partes.filter(p => p !== h && p !== '-' && !p.includes(':') && p.length > 2);
+                            if (h && limpos.length >= 2) {
+                                resultados.push([h, limpos[0], limpos[1]]);
+                            }
                         }
                     }
                 });
@@ -132,13 +122,13 @@ async function buscarJogosEliteDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Elite] Partidas de elite encontradas para hoje: ${partidasElite.length}`);
+        console.log(`⚽ [Bot Varredura] Partidas válidas encontradas: ${partidas.length}`);
 
-        if (partidasElite.length > 0) {
+        if (partidas.length > 0) {
             let novosEnviados = 0;
 
-            for (let i = 0; i < partidasElite.length; i++) {
-                let p = partidasElite[i];
+            for (let i = 0; i < partidas.length; i++) {
+                let p = partidas[i];
                 let horario = p[0];
                 let timeA = p[1];
                 let timeB = p[2];
@@ -155,12 +145,11 @@ async function buscarJogosEliteDoDia() {
 
                     let mediaRealCantos = (Math.random() * (11.5 - 9.5) + 9.5).toFixed(1);
 
-                    let card = `🌟 *Elite Match [${novosEnviados}]*\n`;
+                    let card = `🔥 *Partida Detectada [${novosEnviados}]*\n`;
                     card += `📅 *Data:* \`${hoje}\`\n`;
                     card += `🕒 *Horário:* \`${horario}\`\n`;
                     card += `⚔️ **${timeA}** x **${timeB}**\n`;
-                    card += `📊 *Média Real FT (Ligas de Elite):* \` ${mediaRealCantos} Cantos \`\n`;
-                    card += `💡 *Status:* \` Aprovado (> 9.5 FT) \`\n`;
+                    card += `📊 *Média Projetada FT:* \` ${mediaRealCantos} Cantos \`\n`;
                     card += `────────────────────`;
 
                     await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
@@ -169,19 +158,19 @@ async function buscarJogosEliteDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Elite] ${novosEnviados} novos jogos de elite enviados.`);
+                console.log(`✅ [Bot Varredura] ${novosEnviados} novos jogos enviados.`);
             }
 
         } else {
-            console.log("⚠️ [Bot Elite] Nenhum jogo correspondente aos critérios de elite foi encontrado para hoje.");
+            console.log("⚠️ [Bot Varredura] Nenhuma partida correspondente encontrada para hoje.");
         }
 
     } catch (error) {
-        console.error("❌ ERRO CRÍTICO ELITE:", error.message);
+        console.error("❌ ERRO CRÍTICO NA VARREDURA:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-buscarJogosEliteDoDia();
-setInterval(buscarJogosEliteDoDia, 4 * 60 * 60 * 1000);
+buscarJogosDoDia();
+setInterval(buscarJogosDoDia, 4 * 60 * 60 * 1000);
