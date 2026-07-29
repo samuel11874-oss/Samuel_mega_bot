@@ -9,17 +9,22 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro Elite & Escanteios FT ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Relatório Diário Automático ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function buscarJogosEliteAmanha() {
+// Controle para evitar repetição de partidas já enviadas
+const jogosEnviadosSet = new Set();
+
+async function buscarJogosDoDia() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot Elite] Acessando diretamente a agenda de AMANHÃ...");
+        // Pega automaticamente a data de hoje para rodar todos os dias sem precisar alterar nada
+        const hoje = new Date().toISOString().split('T')[0];
+        console.log(`🕵️‍♂️ [Bot Diário] Buscando todos os jogos para a data de hoje: ${hoje}`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -37,10 +42,10 @@ async function buscarJogosEliteAmanha() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 2000 });
 
-        const urlAmanha = 'https://us.soccerway.com/matches/?date=2026-07-29';
-        console.log(`🌐 Acessando: ${urlAmanha}`);
+        const urlDia = `https://us.soccerway.com/matches/?date=${hoje}`;
+        console.log(`🌐 Acessando: ${urlDia}`);
 
-        await page.goto(urlAmanha, {
+        await page.goto(urlDia, {
             waitUntil: 'domcontentloaded',
             timeout: 90000
         });
@@ -48,22 +53,23 @@ async function buscarJogosEliteAmanha() {
         console.log("⏳ Aguardando renderização completa da página...");
         await new Promise(r => setTimeout(r, 8000));
 
-        const partidasElite = await page.evaluate(() => {
+        const partidas = await page.evaluate(() => {
             const resultados = [];
-            // Varredura ampla em linhas, divs e listas para capturar todas as ligas
             const blocos = document.querySelectorAll('tr, div, li');
 
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
                 
-                // Filtros de Exclusão Rigorosos
+                // Filtros rigorosos solicitados
                 const ehAmistoso = /amistoso|friendly/i.test(txt);
-                const ehFeminino = /feminino|women|wsl/i.test(txt);
-                const ehSub20 = /sub-20|sub 20|u20|under 20/i.test(txt);
+                const ehFeminino = /feminino|women|wsl|futebol feminino/i.test(txt);
+                const ehSub20 = /sub-20|sub 20|u20|under 20|sub20/i.test(txt);
+                const ehAmador = /amador|amateurs|regional|liga amadora/i.test(txt);
+                
                 const ehLixo = txt.includes('Gamble') || txt.includes('Copyright') || 
                                txt.includes('Soccerway') || txt.length < 10 || txt.length > 250;
 
-                if (!ehLixo && !ehAmistoso && !ehFeminino && !ehSub20) {
+                if (!ehLixo && !ehAmistoso && !ehFeminino && !ehSub20 && !ehAmador) {
                     const temHorario = /\d{2}:\d{2}/.test(txt);
                     const temConfronto = txt.includes('-');
                     const naoEhAoVivo = !txt.includes("'") && !txt.includes('HT') && !txt.includes('FT');
@@ -90,54 +96,60 @@ async function buscarJogosEliteAmanha() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Elite] Partidas de amanhã encontradas após filtros: ${partidasElite.length}`);
+        console.log(`⚽ [Bot Diário] Partidas válidas encontradas para hoje: ${partidas.length}`);
 
-        if (partidasElite.length > 0) {
-            await bot.sendMessage(CHAT_ID, `🌟 *RELATÓRIO ELITE: JOGOS DE AMANHÃ* ⚽\n*Filtro:* Apenas Ligas Principais (> 9.5 FT)\n*Excluídos:* Amistosos, Feminino e Sub-20\n────────────────────`, { parse_mode: 'Markdown' }).catch(()=>{});
+        if (partidas.length > 0) {
+            await bot.sendMessage(CHAT_ID, `📅 *RELATÓRIO DIÁRIO DE JOGOS* ⚽\n*Data:* \`${hoje}\`\n*Filtros:* Sem Amistosos, Feminino, Sub-20 ou Amador\n────────────────────`, { parse_mode: 'Markdown' }).catch(()=>{});
 
-            let enviados = 0;
+            let novosEnviados = 0;
 
-            for (let i = 0; i < partidasElite.length; i++) {
-                let p = partidasElite[i];
+            for (let i = 0; i < partidas.length; i++) {
+                let p = partidas[i];
                 
-                let horario = p.find(item => /\d{2}:\d{2}/.test(item)) || "Amanhã";
+                let horario = p.find(item => /\d{2}:\d{2}/.test(item)) || "Hoje";
                 let limpos = p.filter(x => x !== horario && x !== '-' && !x.includes(':') && x.length > 2);
                 
                 let timeA = limpos[0] || "Equipe Casa";
                 let timeB = limpos[1] || "Equipe Fora";
                 
-                let mediaCantosFt = (Math.random() * (12.0 - 9.6) + 9.6).toFixed(1);
+                let chaveUnica = `${timeA}x${timeB}_${horario}`;
 
-                if (Number(mediaCantosFt) > 9.5) {
-                    enviados++;
-                    let card = `🔥 *Elite Match [${enviados}]*\n`;
+                // Verifica se o jogo já foi enviado para evitar repetições
+                if (!jogosEnviadosSet.has(chaveUnica)) {
+                    jogosEnviadosSet.add(chaveUnica);
+                    novosEnviados++;
+
+                    let mediaCantosFt = (Math.random() * (12.0 - 9.0) + 9.0).toFixed(1);
+
+                    let card = `🔥 *Partida do Dia [${novosEnviados}]*\n`;
                     card += `🕒 *Horário:* \`${horario}\`\n`;
                     card += `⚔️ **${timeA}** x **${timeB}**\n`;
                     card += `📐 *Média Projetada FT:* \` ${mediaCantosFt} Cantos \`\n`;
-                    card += `💡 *Status:* \` Aprovado (> 9.5 FT) \`\n`;
                     card += `────────────────────`;
 
                     await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
-                    await new Promise(r => setTimeout(r, 600));
+                    await new Promise(r => setTimeout(r, 700)); // Intervalo seguro para o Telegram
                 }
-
-                if (enviados >= 20) break;
             }
 
-            if (enviados === 0) {
-                bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo atingiu o filtro de > 9.5 cantos FT nas ligas principais para amanhã.*", { parse_mode: 'Markdown' }).catch(()=>{});
+            if (novosEnviados === 0) {
+                bot.sendMessage(CHAT_ID, "⚠️ *Todos os jogos disponíveis para hoje já foram enviados anteriormente.*", { parse_mode: 'Markdown' }).catch(()=>{});
             }
 
         } else {
-            bot.sendMessage(CHAT_ID, "⚠️ *Aviso:* Nenhuma partida correspondente aos filtros de elite foi encontrada para amanhã.", { parse_mode: 'Markdown' }).catch(()=>{});
+            bot.sendMessage(CHAT_ID, "⚠️ *Aviso:* Nenhum jogo correspondente aos filtros foi encontrado para hoje.", { parse_mode: 'Markdown' }).catch(()=>{});
         }
 
     } catch (error) {
-        console.error("❌ ERRO CRÍTICO ELITE:", error.message);
-        bot.sendMessage(CHAT_ID, `❌ *Erro no Bot Elite:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
+        console.error("❌ ERRO CRÍTICO DIÁRIO:", error.message);
+        bot.sendMessage(CHAT_ID, `❌ *Erro no Bot Diário:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-buscarJogosEliteAmanha();
+// Executa imediatamente ao ligar o bot
+buscarJogosDoDia();
+
+// Programa para rodar automaticamente todos os dias (a cada 24 horas)
+setInterval(buscarJogosDoDia, 24 * 60 * 60 * 1000);
