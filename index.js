@@ -43,23 +43,20 @@ async function buscarJogosAoVivo() {
             timeout: 45000
         });
 
-        // Aguarda a página carregar e tenta clicar na aba "LIVE" para filtrar os jogos do momento
         await new Promise(r => setTimeout(r, 4000));
         
         try {
-            console.log("🔍 [Bot US] Procurando e clicando na aba 'LIVE'...");
             await page.evaluate(() => {
                 const links = Array.from(document.querySelectorAll('a, span, div'));
                 const abaLive = links.find(el => el.innerText && el.innerText.trim() === 'LIVE');
                 if (abaLive) abaLive.click();
             });
-            // Espera a listagem ao vivo carregar após o clique
             await new Promise(r => setTimeout(r, 5000));
         } catch (e) {
-            console.log("⚠️ Não foi possível clicar na aba Live diretamente, seguindo com varredura geral.");
+            console.log("⚠️ Seguindo com varredura geral.");
         }
 
-        // Varredura focada em capturar placares, tempos de jogo e confrontos
+        // Varredura cirúrgica com bloqueio absoluto de textos indesejados (rodapés, gambling, menus)
         const partidas = await page.evaluate(() => {
             const resultados = [];
             const blocos = document.querySelectorAll('tr, div, li');
@@ -67,14 +64,16 @@ async function buscarJogosAoVivo() {
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
                 
-                // Ignora menus e lixo
-                const ehMenu = txt.includes('FAVORITES') || txt.includes('PREMIER LEAGUE') || txt.includes('LALIGA');
-                
-                if (!ehMenu && txt.includes('\n') && txt.length > 10 && txt.length < 140) {
-                    // Procura por indicadores de partidas em andamento (minutos como 45', 78', ou placares com traço)
-                    if ((txt.includes("'") || /\d+[\s-]+\d+/.test(txt)) && !resultados.includes(txt)) {
+                // Filtros rigorosos anti-lixo
+                const ehLixo = txt.includes('Gamble') || txt.includes('Copyright') || txt.includes('Soccerway') || 
+                               txt.includes('FAVORITES') || txt.includes('PREMIER LEAGUE') || txt.includes('LALIGA') ||
+                               txt.length < 10 || txt.length > 130;
+
+                if (!ehLixo && txt.includes('\n')) {
+                    // Garante que é uma linha de jogo (contém minutos ou indicativos de tempo e placar)
+                    if (txt.includes("'") || txt.includes('Half Time') || txt.includes('FT') || /\d+[\s-]+\d+/.test(txt)) {
                         const formatado = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0).join(' | ');
-                        if (formatado.length > 10 && !resultados.includes(formatado)) {
+                        if (!resultados.includes(formatado)) {
                             resultados.push(formatado);
                         }
                     }
@@ -84,13 +83,19 @@ async function buscarJogosAoVivo() {
             return resultados;
         });
 
-        console.log(`⚽ [Bot US] Partidas ao vivo/recentes filtradas: ${partidas.length}`);
+        console.log(`⚽ [Bot US] Partidas ao vivo limpas: ${partidas.length}`);
 
         if (partidas.length > 0) {
-            let msg = `🔴 *JOGOS AO VIVO / RECENTES (${partidas.length})*\n\n`;
-            partidas.slice(0, 15).forEach((p, i) => {
-                msg += `⚽ *${i + 1}:* ${p}\n\n`;
+            let msg = `🔴 *MONITOR DE PARTIDAS AO VIVO* ⚽\n`;
+            msg += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+            partidas.slice(0, 12).forEach((p, i) => {
+                msg += `⚡ *Jogo ${i + 1}*\n`;
+                msg += `📊 \`${p}\`\n\n`;
             });
+
+            msg += `━━━━━━━━━━━━━━━━━━━━━\n🔥 *Atualizado em tempo real*`;
+
             bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(()=>{});
         } else {
             bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo ao vivo encontrado no momento da varredura.*", { parse_mode: 'Markdown' }).catch(()=>{});
