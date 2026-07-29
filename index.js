@@ -57,7 +57,6 @@ async function buscarJogosAoVivo() {
             console.log("⚠️ Não foi possível clicar na aba Live diretamente, seguindo com varredura geral.");
         }
 
-        // Lógica original de varredura que encontrava os jogos com sucesso
         const partidas = await page.evaluate(() => {
             const resultados = [];
             const blocos = document.querySelectorAll('tr, div, li');
@@ -87,7 +86,6 @@ async function buscarJogosAoVivo() {
         console.log(`⚽ [Bot US] Partidas ao vivo encontradas: ${partidas.length}`);
 
         if (partidas.length > 0) {
-            // Envia cada jogo como um card individual separado e limpo
             for (let i = 0; i < Math.min(partidas.length, 20); i++) {
                 let p = partidas[i];
                 
@@ -112,17 +110,17 @@ async function buscarJogosAoVivo() {
                     }
                 }
 
-                // Monta o card individual limpo e profissional
+                // Card individual limpo, organizado e com espaço dedicado para estatísticas/cantos
                 let card = `⚡ *Partida [${i + 1}]*\n`;
                 card += `────────────────────\n`;
                 card += `⏱ *Tempo:* \`${tempo}\`\n`;
                 card += `⚽ **${timeA}** x **${timeB}**\n`;
                 card += `📊 *Placar:* \` ${golA} x ${golB} \`\n`;
+                card += `📐 *Cantos / Cartões:* \`Aguardando dados oficiais\`\n`;
                 card += `────────────────────`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
                 
-                // Intervalo de segurança entre as mensagens para o Telegram
                 await new Promise(r => setTimeout(r, 600));
             }
 
