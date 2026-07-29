@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Extraindo campeonatos, partidas e escanteios AO VIVO...");
+        console.log("🕵️‍♂️ [Bot US] Varredura inteligente de campeonatos e partidas AO VIVO...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -56,27 +56,28 @@ async function buscarJogosAoVivo() {
             console.log("⚠️ Seguindo com varredura geral.");
         }
 
-        // Extração avançada capturando o campeonato e as linhas da partida
+        // Varredura flexível para capturar campeonatos e partidas ao vivo sem falhas
         const partidas = await page.evaluate(() => {
             const matches = [];
             let currentComp = "Futebol Ao Vivo";
             
-            const elements = document.querySelectorAll('tr, h3, h4, div');
+            const elements = document.querySelectorAll('tr, h2, h3, h4, th, div');
+            
             elements.forEach(el => {
                 const text = el.innerText ? el.innerText.trim() : '';
                 
-                // Identifica o nome do campeonato/liga na página
-                if ((el.tagName === 'H3' || el.tagName === 'H4' || el.classList.contains('competition') || el.classList.contains('group-title')) && text.length > 3 && text.length < 60) {
-                    currentComp = text;
+                // Atualiza o nome do campeonato quando encontra um cabeçalho válido
+                if ((el.tagName === 'TH' || el.tagName === 'H2' || el.tagName === 'H3' || el.tagName === 'H4' || el.className.includes('competition') || el.className.includes('title') || el.className.includes('group')) && text.length > 3 && text.length < 90) {
+                    if (!text.includes("'") && !/\d+\s*-\s*\d+/.test(text) && !text.includes("Gamble")) {
+                        currentComp = text;
+                    }
                 }
                 
-                // Identifica a linha da partida
-                if (el.tagName === 'TR' || el.classList.contains('match-row')) {
-                    const rowText = text;
-                    const ehLixo = rowText.includes('Gamble') || rowText.includes('Copyright') || rowText.includes('Soccerway');
-                    
-                    if (!ehLixo && (rowText.includes("'") || rowText.includes('FT') || rowText.includes('HT') || /\d+\s*-\s*\d+/.test(rowText))) {
-                        const lines = rowText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                // Detecta e extrai a linha do jogo
+                const ehLixo = text.includes('Gamble') || text.includes('Copyright') || text.includes('Soccerway') || text.includes('FAVORITES');
+                if (!ehLixo && text.includes('\n')) {
+                    if (text.includes("'") || text.includes('Half Time') || text.includes('FT') || text.includes('HT') || /\d+\s*-\s*\d+/.test(text)) {
+                        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                         if (lines.length >= 3) {
                             matches.push({
                                 competicao: currentComp,
@@ -101,13 +102,11 @@ async function buscarJogosAoVivo() {
             return unique;
         });
 
-        console.log(`⚽ [Bot US] Partidas com campeonato capturadas: ${partidas.length}`);
+        console.log(`⚽ [Bot US] Partidas capturadas com sucesso: ${partidas.length}`);
 
         if (partidas.length > 0) {
-            // Envia um aviso inicial discreto
-            await bot.sendMessage(CHAT_ID, `🔴 *ATUALIZAÇÃO DE JOGOS AO VIVO* (${Math.min(partidas.length, 10)} partidas) ⚽`, { parse_mode: 'Markdown' }).catch(()=>{});
+            await bot.sendMessage(CHAT_ID, `🔴 *MONITOR DE PARTIDAS AO VIVO* (${Math.min(partidas.length, 10)} jogos) ⚽`, { parse_mode: 'Markdown' }).catch(()=>{});
 
-            // Envia cada partida como um card separado e individual no Telegram
             for (let i = 0; i < Math.min(partidas.length, 10); i++) {
                 const p = partidas[i];
                 const l = p.linhas;
@@ -118,7 +117,6 @@ async function buscarJogosAoVivo() {
                 let golA = l[3] || "0";
                 let golB = l[4] || "0";
                 
-                // Procura por informações adicionais ou cantos nas colunas restantes
                 let extras = l.slice(5).filter(x => x !== '-' && x !== '').join(' | ');
 
                 let card = `🏆 *${p.competicao}*\n`;
@@ -135,7 +133,6 @@ async function buscarJogosAoVivo() {
                 card += `━━━━━━━━━━━━━━━━━━━━━`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
-                // Pausa de meio segundo entre mensagens para respeitar o limite do Telegram
                 await new Promise(r => setTimeout(r, 500));
             }
 
