@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Varredura adaptada ao layout mobile do Soccerway...");
+        console.log("🕵️‍♂️ [Bot US] Varredura limpa de partidas AO VIVO...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -34,7 +34,6 @@ async function buscarJogosAoVivo() {
         });
 
         const page = await browser.newPage();
-        // Configura o navegador exatamente como um celular para abrir o layout mobile idêntico ao seu print
         await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36');
         await page.setViewport({ width: 412, height: 915, isMobile: true });
 
@@ -57,32 +56,19 @@ async function buscarJogosAoVivo() {
             console.log("⚠️ Seguindo com varredura geral.");
         }
 
-        // Varredura focada nos blocos e campeonatos do site mobile
+        // Varredura direta focada em capturar as linhas de partidas ativas
         const partidas = await page.evaluate(() => {
             const matches = [];
-            let campeonatoAtual = "Futebol Ao Vivo";
-            
             const blocos = document.querySelectorAll('div, tr, li');
 
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
                 
-                // Identifica o nome do campeonato na versão mobile
-                if (txt && txt.length < 60 && (txt.includes('ARGENTINA') || txt.includes('BRAZIL') || txt.includes('CANADA') || txt.includes('Serie') || txt.includes('Clausura') || txt.includes('League') || txt.includes('Premier') || txt.includes('Divisão'))) {
-                    if (!txt.includes("'") && !txt.includes(" - ") && !txt.includes("Gamble")) {
-                        campeonatoAtual = txt.split('\n')[0];
-                    }
-                }
-                
-                // Identifica as partidas ao vivo pelos tempos ou placares
                 if (txt && (txt.includes("'") || txt.includes('HT') || txt.includes('FT') || txt.includes('Half Time') || /\d+\s*-\s*\d+/.test(txt))) {
                     const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                     
                     if (linhas.length >= 3 && !txt.includes('Gamble') && !txt.includes('Copyright') && !txt.includes('Soccerway') && !txt.includes('FAVORITES')) {
-                        matches.push({
-                            competicao: campeonatoAtual,
-                            linhas: linhas
-                        });
+                        matches.push(linhas);
                     }
                 }
             });
@@ -91,7 +77,7 @@ async function buscarJogosAoVivo() {
             const unicas = [];
             const vistas = new Set();
             matches.forEach(m => {
-                const chave = m.linhas.slice(0, 3).join('-');
+                const chave = m.slice(0, 3).join('-');
                 if (!vistas.has(chave)) {
                     vistas.add(chave);
                     unicas.push(m);
@@ -107,17 +93,15 @@ async function buscarJogosAoVivo() {
             await bot.sendMessage(CHAT_ID, `🔴 *MONITOR DE PARTIDAS AO VIVO* (${Math.min(partidas.length, 10)} jogos) ⚽`, { parse_mode: 'Markdown' }).catch(()=>{});
 
             for (let i = 0; i < Math.min(partidas.length, 10); i++) {
-                const p = partidas[i];
-                const l = p.linhas;
+                const l = partidas[i];
                 
                 let tempo = "Ao Vivo";
-                let timeA = l[1] || "Casa";
-                let timeB = l[2] || "Fora";
+                let timeA = "Casa";
+                let timeB = "Fora";
                 let golA = "0";
                 let golB = "0";
                 let extras = "";
 
-                // Extração inteligente baseada na linha do minuto/tempo
                 let idxTempo = l.findIndex(item => item.includes("'") || item === 'HT' || item === 'FT' || /^\d{1,2}$/.test(item));
                 
                 if (idxTempo !== -1) {
@@ -139,7 +123,7 @@ async function buscarJogosAoVivo() {
                     extras = l.slice(5).filter(x => x !== '-' && x !== '').join(' | ');
                 }
 
-                let card = `🏆 *${p.competicao}*\n`;
+                let card = `⚡ *Partida [${i + 1}]*\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━\n`;
                 card += `⏱ *Tempo:* \`${tempo}\`\n`;
                 card += `⚽ *Confronto:* **${timeA}** x **${timeB}**\n`;
