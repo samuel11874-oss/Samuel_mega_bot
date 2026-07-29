@@ -5,7 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro Rigoroso de Data Brasil ⚽🔥</h2><p>Apenas partidas do dia atual (Hora local)</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro Ajustado com Logs ⚽🔥</h2><p>Monitorando ligas principais de hoje</p>'));
 
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
@@ -23,20 +23,17 @@ const API_HEADERS = {
 let jogosEnviados = new Set();
 let ultimaDataExecucao = '';
 
-// Retorna a data de hoje no Brasil (YYYY-MM-DD)
 function getDataBrasil() {
     const agora = new Date();
     return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 }
 
-// Retorna a data de amanhã no Brasil (para cobrir o range UTC correto)
 function getDataAmanhaBrasil() {
     const agora = new Date();
     agora.setDate(agora.getDate() + 1);
     return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 }
 
-// Converte a data da API para a data real no fuso do Brasil
 function getDataJogoBrasil(utcDateString) {
     const dateObj = new Date(utcDateString);
     return dateObj.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -53,12 +50,12 @@ function getBandeira(teamName) {
     return list[teamName] || "⚽";
 }
 
-// 🚫 TERMOS PROIBIDOS (Feminino, Base, Amador, Amistosos e Ligas Inferiores/B)
+// 🚫 Bloqueia estritamente feminino, base e divisões inferiores
 function contemTermoProibido(nomeLiga) {
     const termos = [
         "women", "feminino", "u19", "u20", "u21", "u23", "sub-", "sub ", 
         "friendlies", "amistosos", "amateur", "amador", "youth", "júnior", 
-        "reserves", "b", "division 2", "segunda", "serie b"
+        "reserves", "divisão 2", "division 2", "segunda", "serie b", "league 2"
     ];
     
     const ligaLower = nomeLiga.toLowerCase();
@@ -70,20 +67,21 @@ function contemTermoProibido(nomeLiga) {
     return false;
 }
 
-// ✅ LIGAS DE ELITE PERMITIDAS
+// ✅ Validação flexível e abrangente para divisões principais
 function ehLigaDeElite(nomeLiga) {
     if (contemTermoProibido(nomeLiga)) {
         return false;
     }
 
     const ligasPermitidas = [
-        "Serie A", "Premier League", "La Liga", "Bundesliga", "Ligue 1",
-        "Copa Libertadores", "Copa Sudamericana", "UEFA Champions League", 
-        "UEFA Europa League", "Copa do Brasil", "Liga Profesional", 
-        "Division Profesional", "Eredivisie", "Primeira Liga"
+        "serie a", "premier league", "la liga", "bundesliga", "ligue 1",
+        "libertadores", "sudamericana", "champions league", "europa league", 
+        "copa do brasil", "liga profesional", "division profesional", 
+        "eredivisie", "primeira liga", "brasileiro"
     ];
 
-    return ligasPermitidas.some(liga => nomeLiga.includes(liga));
+    const ligaLower = nomeLiga.toLowerCase();
+    return ligasPermitidas.some(liga => ligaLower.includes(liga));
 }
 
 function enviarCard(fonte, t1, t2, hora, competencia, mediaReal) {
@@ -111,26 +109,33 @@ async function buscarJogosApiSports() {
     try {
         console.log(`🔍 [API-Sports] Consultando jogos válidos para hoje no Brasil (${hojeIso})...`);
         
-        // Consulta o intervalo que cobre 100% do dia no Brasil sem falhas de fuso UTC
         const response = await axios.get(`https://v3.football.api-sports.io/fixtures?from=${hojeIso}&to=${amanhaIso}`, {
             headers: API_HEADERS
         });
 
-        if (!response.data || !response.data.response) return;
+        if (!response.data || !response.data.response) {
+            console.log("⚠️ [API-Sports] Resposta vazia da API.");
+            return;
+        }
 
         ultimaDataExecucao = hojeIso;
         const matches = response.data.response;
         let encontrados = 0;
+        let totalAnalisados = matches.length;
+
+        console.log(`📊 [API-Sports] Total bruto retornado pela API: ${totalAnalisados} partidas.`);
 
         for (const match of matches) {
-            // VALIDAÇÃO CRUCIAL: Garante que a data do jogo no fuso do Brasil é EXATAMENTE HOJE
             const dataJogoBrasil = getDataJogoBrasil(match.fixture.date);
+            
+            // Filtro rigoroso de data local do Brasil
             if (dataJogoBrasil !== hojeIso) {
-                continue; // Descarta tudo que não for de hoje no Brasil (elimina ontem e amanhã)
+                continue; 
             }
 
             const competencia = match.league.name;
 
+            // Filtro de ligas principais
             if (!ehLigaDeElite(competencia)) {
                 continue;
             }
@@ -145,7 +150,7 @@ async function buscarJogosApiSports() {
             });
 
             const mediaRealCalculada = (10.6 + (Math.abs(t1.length - t2.length) % 2.5)).toFixed(1);
-            const chave = `apisports_exato_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
+            const chave = `apisports_v3_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
 
             if (!jogosEnviados.has(chave)) {
                 jogosEnviados.add(chave);
