@@ -5,7 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro de Data Preciso (Brasil) ⚽🔥</h2><p>Apenas jogos do dia atual, sem mistura de datas</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro Rigoroso de Data Brasil ⚽🔥</h2><p>Apenas partidas do dia atual (Hora local)</p>'));
 
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
@@ -23,13 +23,20 @@ const API_HEADERS = {
 let jogosEnviados = new Set();
 let ultimaDataExecucao = '';
 
-// Retorna a data atual rigorosamente no Horário de Brasília (YYYY-MM-DD)
+// Retorna a data de hoje no Brasil (YYYY-MM-DD)
 function getDataBrasil() {
     const agora = new Date();
     return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 }
 
-// Converte a data da API (UTC) para a data correspondente no Horário de Brasília
+// Retorna a data de amanhã no Brasil (para cobrir o range UTC correto)
+function getDataAmanhaBrasil() {
+    const agora = new Date();
+    agora.setDate(agora.getDate() + 1);
+    return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+}
+
+// Converte a data da API para a data real no fuso do Brasil
 function getDataJogoBrasil(utcDateString) {
     const dateObj = new Date(utcDateString);
     return dateObj.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -95,15 +102,17 @@ function enviarCard(fonte, t1, t2, hora, competencia, mediaReal) {
 
 async function buscarJogosApiSports() {
     const hojeIso = getDataBrasil();
+    const amanhaIso = getDataAmanhaBrasil();
     
     if (ultimaDataExecucao === hojeIso) {
         return;
     }
 
     try {
-        console.log(`🔍 [API-Sports] Consultando jogos estritamente para hoje no Brasil: ${hojeIso}`);
+        console.log(`🔍 [API-Sports] Consultando jogos válidos para hoje no Brasil (${hojeIso})...`);
         
-        const response = await axios.get(`https://v3.football.api-sports.io/fixtures?date=${hojeIso}`, {
+        // Consulta o intervalo que cobre 100% do dia no Brasil sem falhas de fuso UTC
+        const response = await axios.get(`https://v3.football.api-sports.io/fixtures?from=${hojeIso}&to=${amanhaIso}`, {
             headers: API_HEADERS
         });
 
@@ -114,15 +123,14 @@ async function buscarJogosApiSports() {
         let encontrados = 0;
 
         for (const match of matches) {
-            // CORREÇÃO CRUCIAL: Converte o horário do jogo para o fuso do Brasil antes de validar a data
+            // VALIDAÇÃO CRUCIAL: Garante que a data do jogo no fuso do Brasil é EXATAMENTE HOJE
             const dataJogoBrasil = getDataJogoBrasil(match.fixture.date);
             if (dataJogoBrasil !== hojeIso) {
-                continue; // Descarta imediatamente qualquer jogo que não seja do dia de hoje no Brasil
+                continue; // Descarta tudo que não for de hoje no Brasil (elimina ontem e amanhã)
             }
 
             const competencia = match.league.name;
 
-            // Filtro rigoroso: Apenas ligas de elite
             if (!ehLigaDeElite(competencia)) {
                 continue;
             }
@@ -136,10 +144,8 @@ async function buscarJogosApiSports() {
                 minute: '2-digit'
             });
 
-            // Média real calculada acima de 10.5 FT
             const mediaRealCalculada = (10.6 + (Math.abs(t1.length - t2.length) % 2.5)).toFixed(1);
-
-            const chave = `apisports_preciso_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
+            const chave = `apisports_exato_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
 
             if (!jogosEnviados.has(chave)) {
                 jogosEnviados.add(chave);
