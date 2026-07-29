@@ -61,54 +61,63 @@ async function buscarJogosEliteDoDia() {
 
         const partidasElite = await page.evaluate(() => {
             const resultados = [];
-            // Seleciona blocos de tabelas ou listas de partidas por competição no Soccerway
-            const blocosCompeticao = document.querySelectorAll('div.match-list, table.matches, div.competition, div.card');
+            let ultimaLiga = '';
+            
+            // Varre todas as linhas da página mantendo o contexto da liga atual
+            const allRows = document.querySelectorAll('tr');
 
-            const containers = blocosCompeticao.length > 0 ? blocosCompeticao : document.querySelectorAll('tr, div');
+            allRows.forEach(row => {
+                const text = row.innerText ? row.innerText.trim() : '';
 
-            containers.forEach(bloco => {
-                const txt = bloco.innerText ? bloco.innerText.trim() : '';
+                // Identifica cabeçalhos de ligas/competições na tabela
+                if (row.classList.contains('group-head') || row.querySelector('th') || (row.className && row.className.includes('competition'))) {
+                    ultimaLiga = text;
+                }
 
-                // 1. Exclusão rigorosa
-                const ehAmistoso = /amistoso|friendly/i.test(txt);
-                const ehFeminino = /feminino|women|wsl|futebol feminino|damen|femenino|femme|\(\s*w\s*\)/i.test(txt);
-                const ehBase = /sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17/i.test(txt);
-                const ehAmador = /amador|amateurs|regional|liga amadora|copa regional/i.test(txt);
-                
-                // 2. Filtro estrito para Ligas de Elite
-                const ehElite = /serie a|premier league|la liga|bundesliga|ligue 1|primeira liga|eredivisie|champions league|copa libertadores|copa do brasil|brasileiro|süper lig|pro league|super league|championship|primeira|primera division/i.test(txt);
+                // Se a linha contém horário e traço de confronto
+                if (/\d{2}:\d{2}/.test(text) && text.includes('-')) {
+                    const contextoCompleto = `${ultimaLiga} ${text}`;
 
-                if (ehElite && !ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
-                    const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                    const ehAmistoso = /amistoso|friendly/i.test(contextoCompleto);
+                    const ehFeminino = /feminino|women|wsl|futebol feminino|damen|femenino|femme|\(\s*w\s*\)/i.test(contextoCompleto);
+                    const ehBase = /sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17/i.test(contextoCompleto);
+                    const ehAmador = /amador|amateurs|regional|liga amadora|copa regional/i.test(contextoCompleto);
                     
-                    for (let i = 0; i < linhas.length; i++) {
-                        if (/\d{2}:\d{2}/.test(linhas[i])) {
-                            let horario = linhas[i];
-                            let timeA = '';
-                            let timeB = '';
+                    const ehElite = /serie a|serie b|premier league|la liga|bundesliga|ligue 1|primeira liga|eredivisie|champions league|copa libertadores|copa do brasil|brasileiro|süper lig|pro league|super league|championship|primeira|primera division|mls/i.test(contextoCompleto);
 
-                            // Tenta capturar os times ao redor do horário ou traço
-                            for (let j = i + 1; j < Math.min(i + 6, linhas.length); j++) {
-                                if (linhas[j] === '-' || linhas[j].includes(' - ')) {
-                                    if (linhas[j] === '-') {
-                                        timeA = linhas[j - 1];
-                                        timeB = linhas[j + 1];
-                                    } else {
-                                        let partes = linhas[j].split(' - ');
-                                        timeA = partes[0];
-                                        timeB = partes[1];
-                                    }
-                                    break;
-                                }
-                            }
+                    if (ehElite && !ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
+                        const partes = text.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+                        let hEncontrado = partes.find(p => /\d{2}:\d{2}/.test(p));
+                        let limpos = partes.filter(p => p !== hEncontrado && p !== '-' && !p.includes(':') && p.length > 2);
 
-                            if (timeA && timeB && !timeA.includes(':') && !timeB.includes(':') && timeA.length > 2 && timeB.length > 2) {
-                                resultados.push([horario, timeA, timeB]);
-                            }
+                        if (hEncontrado && limpos.length >= 2) {
+                            resultados.push([hEncontrado, limpos[0], limpos[1]]);
                         }
                     }
                 }
             });
+
+            // Fallback para blocos gerais caso a tabela use estrutura em divs
+            if (resultados.length === 0) {
+                const blocos = document.querySelectorAll('div, li');
+                blocos.forEach(b => {
+                    const txt = b.innerText ? b.innerText.trim() : '';
+                    const ehAmistoso = /amistoso|friendly/i.test(txt);
+                    const ehFeminino = /feminino|women|wsl|futebol feminino|damen|femenino|femme|\(\s*w\s*\)/i.test(txt);
+                    const ehBase = /sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17/i.test(txt);
+                    const ehAmador = /amador|amateurs|regional|liga amadora|copa regional/i.test(txt);
+                    const ehElite = /serie a|serie b|premier league|la liga|bundesliga|ligue 1|primeira liga|eredivisie|champions league|copa libertadores|copa do brasil|brasileiro|süper lig|pro league|super league|championship|primeira|primera division|mls/i.test(txt);
+
+                    if (ehElite && !ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
+                        const partes = txt.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+                        let h = partes.find(p => /\d{2}:\d{2}/.test(p));
+                        let limpos = partes.filter(p => p !== h && p !== '-' && !p.includes(':') && p.length > 2);
+                        if (h && limpos.length >= 2) {
+                            resultados.push([h, limpos[0], limpos[1]]);
+                        }
+                    }
+                });
+            }
 
             const unicas = [];
             const vistas = new Set();
