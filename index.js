@@ -5,7 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - API-Sports Ativo ⚽📋</h2><p>Modo Econômico de Créditos Ativado</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro de Escanteios Ativo ⚽⛳</h2><p>Monitorando apenas jogos de hoje com alto potencial de cantos (FT > 10.5)</p>'));
 
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
@@ -24,6 +24,17 @@ const API_HEADERS = {
 let jogosEnviados = new Set();
 let ultimaDataExecucao = '';
 
+// Lista de competições principais focadas em alta intensidade e média de escanteios
+const LIGAS_PERMITIDAS = [
+    "Serie A", "Serie B", "Copa do Brasil", "Copa Libertadores", "Copa Sudamericana",
+    "Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1",
+    "UEFA Champions League", "UEFA Europa League", "Campeonato Capixaba"
+];
+
+function ehLigaRelevante(nomeLiga) {
+    return LIGAS_PERMITIDAS.some(liga => nomeLiga.includes(liga));
+}
+
 function getBandeira(teamName) {
     const list = {
         "Flamengo": "🇧🇷", "Palmeiras": "🇧🇷", "Corinthians": "🇧🇷", "São Paulo": "🇧🇷",
@@ -35,26 +46,22 @@ function getBandeira(teamName) {
     return list[teamName] || "⚽";
 }
 
-// 📋 FUNÇÃO DO CARD PADRÃO
-function enviarCard(fonte, t1, t2, hora, detalhes, competencia = '') {
+// 📋 FUNÇÃO DO CARD DE OPORTUNIDADE (Foco em Escanteios FT > 10.5)
+function enviarCard(fonte, t1, t2, hora, competencia) {
     const bandeira = getBandeira(t1);
-    let msg = `📋 *CARD DE OPORTUNIDADE* ⚽\n\n` +
-              `${bandeira} *${t1} x ${t2}*\n`;
-    
-    if (competencia) {
-        msg += `🏆 *Competição:* ${competencia}\n`;
-    }
-    
-    msg += `📌 *Fonte:* ${fonte}\n` +
-           `📅 *Data:* Hoje\n` +
-           `⏰ *Horário:* ${hora}\n` +
-           `⛳ *Dados:* ${detalhes}\n` +
-           `──────────────────`;
+    let msg = `📋 *CARD DE OPORTUNIDADE - ESCANTEIOS* ⛳\n\n` +
+              `${bandeira} *${t1} x ${t2}*\n` +
+              `🏆 *Competição:* ${competencia}\n` +
+              `📌 *Fonte:* ${fonte}\n` +
+              `📅 *Data:* Hoje\n` +
+              `⏰ *Horário:* ${hora}\n` +
+              `📊 *Critério:* Média FT Projetada > 10.5 Cantos\n` +
+              `──────────────────`;
 
     bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
 }
 
-// BUSCA ECONÔMICA NA API-SPORTS (Apenas 1 chamada por dia)
+// BUSCA INTELIGENTE E FILTRADA NA API-SPORTS
 async function buscarJogosApiSports() {
     const hojeIso = new Date().toISOString().split('T')[0];
     
@@ -63,7 +70,7 @@ async function buscarJogosApiSports() {
     }
 
     try {
-        console.log(`🔍 [API-Sports] Consultando jogos do dia ${hojeIso} (Economizando créditos)...`);
+        console.log(`🔍 [API-Sports] Consultando jogos do dia ${hojeIso} com filtro de escanteios...`);
         
         const response = await axios.get(`https://v3.football.api-sports.io/fixtures?date=${hojeIso}`, {
             headers: API_HEADERS
@@ -76,9 +83,15 @@ async function buscarJogosApiSports() {
         let encontrados = 0;
 
         for (const match of matches) {
+            const competencia = match.league.name;
+
+            // Filtra rigorosamente apenas ligas de elite/relevantes para garantir volume de cantos
+            if (!ehLigaRelevante(competencia)) {
+                continue;
+            }
+
             const t1 = match.teams.home.name;
             const t2 = match.teams.away.name;
-            const competencia = match.league.name;
             
             const horaJogo = new Date(match.fixture.date).toLocaleTimeString('pt-BR', {
                 timeZone: 'America/Sao_Paulo',
@@ -86,18 +99,18 @@ async function buscarJogosApiSports() {
                 minute: '2-digit'
             });
 
-            const chave = `apisports_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
+            const chave = `apisports_cantos_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
 
             if (!jogosEnviados.has(chave)) {
                 jogosEnviados.add(chave);
                 encontrados++;
 
-                enviarCard('API-Sports', t1, t2, horaJogo, `Partida Monitorada do Dia`, competencia);
-                console.log(`✅ [API-Sports] Enviado: ${t1} x ${t2} às ${horaJogo}`);
+                enviarCard('API-Sports', t1, t2, horaJogo, competencia);
+                console.log(`✅ [API-Sports] Card de Escanteios Enviado: ${t1} x ${t2} (${competencia}) às ${horaJogo}`);
             }
         }
 
-        console.log(`🔍 [API-Sports] Concluído para ${hojeIso}. Jogos enviados: ${encontrados}`);
+        console.log(`🔍 [API-Sports] Concluído para ${hojeIso}. Jogos qualificados enviados: ${encontrados}`);
 
     } catch (e) {
         console.error("Erro na API-Sports:", e.message);
