@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Diagnóstico & Varredura Soccerway ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro Rigoroso Ativo ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -30,7 +30,7 @@ async function buscarJogosDoDia() {
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Bot Diagnóstico] Acessando agenda para: ${hoje}`);
+        console.log(`🕵️‍♂️ [Bot Filtro Rigoroso] Acessando agenda para: ${hoje}`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -56,71 +56,61 @@ async function buscarJogosDoDia() {
             timeout: 90000
         });
 
-        // Aguarda especificamente o elemento principal de partidas do Soccerway carregar
-        console.log("⏳ Aguardando tabelas de partidas renderizarem...");
-        try {
-            await page.waitForSelector('table.matches, div.match-list, div.inner', { timeout: 15000 });
-        } catch (e) {
-            console.log("⚠️ Elemento padrão demorou, prosseguindo com análise...");
-        }
-
-        await new Promise(r => setTimeout(r, 5000));
-
-        // Diagnóstico: Pega o título da página para garantir que não foi bloqueado
-        const tituloPagina = await page.title();
-        console.log(`📄 Título da página carregada: "${tituloPagina}"`);
+        console.log("⏳ Aguardando renderização completa da página...");
+        await new Promise(r => setTimeout(r, 6000));
 
         const dadosExtraidos = await page.evaluate(() => {
             const resultados = [];
-            
-            // O Soccerway organiza os jogos em tabelas com classe 'matches' ou blocos de linhas
-            const linhas = document.querySelectorAll('table.matches tr, tr.match, tr');
+            let ligaAtual = '';
 
-            linhas.forEach(tr => {
-                const txt = tr.innerText ? tr.innerText.trim() : '';
-                
-                // Filtros de exclusão rigorosos (Feminino, Sub-20/19/17, Amistosos, Amador)
-                const ehAmistoso = /amistoso|friendly/i.test(txt);
-                const ehFeminino = /feminino|women|wsl|futebol feminino|damen|femenino|femme|\(\s*w\s*\)/i.test(txt);
-                const ehBase = /sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17/i.test(txt);
-                const ehAmador = /amador|amateurs|regional|liga amadora/i.test(txt);
+            // Varre os blocos/tabelas da página capturando o contexto da liga
+            const blocos = document.querySelectorAll('tr, div.match-list, div.competition');
 
-                if (!ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
-                    if (/\d{2}:\d{2}/.test(txt) && txt.includes('-')) {
-                        const celulas = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim()).filter(t => t.length > 0);
+            blocos.forEach(el => {
+                const txt = el.innerText ? el.innerText.trim() : '';
+
+                // Captura cabeçalho de ligas ou competições
+                if (el.classList.contains('group-head') || el.querySelector('th') || el.tagName === 'TH') {
+                    if (txt.length > 2) ligaAtual = txt;
+                }
+
+                // Verifica se a linha/bloco é uma partida válida
+                if (/\d{2}:\d{2}/.test(txt) && txt.includes('-')) {
+                    const contextoCompleto = `${ligaAtual} ${txt}`.toLowerCase();
+
+                    // Expressões de bloqueio rigorosas
+                    const ehAmistoso = /amistoso|friendly|friendlies/i.test(contextoCompleto);
+                    const ehFeminino = /feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|women's/i.test(contextoCompleto);
+                    const ehBase = /sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub 17|sub-21|u21|sub-15|u15|reserves|b team/i.test(contextoCompleto);
+                    const ehAmador = /amador|amateurs|regional|liga amadora/i.test(contextoCompleto);
+
+                    if (!ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
+                        const celulas = Array.from(el.querySelectorAll('td')).map(td => td.innerText.trim()).filter(t => t.length > 0);
                         
                         let horario = celulas.find(c => /\d{2}:\d{2}/.test(c));
                         let times = celulas.filter(c => c !== horario && c !== '-' && !c.includes(':') && c.length > 2);
 
+                        if (!horario) {
+                            // Fallback por quebra de linha
+                            const partes = txt.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+                            horario = partes.find(p => /\d{2}:\d{2}/.test(p));
+                            times = partes.filter(p => p !== horario && p !== '-' && !p.includes(':') && p.length > 2);
+                        }
+
                         if (horario && times.length >= 2) {
-                            resultados.push([horario, times[0], times[1]]);
+                            let timeA = times[0];
+                            let timeB = times[1];
+
+                            // Validação extra direta nos nomes dos times
+                            const nomeTimesLixo = /women|feminino|\(w\)|sub-|u20|u19|u17|u21|reserves/i.test(timeA + timeB);
+
+                            if (!nomeTimesLixo) {
+                                resultados.push([horario, timeA, timeB]);
+                            }
                         }
                     }
                 }
             });
-
-            // Fallback caso as células <td> não capturem isoladamente
-            if (resultados.length === 0) {
-                const blocos = document.querySelectorAll('div, li');
-                blocos.forEach(b => {
-                    const txt = b.innerText ? b.innerText.trim() : '';
-                    const ehAmistoso = /amistoso|friendly/i.test(txt);
-                    const ehFeminino = /feminino|women|wsl|futebol feminino|damen|femenino|femme|\(\s*w\s*\)/i.test(txt);
-                    const ehBase = /sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17/i.test(txt);
-                    const ehAmador = /amador|amateurs|regional/i.test(txt);
-
-                    if (!ehAmistoso && !ehFeminino && !ehBase && !ehAmador) {
-                        if (/\d{2}:\d{2}/.test(txt) && txt.includes('-') && txt.length < 200) {
-                            const partes = txt.split('\n').map(p => p.trim()).filter(p => p.length > 0);
-                            let h = partes.find(p => /\d{2}:\d{2}/.test(p));
-                            let limpos = partes.filter(p => p !== h && p !== '-' && !p.includes(':') && p.length > 2);
-                            if (h && limpos.length >= 2) {
-                                resultados.push([h, limpos[0], limpos[1]]);
-                            }
-                        }
-                    }
-                });
-            }
 
             const unicas = [];
             const vistas = new Set();
@@ -135,7 +125,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Diagnóstico] Partidas válidas encontradas: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Filtro Rigoroso] Partidas limpas encontradas: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -146,10 +136,6 @@ async function buscarJogosDoDia() {
                 let timeA = p[1];
                 let timeB = p[2];
 
-                if (/women|feminino|\(w\)|sub-|u20|u19|u17/i.test(timeA) || /women|feminino|\(w\)|sub-|u20|u19|u17/i.test(timeB)) {
-                    continue;
-                }
-
                 let chaveUnica = `${timeA}x${timeB}_${horario}`;
 
                 if (!jogosEnviadosSet.has(chaveUnica)) {
@@ -158,7 +144,7 @@ async function buscarJogosDoDia() {
 
                     let mediaRealCantos = (Math.random() * (11.5 - 9.5) + 9.5).toFixed(1);
 
-                    let card = `🔥 *Partida Detectada [${novosEnviados}]*\n`;
+                    let card = `🔥 *Partida Aprovada [${novosEnviados}]*\n`;
                     card += `📅 *Data:* \`${hoje}\`\n`;
                     card += `🕒 *Horário:* \`${horario}\`\n`;
                     card += `⚔️ **${timeA}** x **${timeB}**\n`;
@@ -171,11 +157,11 @@ async function buscarJogosDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Diagnóstico] ${novosEnviados} novos jogos enviados com sucesso.`);
+                console.log(`✅ [Bot Filtro Rigoroso] ${novosEnviados} novos jogos enviados com sucesso.`);
             }
 
         } else {
-            console.log("⚠️ [Bot Diagnóstico] 0 partidas capturadas. Verificando amostra do HTML para depuração...");
+            console.log("⚠️ [Bot Filtro Rigoroso] Nenhuma partida correspondente aos filtros restritos.");
         }
 
     } catch (error) {
