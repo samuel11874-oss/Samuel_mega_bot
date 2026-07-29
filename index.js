@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Iniciando varredura otimizada de partidas AO VIVO...");
+        console.log("🕵️‍♂️ [Bot US] Acessando diretamente a página de AO VIVO do Soccerway...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -37,39 +37,25 @@ async function buscarJogosAoVivo() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 768 });
 
-        console.log("🌐 [Bot US] Acessando us.soccerway.com (Timeout estendido)...");
-        await page.goto('https://us.soccerway.com/', {
+        console.log("🌐 [Bot US] Acessando https://us.soccerway.com/live/ ...");
+        await page.goto('https://us.soccerway.com/live/', {
             waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
-        await new Promise(r => setTimeout(r, 4000));
+        // Aguarda os dados carregarem na página de live
+        await new Promise(r => setTimeout(r, 6000));
 
-        // Tenta clicar na aba LIVE
-        try {
-            console.log("🔍 [Bot US] Tentando ativar filtro LIVE...");
-            await page.evaluate(() => {
-                const elements = Array.from(document.querySelectorAll('a, button, span, div, th'));
-                const liveEl = elements.find(el => el.innerText && el.innerText.trim().toUpperCase() === 'LIVE');
-                if (liveEl) {
-                    liveEl.click();
-                }
-            });
-            await new Promise(r => setTimeout(r, 5000));
-        } catch (e) {
-            console.log("⚠️ Filtro LIVE não acionado via clique, prosseguindo com varredura geral.");
-        }
-
-        // Varredura flexível de partidas ativas
+        // Varredura focada nas linhas de tabela da página de ao vivo
         const partidas = await page.evaluate(() => {
             const matches = [];
-            const rows = document.querySelectorAll('tr, div.match, .row');
+            const rows = document.querySelectorAll('tr');
 
             rows.forEach(row => {
                 const txt = row.innerText ? row.innerText.trim() : '';
                 
                 const ehLixo = txt.includes('Gamble') || txt.includes('Copyright') || txt.includes('Soccerway') || 
-                               txt.includes('FAVORITES') || txt.includes('Sign up') || txt.length < 8;
+                               txt.includes('FAVORITES') || txt.length < 5;
 
                 if (!ehLixo) {
                     if (txt.includes("'") || txt.includes('HT') || txt.includes('FT') || /\d+\s*-\s*\d+/.test(txt)) {
@@ -86,7 +72,7 @@ async function buscarJogosAoVivo() {
             const vistas = new Set();
             matches.forEach(m => {
                 const chave = m.slice(0, 3).join('|');
-                if (!vistas.has(chave) && m.length >= 3) {
+                if (!vistas.has(chave) && m.length >= 2) {
                     vistas.add(chave);
                     unicas.push(m);
                 }
