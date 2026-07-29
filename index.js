@@ -1,3 +1,60 @@
+const express = require('express');
+const axios = require('axios');
+const TelegramBot = require('node-telegram-bot-api');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - API-Sports Ativo ⚽📋</h2><p>Modo Econômico de Créditos Ativado</p>'));
+
+app.listen(PORT, () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+});
+
+const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
+const CHAT_ID = '8285908313';
+const bot = new TelegramBot(TOKEN, { polling: false });
+
+// Seu Token da API-Sports
+const API_SPORTS_KEY = '7c35cc2deb7a2d5e010379634b2cf0d7';
+const API_HEADERS = {
+    'x-apisports-key': API_SPORTS_KEY
+};
+
+let jogosEnviados = new Set();
+let ultimaDataExecucao = '';
+
+function getBandeira(teamName) {
+    const list = {
+        "Flamengo": "🇧🇷", "Palmeiras": "🇧🇷", "Corinthians": "🇧🇷", "São Paulo": "🇧🇷",
+        "Santos": "🇧🇷", "Cruzeiro": "🇧🇷", "Atlético": "🇧🇷", "Bahia": "🇧🇷",
+        "Vasco": "🇧🇷", "Botafogo": "🇧🇷", "Fluminense": "🇧🇷", "Grêmio": "🇧🇷",
+        "Internacional": "🇧🇷", "Arsenal": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Chelsea": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Liverpool": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", 
+        "Manchester City": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Real Madrid": "🇪🇸", "Barcelona": "🇪🇸", "Juventus": "🇮🇹"
+    };
+    return list[teamName] || "⚽";
+}
+
+// 📋 FUNÇÃO DO CARD PADRÃO
+function enviarCard(fonte, t1, t2, hora, detalhes, competencia = '') {
+    const bandeira = getBandeira(t1);
+    let msg = `📋 *CARD DE OPORTUNIDADE* ⚽\n\n` +
+              `${bandeira} *${t1} x ${t2}*\n`;
+    
+    if (competencia) {
+        msg += `🏆 *Competição:* ${competencia}\n`;
+    }
+    
+    msg += `📌 *Fonte:* ${fonte}\n` +
+           `📅 *Data:* Hoje\n` +
+           `⏰ *Horário:* ${hora}\n` +
+           `⛳ *Dados:* ${detalhes}\n` +
+           `──────────────────`;
+
+    bot.sendMessage(CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(e => {});
+}
+
+// BUSCA ECONÔMICA NA API-SPORTS (Apenas 1 chamada por dia)
 async function buscarJogosApiSports() {
     const hojeIso = new Date().toISOString().split('T')[0];
     
@@ -8,7 +65,6 @@ async function buscarJogosApiSports() {
     try {
         console.log(`🔍 [API-Sports] Consultando jogos do dia ${hojeIso} (Economizando créditos)...`);
         
-        // URL CORRIGIDA COM O HÍFEN (api-sports)
         const response = await axios.get(`https://v3.football.api-sports.io/fixtures?date=${hojeIso}`, {
             headers: API_HEADERS
         });
@@ -47,3 +103,9 @@ async function buscarJogosApiSports() {
         console.error("Erro na API-Sports:", e.message);
     }
 }
+
+// Verifica a cada 1 hora se mudou o dia
+setInterval(buscarJogosApiSports, 3600000);
+
+// Execução inicial imediata ao ligar o bot
+buscarJogosApiSports();
