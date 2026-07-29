@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Acessando e buscando jogos AO VIVO...");
+        console.log("🕵️‍♂️ [Bot US] Acessando diretamente a página de AO VIVO...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -37,72 +37,70 @@ async function buscarJogosAoVivo() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 768 });
 
-        console.log("🌐 [Bot US] Acessando us.soccerway.com...");
-        await page.goto('https://us.soccerway.com/', {
+        console.log("🌐 [Bot US] Acessando https://us.soccerway.com/live/ ...");
+        await page.goto('https://us.soccerway.com/live/', {
             waitUntil: 'domcontentloaded',
-            timeout: 45000
+            timeout: 60000
         });
 
-        await new Promise(r => setTimeout(r, 4000));
-        
-        try {
-            console.log("🔍 [Bot US] Procurando e clicando na aba 'LIVE'...");
-            await page.evaluate(() => {
-                const links = Array.from(document.querySelectorAll('a, span, div'));
-                const abaLive = links.find(el => el.innerText && el.innerText.trim() === 'LIVE');
-                if (abaLive) abaLive.click();
-            });
-            await new Promise(r => setTimeout(r, 5000));
-        } catch (e) {
-            console.log("⚠️ Não foi possível clicar na aba Live diretamente, seguindo com varredura geral.");
-        }
+        // Aguarda os dados dinâmicos da página de live carregarem
+        await new Promise(r => setTimeout(r, 6000));
 
-        // Varredura rigorosa focada apenas em jogos reais e filtrando propagandas/lixo
+        // Varredura rigorosa: foca apenas em linhas que possuem marcação clara de tempo de jogo AO VIVO
         const partidas = await page.evaluate(() => {
             const resultados = [];
-            const blocos = document.querySelectorAll('tr, div, li');
+            const rows = document.querySelectorAll('tr');
 
-            blocos.forEach(b => {
-                const txt = b.innerText ? b.innerText.trim() : '';
+            rows.forEach(row => {
+                const txt = row.innerText ? row.innerText.trim() : '';
                 
-                // Filtros rigorosos para remover lixo do site
-                const ehLixo = txt.includes('FAVORITES') || txt.includes('PREMIER LEAGUE') || 
-                               txt.includes('Gamble') || txt.includes('Copyright') || 
-                               txt.includes('Soccerway') || txt.includes('Sign up') || 
-                               txt.length < 10 || txt.length > 140;
+                // Remove propagandas, rodapés e lixo do site
+                const ehLixo = txt.includes('Gamble') || txt.includes('Copyright') || 
+                               txt.includes('Soccerway') || txt.includes('FAVORITES') || 
+                               txt.length < 5;
 
                 if (!ehLixo) {
-                    // Garante que tem indicador de tempo ou placar válido
-                    if ((txt.includes("'") || txt.includes("Half Time") || txt.includes("HT") || txt.includes("FT") || /\d+[\s-]+\d+/.test(txt))) {
-                        const formatado = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                        
-                        // Valida se tem elementos suficientes para ser um jogo (Tempo + Times + Placar)
-                        if (formatado.length >= 3 && !resultados.some(r => r.join('|') === formatado.join('|'))) {
-                            resultados.push(formatado);
+                    // CONDIÇÃO RIGOROSA: O jogo DEVE ter um marcador de minuto ativo (ex: 14', 45'+2) ou estar no HT. Ignora FT (Encerrado) e horários normais (ex: 20:00).
+                    const temMinutoAtivo = /\d+'/.test(txt) || txt.includes('Half Time') || txt.includes('HT');
+                    const temPlacar = /\d+\s*-\s*\d+/.test(txt);
+
+                    if (temMinutoAtivo && temPlacar && !txt.includes('FT')) {
+                        const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                        if (linhas.length >= 2) {
+                            resultados.push(linhas);
                         }
                     }
                 }
             });
 
-            return resultados;
+            // Remove duplicadas
+            const unicas = [];
+            const vistas = new Set();
+            resultados.forEach(m => {
+                const chave = m.slice(0, 3).join('|');
+                if (!vistas.has(chave)) {
+                    vistas.add(chave);
+                    unicas.push(m);
+                }
+            });
+
+            return unicas;
         });
 
-        console.log(`⚽ [Bot US] Partidas ao vivo válidas encontradas: ${partidas.length}`);
+        console.log(`⚽ [Bot US] Partidas estritamente AO VIVO encontradas: ${partidas.length}`);
 
         if (partidas.length > 0) {
-            // Envia cada jogo como um card individual separado
-            for (let i = 0; i < Math.min(partidas.length, 20); i++) {
+            // Envia cada jogo em um card individual limpo e separado
+            for (let i = 0; i < Math.min(partidas.length, 25); i++) {
                 let p = partidas[i];
                 
-                // Extrai as informações de forma limpa da matriz capturada
-                let tempo = p.find(item => item.includes("'") || item.includes("Half") || item === 'HT' || item === 'FT') || p[0] || "Ao Vivo";
+                let tempo = p.find(item => item.includes("'") || item.includes("Half") || item === 'HT') || "Ao Vivo";
                 let limpos = p.filter(x => x !== tempo && x !== '-' && !x.includes(':') && x.length > 2);
                 
                 let timeA = limpos[0] || "Casa";
                 let timeB = limpos[1] || "Fora";
                 
-                // Procura o placar dentro dos dados
-                let placarMatch = p.find(item => /^\d+\s*-\s*\d+$/.test(item)) || limpos.find(item => /^\d+\s*-\s*\d+$/.test(item));
+                let placarMatch = p.find(item => /\d+\s*-\s*\d+/.test(item)) || limpos.find(item => /\d+\s*-\s*\d+/.test(item));
                 let golA = "0", golB = "0";
 
                 if (placarMatch) {
@@ -117,7 +115,7 @@ async function buscarJogosAoVivo() {
                     }
                 }
 
-                // Monta o card individual limpo e profissional
+                // Monta o card individual organizado
                 let card = `⚡ *Partida [${i + 1}]*\n`;
                 card += `────────────────────\n`;
                 card += `⏱ *Tempo:* \`${tempo}\`\n`;
@@ -127,12 +125,12 @@ async function buscarJogosAoVivo() {
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
                 
-                // Pequeno intervalo entre os envios para não sobrecarregar o Telegram
-                await new Promise(r => setTimeout(r, 500));
+                // Intervalo de segurança para não floodar o Telegram
+                await new Promise(r => setTimeout(r, 600));
             }
 
         } else {
-            bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo ao vivo encontrado no momento da varredura.*", { parse_mode: 'Markdown' }).catch(()=>{});
+            bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo ao vivo rolando no momento da varredura.*", { parse_mode: 'Markdown' }).catch(()=>{});
         }
 
     } catch (error) {
