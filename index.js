@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Buscando jogos AO VIVO e organizando cards...");
+        console.log("🕵️‍♂️ [Bot US] Buscando todos os jogos AO VIVO...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -56,7 +56,7 @@ async function buscarJogosAoVivo() {
             console.log("⚠️ Seguindo com varredura geral.");
         }
 
-        // Varredura cirúrgica para isolar partidas reais e descartar lixo
+        // Varredura ampliada para capturar todos os jogos sem deixar nenhum de fora
         const partidas = await page.evaluate(() => {
             const matches = [];
             const blocos = document.querySelectorAll('tr, div, li');
@@ -64,31 +64,25 @@ async function buscarJogosAoVivo() {
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
                 
-                // Filtros rigorosos para ignorar rodapés e menus
                 const ehLixo = txt.includes('Gamble') || txt.includes('Copyright') || txt.includes('Soccerway') || 
-                               txt.includes('FAVORITES') || txt.includes('PREMIER LEAGUE') || txt.includes('LALIGA') ||
-                               txt.length < 15 || txt.length > 150;
+                               txt.includes('FAVORITES') || txt.length < 10 || txt.length > 250;
 
                 if (!ehLixo) {
-                    // Verifica se tem indicativo de jogo (minuto com apóstrofo, HT, FT ou placar)
                     if (txt.includes("'") || txt.includes('Half Time') || txt.includes('FT') || txt.includes('HT') || /\d+\s*-\s*\d+/.test(txt)) {
                         const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                        
-                        // Garante que temos dados suficientes para montar o confronto
-                        if (linhas.length >= 4) {
+                        if (linhas.length >= 3) {
                             matches.push(linhas);
                         }
                     }
                 }
             });
             
-            // Remove duplicadas baseadas no time da casa e visitante
+            // Remove duplicadas
             const unicas = [];
             const vistas = new Set();
             matches.forEach(m => {
-                // Tenta pegar os dois nomes de times como chave única
-                const chave = `${m[1]}|${m[2]}`;
-                if (!vistas.has(chave) && m[1] && m[2]) {
+                const chave = m.slice(0, 3).join('|');
+                if (!vistas.has(chave)) {
                     vistas.add(chave);
                     unicas.push(m);
                 }
@@ -100,7 +94,9 @@ async function buscarJogosAoVivo() {
         console.log(`⚽ [Bot US] Partidas válidas encontradas: ${partidas.length}`);
 
         if (partidas.length > 0) {
-            for (let i = 0; i < Math.min(partidas.length, 15); i++) {
+            await bot.sendMessage(CHAT_ID, `🔴 *MONITOR DE PARTIDAS AO VIVO* (${Math.min(partidas.length, 20)} jogos) ⚽`, { parse_mode: 'Markdown' }).catch(()=>{});
+
+            for (let i = 0; i < Math.min(partidas.length, 20); i++) {
                 const l = partidas[i];
                 
                 let tempo = l[0] || "Ao Vivo";
@@ -109,7 +105,6 @@ async function buscarJogosAoVivo() {
                 let golA = l[3] || "0";
                 let golB = l[4] || "0";
                 
-                // Extrai cantos / estatísticas adicionais se houverem na linha
                 let extras = l.slice(5).filter(x => x !== '-' && x !== '' && !x.includes('+')).join(' | ');
                 if (!extras || extras.length < 2) extras = "Aguardando dados oficiais";
 
@@ -122,7 +117,7 @@ async function buscarJogosAoVivo() {
                 card += `━━━━━━━━━━━━━━━━━━━━━`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
-                await new Promise(r => setTimeout(r, 600));
+                await new Promise(r => setTimeout(r, 400));
             }
 
         } else {
