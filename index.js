@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Ao Vivo Real ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Diagnóstico Ao Vivo ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarAoVivoReal() {
+async function executarRadarDiagnostico() {
     let browser = null;
     try {
-        console.log("⚡ [Radar] Buscando apenas jogos em andamento real...");
+        console.log("⚡ [Radar Diagnóstico] Iniciando varredura profunda...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -34,57 +34,55 @@ async function executarRadarAoVivoReal() {
         
         console.log("🌐 Acessando https://www.totalcorner.com/pt/match/live ...");
         await page.goto('https://www.totalcorner.com/pt/match/live', {
-            waitUntil: 'networkidle2',
+            waitUntil: 'networkidle0',
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando os dados carregarem...");
-        await page.waitForSelector('tr', { timeout: 20000 }).catch(() => {});
-        await new Promise(r => setTimeout(r, 4000));
+        console.log("⏳ Aguardando 10 segundos para carregar todos os scripts dinâmicos de placar...");
+        await new Promise(r => setTimeout(r, 10000));
 
-        const jogosAoVivoReais = await page.evaluate(() => {
-            const lista = [];
+        // Extrai todas as linhas e também procura por blocos específicos de partidas ao vivo
+        const dadosPagina = await page.evaluate(() => {
+            const linhas = [];
             const trs = document.querySelectorAll('tr');
             
             trs.forEach((tr, index) => {
                 const texto = tr.innerText.replace(/\s+/g, ' ').trim();
-                
-                // Critério rigoroso: Precisa ter "vs" E conter indicador de tempo ao vivo (ex: minutos com ' ou HT)
-                // Jogos futuros mostram horário (ex: 21:30), jogos ao vivo mostram minutos (ex: 35', 70', HT)
-                const temMinutoAoVivo = /\d+'|HT|1ºT|2ºT/i.test(texto);
-
-                if (index > 0 && texto.includes('vs') && temMinutoAoVivo) {
-                    lista.push(texto);
+                if (texto.length > 5) {
+                    linhas.push(texto);
                 }
             });
-            return lista;
+
+            return {
+                totalTrs: trs.length,
+                amostraLinhas: linhas.slice(0, 15), // Pega as 15 primeiras linhas brutas
+                htmlResumo: document.body.innerText.replace(/\s+/g, ' ').substring(0, 1000)
+            };
         });
 
-        console.log(`📊 Jogos realmente AO VIVO capturados: ${jogosAoVivoReais.length}`);
+        console.log(`📊 Total de linhas (tr) na página: ${dadosPagina.totalTrs}`);
 
-        if (jogosAoVivoReais.length > 0) {
-            let header = `🔴 <b>[RADAR TOTALCORNER - AO VIVO REAL]</b>\n🔥 Jogos rolando agora: <code>${jogosAoVivoReais.length}</code>\n\n`;
-            await bot.sendMessage(CHAT_ID, header, { parse_mode: 'HTML' }).catch(() => {});
-            await new Promise(r => setTimeout(r, 1000));
-
-            for (let i = 0; i < Math.min(jogosAoVivoReais.length, 10); i++) {
-                let card = `⚽ <b>AO VIVO #${i+1}</b>\n`;
-                card += `📄 <code>${jogosAoVivoReais[i]}</code>`;
-
-                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
-                await new Promise(r => setTimeout(r, 500));
+        let mensagem = `🔍 <b>[DIAGNÓSTICO AO VIVO]</b>\n`;
+        mensagem += `📊 Total <code>tr</code>: <code>${dadosPagina.totalTrs}</code>\n\n`;
+        
+        if (dadosPagina.amostraLinhas.length > 0) {
+            mensagem += `<b>Primeiras linhas encontradas:</b>\n`;
+            for (let i = 0; i < Math.min(5, dadosPagina.amostraLinhas.length); i++) {
+                mensagem += `🔹 <code>${dadosPagina.amostraLinhas[i].substring(0, 100)}</code>\n`;
             }
         } else {
-            console.log("ℹ️ Nenhum jogo realmente ao vivo no momento da varredura.");
+            mensagem += `❌ Nenhuma linha capturada.`;
         }
 
+        await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'HTML' });
+
     } catch (error) {
-        console.error("❌ Erro no Radar:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro no Radar:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro no Diagnóstico:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro Diagnóstico:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarAoVivoReal();
-setInterval(executarRadarAoVivoReal, 180000);
+executarRadarDiagnostico();
+setInterval(executarRadarDiagnostico, 180000);
