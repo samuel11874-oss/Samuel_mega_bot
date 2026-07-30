@@ -10,8 +10,8 @@
     "express": "^4.19.2",
     "node-telegram-bot-api": "^0.64.0",
     "puppeteer": "^22.6.0",
-    "puppeteer-extra": "^2.4.1",
-    "puppeteer-extra-plugin-stealth": "^2.9.0"
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "engines": {
     "node": ">=18.0.0"
