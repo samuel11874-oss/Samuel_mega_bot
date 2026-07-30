@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Top Ligas Oficial ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Top Ligas Completo ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -67,25 +67,25 @@ async function buscarJogosDoDia() {
 
         const dadosExtraidos = await page.evaluate(() => {
             const resultados = [];
-            let ligaAtual = '';
+            let ligaAtual = 'MELHOR LIGA';
             const linhas = document.querySelectorAll('tr');
 
             linhas.forEach(tr => {
                 const text = tr.innerText ? tr.innerText.trim() : '';
                 if (!text) return;
 
-                // Identifica se é um cabeçalho de competição/liga no Soccerway
-                const ehCabecalho = tr.querySelector('th') || tr.className.includes('competition') || tr.className.includes('group') || tr.className.includes('header');
-                if (ehCabecalho && text.length < 120) {
-                    ligaAtual = text.toLowerCase();
+                // Identifica se é cabeçalho de competição/liga
+                const ehCabecalho = tr.querySelector('th') || tr.className.includes('competition') || tr.className.includes('group') || tr.className.includes('header') || tr.tagName === 'TH';
+                if (ehCabecalho && text.length < 150) {
+                    ligaAtual = text;
                     return;
                 }
 
                 const textoBaixo = text.toLowerCase();
                 const contextoCompleto = (ligaAtual + " " + textoBaixo);
 
-                // 🎯 FILTRO EXCLUSIVO DE MELHORES LIGAS
-                const ehTopLiga = /brasileiro|série a|serie a|premier league|la liga|bundesliga|ligue 1|champions league|libertadores|copa do brasil|primera division|primeira liga|eredivisie|championship|super lig|conmebol/i.test(contextoCompleto);
+                // 🎯 FILTRO DE MELHORES LIGAS (Amplo e flexível)
+                const ehTopLiga = /brasileiro|série a|serie a|premier league|la liga|bundesliga|ligue 1|champions league|libertadores|copa do brasil|primera division|primeira liga|eredivisie|championship|super lig|conmebol|copa|torneo|liga/i.test(contextoCompleto);
                 if (!ehTopLiga) return;
 
                 // Filtros anti-lixo (feminino, base, amistosos)
@@ -103,6 +103,8 @@ async function buscarJogosDoDia() {
                     infoStatus = scoreMatch[0];
                     if (statusMatch) {
                         infoStatus += ` (${statusMatch[0].toUpperCase()})`;
+                    } else {
+                        infoStatus += ` (FT)`;
                     }
                 } else if (statusMatch) {
                     infoStatus += ` (${statusMatch[0].toUpperCase()})`;
@@ -134,7 +136,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Top Ligas] Partidas válidas encontradas: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Top Ligas] Partidas válidas (incluindo finalizadas) encontradas: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -165,7 +167,7 @@ async function buscarJogosDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Top Ligas] ${novosEnviados} novos jogos enviados no Telegram.`);
+                console.log(`✅ [Bot Top Ligas] ${novosEnviados} jogos enviados no Telegram.`);
             }
 
         } else {
