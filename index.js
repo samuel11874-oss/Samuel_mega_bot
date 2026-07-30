@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigador Top Ligas ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Top Ligas Estável ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -35,7 +35,7 @@ async function buscarJogosDoDia() {
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Investigação Top Ligas] Acessando agenda para hoje (${hoje})...`);
+        console.log(`🕵️‍♂️ [Bot Top Ligas] Acessando agenda para hoje (${hoje})...`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -54,45 +54,25 @@ async function buscarJogosDoDia() {
         await page.setViewport({ width: 1366, height: 2000 });
 
         const urlDia = `https://us.soccerway.com/matches/?date=${hoje}`;
+        console.log(`🌐 URL: ${urlDia}`);
+
         await page.goto(urlDia, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        await new Promise(r => setTimeout(r, 9000));
+        console.log("⏳ Aguardando renderização das tabelas de partidas...");
+        try {
+            await page.waitForSelector('table.matches, .match-list, tr', { timeout: 15000 });
+        } catch (e) {
+            console.log("⚠️ Tempo limite aguardando seletor específico, prosseguindo com varredura geral...");
+        }
 
-        // 🔍 MODO INVESTIGAÇÃO: Coleta dados crus da página para análise nos logs
-        const relatorioInvestigacao = await page.evaluate(() => {
-            const ligasEncontradas = new Set();
-            const amostraLinhas = [];
-            const trs = document.querySelectorAll('tr');
+        await new Promise(r => setTimeout(r, 5000));
 
-            trs.forEach((tr, index) => {
-                const txt = tr.innerText ? tr.innerText.trim() : '';
-                if (!txt) return;
-
-                if (tr.querySelector('th') || tr.className.includes('competition') || tr.className.includes('group') || tr.className.includes('header')) {
-                    ligasEncontradas.add(txt);
-                }
-
-                if (index < 15) {
-                    amostraLinhas.push(txt.substring(0, 100));
-                }
-            });
-
-            return {
-                totalTrs: trs.length,
-                ligas: Array.from(ligasEncontradas).slice(0, 20), // Primeiras 20 ligas encontradas
-                amostra: amostraLinhas
-            };
-        });
-
-        console.log(`📊 [INVESTIGAÇÃO] Total de linhas <tr:> ${relatorioInvestigacao.totalTrs}`);
-        console.log(`🏆 [INVESTIGAÇÃO] Amostra de Ligas/Cabeçalhos identificados:`, relatorioInvestigacao.ligas);
-        console.log(`📝 [INVESTIGAÇÃO] Amostra de texto das primeiras linhas:`, relatorioInvestigacao.amostra);
-
-        // Execução principal com lógica flexível baseada na investigação
         const dadosExtraidos = await page.evaluate(() => {
             const resultados = [];
             let ligaAtual = '';
             const linhas = document.querySelectorAll('tr');
+
+            if (linhas.length === 0) return [];
 
             linhas.forEach(tr => {
                 const textoTr = tr.innerText ? tr.innerText.trim() : '';
@@ -106,13 +86,10 @@ async function buscarJogosDoDia() {
 
                 const contextoGeral = (ligaAtual + " " + textoTr).toLowerCase();
 
-                // 🎯 FILTRO AMPLIADO DE LIGAS DE ELITE (Cobrindovariações internacionais comuns)
+                // 🎯 FILTRO DE LIGAS DE ELITE
                 const ehElite = /premier league|la liga|bundesliga|ligue 1|serie a|champions league|libertadores|copa do brasil|brasileiro|primera division|primeira liga|eredivisie|championship|super lig|copa|liga profissional|torneo|conmebol/i.test(contextoGeral);
                 
-                // Se a linha não tiver nome de liga no cabeçalho, vamos checar se o texto do jogo tem pistas fortes
-                const temTimeForteOuLigaNoTexto = /brasileiro|premier|liga|champions|libertadores|copa/i.test(contextoGeral);
-
-                if (!ehElite && !temTimeForteOuLigaNoTexto) return;
+                if (!ehElite) return;
 
                 // Filtro Anti-Lixo (Feminino, Base, Amistosos)
                 const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-|u20|u19|u17|u21|reserves|amador|youth/i.test(contextoGeral);
@@ -154,7 +131,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Top Ligas] Jogos filtrados encontrados: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Top Ligas] Jogos de elite encontrados: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -184,10 +161,14 @@ async function buscarJogosDoDia() {
                     await new Promise(r => setTimeout(r, 700));
                 }
             }
+
+            if (novosEnviados > 0) {
+                console.log(`✅ [Bot Top Ligas] ${novosEnviados} jogos enviados no Telegram.`);
+            }
         }
 
     } catch (error) {
-        console.error("❌ ERRO NA INVESTIGAÇÃO:", error.message);
+        console.error("❌ ERRO NA EXECUÇÃO:", error.message);
     } finally {
         if (browser) await browser.close();
     }
