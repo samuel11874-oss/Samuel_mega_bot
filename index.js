@@ -20,8 +20,8 @@ let jogosEnviadosSet = new Set();
 let ultimaDataRegistrada = '';
 
 function getDataBrasil() {
-    const agora = new Date();
-    return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const agoraz = new Date();
+    return agoraz.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 }
 
 async function buscarJogosDoDia() {
@@ -60,38 +60,45 @@ async function buscarJogosDoDia() {
 
         const dadosExtraidos = await page.evaluate(() => {
             const resultados = [];
-            const elementos = document.querySelectorAll('tr, .match-row, li, div');
+            let ligaAtual = '';
+            const linhas = document.querySelectorAll('tr');
 
-            elementos.forEach(el => {
-                const text = el.innerText ? el.innerText.trim() : '';
-                if (!text) return;
+            linhas.forEach(tr => {
+                const textoTr = tr.innerText ? tr.innerText.trim() : '';
+                if (!textoTr) return;
 
-                const textoBaixo = text.toLowerCase();
+                // Identifica se a linha é o cabeçalho/título da competição
+                const ehCabecalho = tr.querySelector('th') || tr.className.includes('competition') || tr.className.includes('group');
+                if (ehCabecalho && textoTr.length < 80) {
+                    ligaAtual = textoTr.toLowerCase();
+                    return;
+                }
 
-                // 🎯 FILTRO ULTRA-RESTRITO: Somente as Ligas de Elite Mão na Massa
-                const ehLigaDeElite = /brasileiro|série a|serie a|premier league|la liga|bundesliga|ligue 1|champions league|libertadores|copa do brasil/i.test(textoBaixo);
-                if (!ehLigaDeElite) return;
+                // Combina a liga atual com a linha do jogo para validação completa
+                const contextoGeral = (ligaAtual + " " + textoTr).toLowerCase();
+
+                // 🎯 FILTRO DE LIGAS DE ELITE (Cobrindo nomenclaturas do Soccerway)
+                const ehElite = /premier league|la liga|bundesliga|ligue 1|serie a|champions league|libertadores|copa do brasil|brasileiro|primera division|primeira liga|eredivisie|championship|super lig/i.test(contextoGeral);
+                if (!ehElite) return;
 
                 // Filtro Anti-Lixo (Feminino, Base, Amistosos)
-                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-|u20|u19|u17|u21|reserves|amador/i.test(textoBaixo);
+                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-|u20|u19|u17|u21|reserves|amador|youth/i.test(contextoGeral);
                 if (ehLixo) return;
 
-                const jaTerminou = /\b(ft|aet|pen)\b/i.test(textoBaixo);
+                const jaTerminou = /\b(ft|aet|pen)\b/i.test(textoTr.toLowerCase());
                 if (jaTerminou) return;
 
-                const matchHorario = text.match(/\d{2}:\d{2}/);
-                const aoVivoMinuto = text.match(/\d{1,2}'/) || textoBaixo.includes('ht') || textoBaixo.includes('live');
+                const matchHorario = textoTr.match(/\d{2}:\d{2}/);
+                const aoVivoMinuto = textoTr.match(/\d{1,2}'/) || textoTr.toLowerCase().includes('ht') || textoTr.toLowerCase().includes('live');
 
                 if (!matchHorario && !aoVivoMinuto) return;
 
                 const horario = matchHorario ? matchHorario[0] : 'AO VIVO 🔴';
 
-                const linhas = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
-                const limpos = linhas.filter(l => !/\d{2}:\d{2}/.test(l) && !/^\d+-\d+$/.test(l) && l !== '-');
-
-                if (limpos.length >= 2) {
-                    let timeA = limpos[0];
-                    let timeB = limpos[1];
+                const colunas = tr.querySelectorAll('td');
+                if (colunas.length >= 3) {
+                    let timeA = colunas[1] ? colunas[1].innerText.trim() : '';
+                    let timeB = colunas[3] ? colunas[3].innerText.trim() : '';
 
                     const contemFemininoNoNome = /\b(w)\b|\(w\)|women|feminino|sub-|u20|u19|u17|u21|reserves/i.test(timeA + " " + timeB);
 
@@ -114,7 +121,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Top Ligas] Jogos estritos encontrados: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Top Ligas] Jogos de elite encontrados: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
