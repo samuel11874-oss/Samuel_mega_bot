@@ -5,7 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Multi-API Sincronizada (API-Sports + Football-Data) ⚽🔥</h2><p>Dados cruzados e confirmados para o dia atual</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Multi-API Anti-Duplicação ⚽🔥</h2><p>Partidas limpas, únicas e sincronizadas</p>'));
 
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
@@ -19,7 +19,6 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 const API_SPORTS_KEY = '7c35cc2deb7a2d5e010379634b2cf0d7';
 const API_SPORTS_HEADERS = { 'x-apisports-key': API_SPORTS_KEY };
 
-// Chave da Football-Data.org (Salva com sucesso)
 const FOOTBALL_DATA_KEY = '0a34421534b24e9f9001d3cf5da69c57'; 
 const FOOTBALL_DATA_HEADERS = { 'X-Auth-Token': FOOTBALL_DATA_KEY };
 
@@ -36,6 +35,16 @@ function getDataBrasil() {
 function getDataJogoBrasil(utcDateString) {
     const dateObj = new Date(utcDateString);
     return dateObj.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+}
+
+// 🛡️ Normaliza o nome dos times para unificar variações entre APIs (evita duplicidade)
+function normalizarNomeTime(nome) {
+    if (!nome) return '';
+    return nome
+        .toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove acentos
+        .replace(/\b(fc|ec|sc|ac|sad|saf|clube|club|de|do|dos|da|das)\b/g, '') // Remove sufixos comuns
+        .replace(/[^a-z0-9]/g, ''); // Remove espaços e caracteres especiais
 }
 
 function getBandeira(teamName) {
@@ -149,13 +158,15 @@ async function buscarJogosSincronizados() {
                 });
 
                 const mediaRealCalculada = (10.6 + (Math.abs(t1.length - t2.length) % 2.5)).toFixed(1);
-                const chave = `sync_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
+                
+                // Chave unificada com nomes normalizados
+                const chave = `sync_${normalizarNomeTime(t1)}_${normalizarNomeTime(t2)}_${hojeIso}`;
 
                 if (!jogosEnviados.has(chave)) {
                     jogosEnviados.add(chave);
                     encontrados++;
-                    enviarCard('API-Sports + Football-Data', t1, t2, horaJogo, competencia, mediaRealCalculada);
-                    console.log(`✅ [Enviado API-Sports] ${t1} x ${t2} (${competencia}) às ${horaJogo}`);
+                    enviarCard('Multi-API Sincronizada', t1, t2, horaJogo, competencia, mediaRealCalculada);
+                    console.log(`✅ [Enviado Único] ${t1} x ${t2} (${competencia}) às ${horaJogo}`);
                 }
             }
         }
@@ -182,18 +193,20 @@ async function buscarJogosSincronizados() {
                 });
 
                 const mediaRealCalculada = (10.6 + (Math.abs(t1.length - t2.length) % 2.5)).toFixed(1);
-                const chave = `sync_${t1}_${t2}_${hojeIso}`.toLowerCase().replace(/\s/g, '');
+                
+                // Mesma chave unificada; se a API-Sports já mandou, o .has(chave) bloqueia a duplicidade
+                const chave = `sync_${normalizarNomeTime(t1)}_${normalizarNomeTime(t2)}_${hojeIso}`;
 
                 if (!jogosEnviados.has(chave)) {
                     jogosEnviados.add(chave);
                     encontrados++;
-                    enviarCard('Football-Data (Confirmado)', t1, t2, horaJogo, competencia, mediaRealCalculada);
-                    console.log(`✅ [Enviado Football-Data] ${t1} x ${t2} (${competencia}) às ${horaJogo}`);
+                    enviarCard('Multi-API Sincronizada', t1, t2, horaJogo, competencia, mediaRealCalculada);
+                    console.log(`✅ [Enviado Único] ${t1} x ${t2} (${competencia}) às ${horaJogo}`);
                 }
             }
         }
 
-        console.log(`🔍 [Multi-API] Varredura sincronizada concluída para ${hojeIso}. Total enviados: ${encontrados}`);
+        console.log(`🔍 [Multi-API] Varredura sincronizada concluída para ${hojeIso}. Total enviados únicos: ${encontrados}`);
 
     } catch (e) {
         console.error("Erro geral na sincronização das APIs:", e.message);
