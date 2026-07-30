@@ -9,24 +9,28 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Agenda Pré-Jogo V20 📅</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Top Ligas V21 🏆</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-// Palavras-chave das ligas principais para destacar
-const LIGAS_DE_DESTAQUE = [
-    'brazil', 'brasil', 'libertadores', 'sudamericana', 'champions', 'premier',
-    'la liga', 'serie a', 'bundesliga', 'ligue 1', 'england', 'spain', 'italy',
-    'germany', 'france', 'argentina', 'cup', 'copa'
+// Lista completa das melhores ligas do Brasil, América do Sul e Europa
+const TOP_LIGAS = [
+    // Brasil
+    'brasil', 'brazil', 'brasileiro', 'serie a', 'serie b', 'copa do brasil', 'paulista', 'carioca',
+    // América do Sul
+    'libertadores', 'sudamericana', 'sul-americana', 'argentina', 'colombia', 'chile', 'uruguay', 'paraguay',
+    // Europa & Campeonatos Principais
+    'champions', 'europa league', 'conference league', 'premier league', 'england', 'la liga', 'spain',
+    'serie a italy', 'italy', 'bundesliga', 'germany', 'ligue 1', 'france', 'portugal', 'eredivisie', 'netherlands'
 ];
 
-async function executarAgendaHojeV20() {
+async function executarTopLigasV21() {
     let browser = null;
     try {
-        console.log("📅 [Bot V20 - Pré-Jogo] Varrendo agenda de partidas para hoje...");
+        console.log("🏆 [Bot V21 - Top Ligas] Mapeando 100% das partidas das principais ligas...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -42,30 +46,29 @@ async function executarAgendaHojeV20() {
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
 
-        console.log("🌐 Acessando jogos do dia no TotalCorner...");
+        console.log("🌐 Acessando a lista completa de hoje no TotalCorner...");
         const response = await page.goto('https://www.totalcorner.com/match/today', {
             waitUntil: 'networkidle2',
             timeout: 60000
         });
 
         console.log(`📡 Status HTTP: ${response ? response.status() : 0}`);
-
         await new Promise(r => setTimeout(r, 5000));
 
-        const jogosAgendados = await page.evaluate((ligasChave) => {
+        const jogosFiltrados = await page.evaluate((ligasEspecial) => {
             const lista = [];
             const trs = document.querySelectorAll('tr');
 
             trs.forEach(tr => {
                 const texto = tr.innerText || '';
 
-                // Busca por padrão de hora (ex: 15:00, 19:30, 21:00)
+                // Procura horário formatado (ex: 16:00, 21:30)
                 const horaMatch = texto.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
                 if (!horaMatch) return;
 
                 const horaJogo = horaMatch[0];
 
-                // Busca os nomes dos times nos links da linha
+                // Extrai times dos links da linha
                 const links = tr.querySelectorAll('a');
                 let times = [];
                 links.forEach(a => {
@@ -79,24 +82,26 @@ async function executarAgendaHojeV20() {
                     const timeA = times[0];
                     const timeB = times[1];
 
-                    // Tenta identificar a liga no contexto do elemento pai ou texto da linha
+                    // Tenta identificar o nome da liga
                     let ligaNome = "Campeonato Geral";
                     const prevRow = tr.previousElementSibling;
-                    if (prevRow && (prevRow.classList.contains('league') || prevRow.innerText.length < 50)) {
+                    if (prevRow && (prevRow.classList.contains('league') || prevRow.innerText.length < 60)) {
                         ligaNome = prevRow.innerText.trim();
                     }
 
-                    // Verifica se pertence a uma liga de destaque
-                    const textoLower = (texto + ' ' + ligaNome).toLowerCase();
-                    const eDestaque = ligasChave.some(liga => textoLower.includes(liga));
+                    const contextoCompleto = (texto + ' ' + ligaNome).toLowerCase();
 
-                    lista.push({
-                        hora: horaJogo,
-                        timeA: timeA,
-                        timeB: timeB,
-                        liga: ligaNome,
-                        eDestaque: eDestaque
-                    });
+                    // Verifica se pertence a uma Top Liga
+                    const eTopLiga = ligasEspecial.some(liga => contextoCompleto.includes(liga));
+
+                    if (eTopLiga) {
+                        lista.push({
+                            hora: horaJogo,
+                            timeA: timeA,
+                            timeB: timeB,
+                            liga: ligaNome
+                        });
+                    }
                 }
             });
 
@@ -104,7 +109,7 @@ async function executarAgendaHojeV20() {
             const unicos = [];
             const vistos = new Set();
             lista.forEach(item => {
-                const chave = `${item.timeA} x ${item.timeB} - ${item.hora}`;
+                const chave = `${item.timeA} x ${item.timeB}`;
                 if (!vistos.has(chave)) {
                     vistos.add(chave);
                     unicos.push(item);
@@ -112,52 +117,58 @@ async function executarAgendaHojeV20() {
             });
 
             return unicos;
-        }, LIGAS_DE_DESTAQUE);
+        }, TOP_LIGAS);
 
-        console.log(`⚽ [Bot V20] Total de partidas agendadas para hoje encontradas: ${jogosAgendados.length}`);
+        console.log(`⚽ [Bot V21] Total de partidas de TOP LIGAS encontradas para hoje: ${jogosFiltrados.length}`);
 
-        if (jogosAgendados.length > 0) {
-            // Prioriza os jogos das ligas de destaque no topo
-            jogosAgendados.sort((a, b) => b.eDestaque - a.eDestaque);
+        if (jogosFiltrados.length > 0) {
+            // Avisa no Telegram quantas partidas das principais ligas foram encontradas
+            let resumo = `🚨 <b>[ RADAR DE HOJE - TOP LIGAS ]</b> 🏆\n`;
+            resumo += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+            resumo += `📊 <b>Total de Jogos de Elite Hoje:</b> <code>${jogosFiltrados.length}</code>\n`;
+            resumo += `🌎 <i>América do Sul, Brasil & Europa</i>\n`;
+            resumo += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+            resumo += `👇 <i>Enviando lista completa abaixo...</i>`;
 
-            const limite = Math.min(jogosAgendados.length, 15);
+            await bot.sendMessage(CHAT_ID, resumo, { parse_mode: 'HTML' }).catch(() => {});
+            await new Promise(r => setTimeout(r, 1000));
+
             let enviados = 0;
 
-            for (let i = 0; i < limite; i++) {
-                const j = jogosAgendados[i];
+            // ENVIA TODOS OS JOGOS SEM CORTAR EM 15
+            for (let i = 0; i < jogosFiltrados.length; i++) {
+                const j = jogosFiltrados[i];
                 enviados++;
 
-                const iconeLiga = j.eDestaque ? "🏆 <b>LIGA DE DESTAQUE</b>" : "⚽ <b>PRÉ-JOGO AGENDA</b>";
-
-                let card = `🛸 <b>[ AGENDA DE JOGOS DE HOJE ]</b> 📅\n`;
+                let card = `🛸 <b>[ AGENDA TOP LIGAS ]</b> (#${enviados})\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `${iconeLiga}\n`;
-                card += `⏰ <b>HORÁRIO DE INÍCIO:</b> <code> ${j.hora} </code>\n\n`;
+                card += `⏰ <b>HORÁRIO:</b> <code> ${j.hora} </code>\n\n`;
                 card += `⚔️ <b>CONFRONTO:</b>\n`;
                 card += `  🔹 <b>${j.timeA}</b>\n`;
                 card += `  🔸 <b>${j.timeB}</b>\n\n`;
                 if (j.liga && j.liga !== "Campeonato Geral") {
-                    card += `🏆 <b>Torneio:</b> <i>${j.liga}</i>\n`;
+                    card += `🏆 <b>Liga/Torneio:</b> <i>${j.liga}</i>\n`;
                 }
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Samuel Mega Bot • Visão Pré-Jogo V20 (#${enviados})</i>`;
+                card += `🤖 <i>Samuel Mega Bot • Precisão V21</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
-                await new Promise(r => setTimeout(r, 600));
+                // Pausa de 700ms para respeitar a velocidade do Telegram
+                await new Promise(r => setTimeout(r, 700));
             }
 
-            console.log(`✅ ${enviados} cards da agenda do dia enviados ao Telegram com sucesso!`);
+            console.log(`✅ Todos os ${enviados} cards das principais ligas foram entregues no Telegram!`);
         } else {
-            console.log("⚠️ Nenhuma partida agendada com horário foi identificada nesta busca.");
+            console.log("⚠️ Nenhuma partida das Top Ligas foi identificada para o dia de hoje.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V20:", error.message);
+        console.error("❌ Erro no Radar V21:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Executa a cada 30 minutos (suficiente para agenda pré-jogo)
-setInterval(executarAgendaHojeV20, 1800000);
-executarAgendaHojeV20();
+// Executa a cada 30 minutos
+setInterval(executarTopLigasV21, 1800000);
+executarTopLigasV21();
