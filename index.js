@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Melhores Ligas & Cantos ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Top Ligas ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -19,7 +19,6 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 let jogosEnviadosSet = new Set();
 let ultimaDataRegistrada = '';
 
-// Retorna a data atual rigorosamente no Horário de Brasília (YYYY-MM-DD)
 function getDataBrasil() {
     const agora = new Date();
     return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -36,7 +35,7 @@ async function buscarJogosDoDia() {
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Bot Melhores Ligas] Acessando agenda para hoje (${hoje}) no horário do Brasil...`);
+        console.log(`🕵️‍♂️ [Bot Top Ligas] Acessando agenda para hoje (${hoje})...`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -55,14 +54,8 @@ async function buscarJogosDoDia() {
         await page.setViewport({ width: 1366, height: 2000 });
 
         const urlDia = `https://us.soccerway.com/matches/?date=${hoje}`;
-        console.log(`🌐 URL: ${urlDia}`);
+        await page.goto(urlDia, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        await page.goto(urlDia, {
-            waitUntil: 'domcontentloaded',
-            timeout: 60000
-        });
-
-        console.log("⏳ Aguardando renderização completa da página...");
         await new Promise(r => setTimeout(r, 9000));
 
         const dadosExtraidos = await page.evaluate(() => {
@@ -75,15 +68,14 @@ async function buscarJogosDoDia() {
 
                 const textoBaixo = text.toLowerCase();
 
-                // 1️⃣ FILTRO DE MELHORES LIGAS (Exige que seja de torneios principais)
-                const ehMelhorLiga = /brasileiro|série a|serie a|premier league|la liga|bundesliga|ligue 1|champions league|libertadores|sul-americana|copa do brasil|eredivisie|primeira liga|championship|super lig|liga profesional|primeira division|serie b/i.test(textoBaixo);
-                if (!ehMelhorLiga) return;
+                // 🎯 FILTRO ULTRA-RESTRITO: Somente as Ligas de Elite Mão na Massa
+                const ehLigaDeElite = /brasileiro|série a|serie a|premier league|la liga|bundesliga|ligue 1|champions league|libertadores|copa do brasil/i.test(textoBaixo);
+                if (!ehLigaDeElite) return;
 
-                // 2️⃣ FILTRO ANTI-LIXO (Feminino, sub-idades, amistosos, etc.)
-                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub-21|u21|reserves|amador/i.test(textoBaixo);
+                // Filtro Anti-Lixo (Feminino, Base, Amistosos)
+                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-|u20|u19|u17|u21|reserves|amador/i.test(textoBaixo);
                 if (ehLixo) return;
 
-                // 3️⃣ Descarta jogos encerrados
                 const jaTerminou = /\b(ft|aet|pen)\b/i.test(textoBaixo);
                 if (jaTerminou) return;
 
@@ -122,7 +114,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Melhores Ligas] Partidas de elite encontradas para hoje: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Top Ligas] Jogos estritos encontrados: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -141,7 +133,7 @@ async function buscarJogosDoDia() {
 
                     let mediaRealCantos = (Math.random() * (11.5 - 9.5) + 9.5).toFixed(1);
 
-                    let card = `🔥 *Elite Match [${novosEnviados}]*\n`;
+                    let card = `🔥 *Top Match [${novosEnviados}]*\n`;
                     card += `📅 *Data:* \`${hoje}\`\n`;
                     card += `🕒 *Horário/Status:* \`${horario}\`\n`;
                     card += `⚔️ **${timeA}** x **${timeB}**\n`;
@@ -152,17 +144,10 @@ async function buscarJogosDoDia() {
                     await new Promise(r => setTimeout(r, 700));
                 }
             }
-
-            if (novosEnviados > 0) {
-                console.log(`✅ [Bot Melhores Ligas] ${novosEnviados} jogos de elite enviados no Telegram.`);
-            }
-
-        } else {
-            console.log("⚠️ [Bot Melhores Ligas] Nenhuma partida das principais ligas encontrada no momento.");
         }
 
     } catch (error) {
-        console.error("❌ ERRO CRÍTICO NA EXECUÇÃO:", error.message);
+        console.error("❌ ERRO:", error.message);
     } finally {
         if (browser) await browser.close();
     }
