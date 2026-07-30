@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Jogos do Dia (Brasil) ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigador & Jogos do Dia ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -36,7 +36,7 @@ async function buscarJogosDoDia() {
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Bot Anti-Feminino] Acessando agenda para hoje (${hoje}) no horário do Brasil...`);
+        console.log(`🕵️‍♂️ [Investigação Bot] Acessando agenda para hoje (${hoje}) no horário do Brasil...`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -63,21 +63,40 @@ async function buscarJogosDoDia() {
         });
 
         console.log("⏳ Aguardando renderização completa da página...");
-        await new Promise(r => setTimeout(r, 8000));
+        await new Promise(r => setTimeout(r, 9000));
+
+        // 🔍 MODO INVESTIGAÇÃO: Captura dados de diagnóstico se falhar
+        const diagnostico = await page.evaluate(() => {
+            const bodyText = document.body ? document.body.innerText.trim() : '';
+            const matchBlocks = document.querySelectorAll('.match, tr, .match-row, [class*="match"]');
+            return {
+                totalTamanhoTexto: bodyText.length,
+                amostraTexto: bodyText.substring(0, 400),
+                totalElementosEncontrados: matchBlocks.length
+            };
+        });
+
+        console.log(`🔍 [Relatório de Investigação]: Tamanho do texto na página: ${diagnostico.totalTamanhoTexto} caracteres. Blocos encontrados: ${diagnostico.totalElementosEncontrados}`);
+        if (diagnostico.totalTamanhoTexto < 200) {
+            console.log(`⚠️ [Alerta Investigação] A página parece vazia ou bloqueada. Amostra: "${diagnostico.amostraTexto}"`);
+        }
 
         const dadosExtraidos = await page.evaluate(() => {
             const resultados = [];
-            const linhas = document.querySelectorAll('tr');
+            // Busca por linhas ou blocos de partidas
+            const elementos = document.querySelectorAll('tr, .match-row, li, div');
 
-            linhas.forEach(tr => {
-                const text = tr.innerText ? tr.innerText.trim() : '';
+            elementos.forEach(el => {
+                const text = el.innerText ? el.innerText.trim() : '';
+                if (!text) return;
+
                 const textoBaixo = text.toLowerCase();
 
-                // Filtros rigorosos cobrindo W isolado, women, feminino, sub-idades e amistosos
+                // Filtros rigorosos anti-lixo (feminino, sub-idades, amistosos, etc.)
                 const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub-21|u21|reserves|amador/i.test(textoBaixo);
                 if (ehLixo) return;
 
-                // Identifica se o jogo já terminou
+                // Descarta jogos encerrados
                 const jaTerminou = /\b(ft|aet|pen)\b/i.test(textoBaixo);
                 if (jaTerminou) return;
 
@@ -88,10 +107,13 @@ async function buscarJogosDoDia() {
 
                 const horario = matchHorario ? matchHorario[0] : 'AO VIVO 🔴';
 
-                const colunas = tr.querySelectorAll('td');
-                if (colunas.length >= 3) {
-                    let timeA = colunas[1] ? colunas[1].innerText.trim() : '';
-                    let timeB = colunas[3] ? colunas[3].innerText.trim() : '';
+                // Tenta extrair linhas limpas
+                const linhas = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+                const limpos = linhas.filter(l => !/\d{2}:\d{2}/.test(l) && !/^\d+-\d+$/.test(l) && l !== '-');
+
+                if (limpos.length >= 2) {
+                    let timeA = limpos[0];
+                    let timeB = limpos[1];
 
                     const contemFemininoNoNome = /\b(w)\b|\(w\)|women|feminino|sub-|u20|u19|u17|u21|reserves/i.test(timeA + " " + timeB);
 
@@ -114,7 +136,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Anti-Feminino] Partidas válidas encontradas para hoje: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Investigador] Partidas válidas encontradas para hoje: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -146,15 +168,15 @@ async function buscarJogosDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Anti-Feminino] ${novosEnviados} novos jogos enviados no Telegram.`);
+                console.log(`✅ [Bot Investigador] ${novosEnviados} novos jogos enviados no Telegram.`);
             }
 
         } else {
-            console.log("⚠️ [Bot Anti-Feminino] Nenhuma partida correspondente encontrada para hoje.");
+            console.log("⚠️ [Bot Investigador] Nenhuma partida correspondente encontrada para hoje. Verifique os logs de investigação acima.");
         }
 
     } catch (error) {
-        console.error("❌ ERRO CRÍTICO NA EXECUÇÃO:", error.message);
+        console.error("❌ ERRO CRÍTICO NA INVESTIGAÇÃO/EXECUÇÃO:", error.message);
     } finally {
         if (browser) await browser.close();
     }
