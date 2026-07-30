@@ -84,7 +84,7 @@ async function buscarJogosDoDia() {
                     let timeA = limpos[0];
                     let timeB = limpos[1];
 
-                    // Validação cirúrgica nos nomes dos times para pegar casos como "Ghana W"
+                    // Validação cirúrgica nos nomes dos times
                     const contemFemininoNoNome = /\b(w)\b|\(w\)|women|feminino|sub-|u20|u19|u17|u21|reserves/i.test(timeA + " " + timeB);
 
                     if (!contemFemininoNoNome && timeA.length > 2 && timeB.length > 2) {
@@ -154,12 +154,3 @@ async function buscarJogosDoDia() {
 
 buscarJogosDoDia();
 setInterval(buscarJogosDoDia, 4 * 60 * 60 * 1000);
-
-
-
-
-
-
-
-
-Obs ultilizar essa configuração no package.Json pra funcionar ai vivo
