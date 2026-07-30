@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Top Ligas Estável ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Top Ligas Oficial ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -19,9 +19,10 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 let jogosEnviadosSet = new Set();
 let ultimaDataRegistrada = '';
 
+// Retorna a data atual rigorosamente no Horário de Brasília (YYYY-MM-DD)
 function getDataBrasil() {
-    const agoraz = new Date();
-    return agoraz.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const agora = new Date();
+    return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 }
 
 async function buscarJogosDoDia() {
@@ -35,7 +36,7 @@ async function buscarJogosDoDia() {
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Bot Top Ligas] Acessando agenda para hoje (${hoje})...`);
+        console.log(`🕵️‍♂️ [Bot Top Ligas] Acessando agenda para hoje (${hoje}) no horário do Brasil...`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -56,50 +57,47 @@ async function buscarJogosDoDia() {
         const urlDia = `https://us.soccerway.com/matches/?date=${hoje}`;
         console.log(`🌐 URL: ${urlDia}`);
 
-        await page.goto(urlDia, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.goto(urlDia, {
+            waitUntil: 'domcontentloaded',
+            timeout: 60000
+        });
 
-        console.log("⏳ Aguardando renderização das tabelas de partidas...");
-        try {
-            await page.waitForSelector('table.matches, .match-list, tr', { timeout: 15000 });
-        } catch (e) {
-            console.log("⚠️ Tempo limite aguardando seletor específico, prosseguindo com varredura geral...");
-        }
-
-        await new Promise(r => setTimeout(r, 5000));
+        console.log("⏳ Aguardando renderização completa da página...");
+        await new Promise(r => setTimeout(r, 8000));
 
         const dadosExtraidos = await page.evaluate(() => {
             const resultados = [];
             let ligaAtual = '';
             const linhas = document.querySelectorAll('tr');
 
-            if (linhas.length === 0) return [];
-
             linhas.forEach(tr => {
-                const textoTr = tr.innerText ? tr.innerText.trim() : '';
-                if (!textoTr) return;
+                const text = tr.innerText ? tr.innerText.trim() : '';
+                if (!text) return;
 
+                // Identifica se é um cabeçalho de competição/liga no Soccerway
                 const ehCabecalho = tr.querySelector('th') || tr.className.includes('competition') || tr.className.includes('group') || tr.className.includes('header');
-                if (ehCabecalho && textoTr.length < 100) {
-                    ligaAtual = textoTr.toLowerCase();
+                if (ehCabecalho && text.length < 120) {
+                    ligaAtual = text.toLowerCase();
                     return;
                 }
 
-                const contextoGeral = (ligaAtual + " " + textoTr).toLowerCase();
+                const textoBaixo = text.toLowerCase();
+                const contextoCompleto = (ligaAtual + " " + textoBaixo);
 
-                // 🎯 FILTRO DE LIGAS DE ELITE
-                const ehElite = /premier league|la liga|bundesliga|ligue 1|serie a|champions league|libertadores|copa do brasil|brasileiro|primera division|primeira liga|eredivisie|championship|super lig|copa|liga profissional|torneo|conmebol/i.test(contextoGeral);
-                
-                if (!ehElite) return;
+                // 🎯 FILTRO EXCLUSIVO DE MELHORES LIGAS (Nomes oficiais no Soccerway)
+                const ehTopLiga = /brasileiro|série a|serie a|premier league|la liga|bundesliga|ligue 1|champions league|libertadores|copa do brasil|primera division|primeira liga|eredivisie|championship|super lig|conmebol/i.test(contextoCompleto);
+                if (!ehTopLiga) return;
 
-                // Filtro Anti-Lixo (Feminino, Base, Amistosos)
-                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-|u20|u19|u17|u21|reserves|amador|youth/i.test(contextoGeral);
+                // Filtros anti-lixo (feminino, base, amistosos)
+                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-|u20|u19|u17|u21|reserves|amador|youth/i.test(contextoCompleto);
                 if (ehLixo) return;
 
-                const jaTerminou = /\b(ft|aet|pen)\b/i.test(textoTr.toLowerCase());
+                // Descarta jogos encerrados
+                const jaTerminou = /\b(ft|aet|pen)\b/i.test(textoBaixo);
                 if (jaTerminou) return;
 
-                const matchHorario = textoTr.match(/\d{2}:\d{2}/);
-                const aoVivoMinuto = textoTr.match(/\d{1,2}'/) || textoTr.toLowerCase().includes('ht') || textoTr.toLowerCase().includes('live');
+                const matchHorario = text.match(/\d{2}:\d{2}/);
+                const aoVivoMinuto = text.match(/\d{1,2}'/) || textoBaixo.includes('ht') || textoBaixo.includes('live');
 
                 if (!matchHorario && !aoVivoMinuto) return;
 
@@ -131,7 +129,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Top Ligas] Jogos de elite encontrados: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Top Ligas] Partidas válidas das melhores ligas encontradas: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -163,12 +161,15 @@ async function buscarJogosDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Top Ligas] ${novosEnviados} jogos enviados no Telegram.`);
+                console.log(`✅ [Bot Top Ligas] ${novosEnviados} novos jogos enviados no Telegram.`);
             }
+
+        } else {
+            console.log("⚠️ [Bot Top Ligas] Nenhuma partida correspondente às melhores ligas hoje.");
         }
 
     } catch (error) {
-        console.error("❌ ERRO NA EXECUÇÃO:", error.message);
+        console.error("❌ ERRO CRÍTICO NA EXECUÇÃO:", error.message);
     } finally {
         if (browser) await browser.close();
     }
