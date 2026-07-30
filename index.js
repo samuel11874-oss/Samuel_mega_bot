@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V53 Tabela Completa ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V54 Aba Ao Vivo ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarV53() {
+async function executarRadarV54() {
     let browser = null;
     try {
-        console.log("⚡ [Radar V53] Varrendo todas as linhas da tabela principal...");
+        console.log("⚡ [Radar V54] Acessando e filtrando aba ao vivo real...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -38,19 +38,34 @@ async function executarRadarV53() {
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando carregamento completo da tabela...");
-        await new Promise(r => setTimeout(r, 10000));
+        console.log("⏳ Aguardando carregamento da página...");
+        await new Promise(r => setTimeout(r, 8000));
 
-        // Extrai todas as linhas de tabela (tr) que contêm confrontos
-        const jogosTabela = await page.evaluate(() => {
+        // Tenta clicar em filtros de "Ao Vivo" caso existam na página
+        await page.evaluate(() => {
+            const botoes = document.querySelectorAll('a, button, span');
+            botoes.forEach(el => {
+                if (el.innerText.toLowerCase().includes('ao vivo') || el.innerText.toLowerCase().includes('live')) {
+                    el.click();
+                }
+            });
+        }).catch(() => {});
+
+        await new Promise(r => setTimeout(r, 4000));
+
+        // Extrai apenas as linhas que contêm placar ou minutos em andamento
+        const jogosReaisAoVivo = await page.evaluate(() => {
             const resultados = [];
             const linhas = document.querySelectorAll('tr');
 
-            linhas.forEach((tr, index) => {
+            linhas.forEach((tr) => {
                 const texto = tr.innerText.replace(/\s+/g, ' ').trim();
                 
-                // Pega qualquer linha que possua confronto ("vs" ou "-") e tenha tamanho suficiente
-                if (index > 0 && (texto.includes('vs') || texto.includes(' - ')) && texto.length > 12) {
+                // Critério estrito: Deve ter confronto ("vs") E conter marcação de tempo/minuto (ex: 15', 45', HT, 2ºT)
+                const temTempoReal = /\d+'|HT|1ºT|2ºT/i.test(texto);
+                const temConfronto = texto.includes('vs') || texto.includes(' - ');
+
+                if (temConfronto && temTempoReal && texto.length > 15) {
                     resultados.push(texto);
                 }
             });
@@ -58,34 +73,34 @@ async function executarRadarV53() {
             return resultados;
         });
 
-        console.log(`📊 Partidas totais na tabela capturadas: ${jogosTabela.length}`);
+        console.log(`📊 Jogos realmente AO VIVO filtrados: ${jogosReaisAoVivo.length}`);
 
-        if (jogosTabela.length > 0) {
-            let msg = `🔴 <b>[RADAR V53 - TABELA AO VIVO]</b>\n`;
-            msg += `⚽ Total de jogos listados: <code>${jogosTabela.length}</code>\n\n`;
+        if (jogosReaisAoVivo.length > 0) {
+            let msg = `🔴 <b>[RADAR V54 - AO VIVO REAL]</b>\n`;
+            msg += `🔥 Jogos rolando agora: <code>${jogosReaisAoVivo.length}</code>\n\n`;
             
             await bot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML' }).catch(() => {});
             await new Promise(r => setTimeout(r, 1000));
 
-            for (let i = 0; i < Math.min(jogosTabela.length, 8); i++) {
-                let card = `⚽ <b>JOGO #${i+1}</b>\n`;
-                card += `📄 <code>${jogosTabela[i]}</code>`;
+            for (let i = 0; i < Math.min(jogosReaisAoVivo.length, 8); i++) {
+                let card = `⚽ <b>AO VIVO #${i+1}</b>\n`;
+                card += `📄 <code>${jogosReaisAoVivo[i]}</code>`;
                 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
                 await new Promise(r => setTimeout(r, 500));
             }
         } else {
-            console.log("ℹ️ Nenhum jogo encontrado na tabela.");
-            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhum jogo detectado na tabela principal.`, { parse_mode: 'HTML' });
+            console.log("ℹ️ Nenhum jogo com minuto ao vivo detectado nesta varredura.");
+            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhum jogo com minuto ao vivo detectado no momento.`, { parse_mode: 'HTML' });
         }
 
     } catch (error) {
-        console.error("❌ Erro V53:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V53:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro V54:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V54:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarV53();
-setInterval(executarRadarV53, 180000);
+executarRadarV54();
+setInterval(executarRadarV54, 180000);
