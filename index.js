@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Turbo TotalCorner ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Turbo V3 ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function executarRadarTurbo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot Turbo] Capturando dados avançados no TotalCorner...");
+        console.log("🕵️‍♂️ [Bot Turbo V3] Filtrando rigorosamente jogos AO VIVO...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -44,10 +44,10 @@ async function executarRadarTurbo() {
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando 8 segundos para renderização do painel completo...");
+        console.log("⏳ Aguardando 8 segundos para renderização dos dados...");
         await new Promise(r => setTimeout(r, 8000));
 
-        // Extrai todas as métricas detalhadas da tabela em tempo real
+        // Extração com validação rigorosa de jogos em andamento
         const partidas = await page.evaluate(() => {
             const resultados = [];
             const selector = '#home_page_corner tbody tr, #featured_match_table tbody tr, table.match_table tbody tr';
@@ -56,60 +56,75 @@ async function executarRadarTurbo() {
             linhas.forEach(tr => {
                 if (tr.querySelector('th') || tr.cells.length < 5) return;
 
-                const cols = Array.from(tr.querySelectorAll('td')).map(td => td.innerText ? td.innerText.trim() : '');
-
-                // Seletores diretos de elementos
-                const timeAEl = tr.querySelector('.match_home, .home_name, td:nth-child(4)');
-                const timeBEl = tr.querySelector('.match_away, .away_name, td:nth-child(6)');
+                // 1. Extração do Minuto / Status
                 const statusEl = tr.querySelector('.match_status, .status, td:nth-child(3)');
-                const golEl = tr.querySelector('.match_goal, .score, td:nth-child(5)');
-                const cornerEl = tr.querySelector('.match_corner, .corner, td:nth-child(7)');
-                const daEl = tr.querySelector('.match_dangerous_attack, .match_attach, td:nth-child(8)');
-                const shotEl = tr.querySelector('.match_shot, td:nth-child(9)');
-                const cardEl = tr.querySelector('.match_card, td:nth-child(10)');
-                const oddsEl = tr.querySelector('.match_handicap, .match_asian_corner, td:nth-child(11)');
+                let tempoText = statusEl ? statusEl.innerText.trim() : '';
 
-                let timeA = timeAEl ? timeAEl.innerText.trim() : '';
-                let timeB = timeBEl ? timeBEl.innerText.trim() : '';
-                let tempo = statusEl ? statusEl.innerText.trim() : 'AO VIVO';
-                let placar = golEl ? golEl.innerText.trim() : '0 - 0';
-                let escanteios = cornerEl ? cornerEl.innerText.trim() : '0 - 0';
-                let ataqPerigosos = daEl ? daEl.innerText.trim() : '';
-                let chutesGols = shotEl ? shotEl.innerText.trim() : '';
-                let cartoes = cardEl ? cardEl.innerText.trim() : '';
-                let linhaCantos = oddsEl ? oddsEl.innerText.trim() : '';
-
-                // Trata fallbacks das colunas caso seletores variem no layout
-                if (!timeA || !timeB) {
-                    const textos = cols.filter(c => c.length > 2 && !/^\d+$/.test(c) && !c.includes('-'));
-                    if (textos.length >= 2) {
-                        timeA = textos[0];
-                        timeB = textos[1];
-                    }
+                // FILTRO 1: Se contiver data/hora (ex: 07/30 17:00), É PRÉ-JOGO -> DESCARTA!
+                if (/\d{2}\/\d{2}/.test(tempoText) || /\d{2}:\d{2}/.test(tempoText)) {
+                    return;
                 }
 
-                // Identifica padrões numéricos nas colunas adicionais
-                const hifens = cols.filter(c => /^\d+\s*-\s*\d+$/.test(c));
-                if (!ataqPerigosos && hifens.length > 2) ataqPerigosos = hifens[2];
-                if (!chutesGols && hifens.length > 3) chutesGols = hifens[3];
-                if (!cartoes && hifens.length > 4) cartoes = hifens[4];
+                // 2. Extração dos Times
+                const timeAEl = tr.querySelector('.match_home a, .match_home, .home_name, td:nth-child(4)');
+                const timeBEl = tr.querySelector('.match_away a, .match_away, .away_name, td:nth-child(6)');
+                let timeA = timeAEl ? timeAEl.innerText.trim() : '';
+                let timeB = timeBEl ? timeBEl.innerText.trim() : '';
+
+                // 3. Extração do Placar (Gols)
+                const golEl = tr.querySelector('.match_goal, .score, td:nth-child(5)');
+                let placar = golEl ? golEl.innerText.trim() : '';
+
+                // FILTRO 2: Se o placar for "vs" ou em branco, o jogo não começou -> DESCARTA!
+                if (!placar || placar.toLowerCase() === 'vs' || !/\d/.test(placar)) {
+                    return;
+                }
+
+                // 4. Extração dos Escanteios
+                const cornerEl = tr.querySelector('.match_corner, .corner, td:nth-child(7)');
+                let escanteios = cornerEl ? cornerEl.innerText.trim() : '0 - 0';
+
+                // 5. Extração de Estatísticas Ao Vivo (Ataques, Chutes, Cartões, Linhas)
+                const daEl = tr.querySelector('.match_dangerous_attack, .match_attach');
+                const shotEl = tr.querySelector('.match_shot');
+                const cardEl = tr.querySelector('.match_card');
+                const oddsEl = tr.querySelector('.match_handicap, .match_asian_corner');
+
+                let ataqPerigosos = daEl ? daEl.innerText.trim() : '';
+                let chutes = shotEl ? shotEl.innerText.trim() : '';
+                let cartoes = cardEl ? cardEl.innerText.trim() : '';
+                let linha = oddsEl ? oddsEl.innerText.trim() : 'Over Asiático';
+
+                // FILTRO 3: Validação contra colunas deslocadas (Evita "35 cartões")
+                if (cartoes) {
+                    let partes = cartoes.split('-').map(n => parseInt(n.trim()));
+                    // Se algum lado tiver mais de 15 cartões, é valor de odd corrompido
+                    if (partes.some(n => n > 15 || isNaN(n))) {
+                        cartoes = '0 - 0';
+                    }
+                } else {
+                    cartoes = '0 - 0';
+                }
+
+                if (!ataqPerigosos || !ataqPerigosos.includes('-')) ataqPerigosos = 'S/D';
+                if (!chutes || !chutes.includes('-')) chutes = 'S/D';
 
                 if (timeA && timeB && timeA.length > 1) {
                     resultados.push({
                         timeA: timeA.replace(/\n/g, ' '),
                         timeB: timeB.replace(/\n/g, ' '),
-                        tempo: tempo || 'AO VIVO',
-                        placar: placar || '0 - 0',
-                        escanteios: escanteios || '0 - 0',
-                        ataquePerigoso: ataqPerigosos || '28 - 19',
-                        chutes: chutesGols || '4 - 2',
-                        cartoes: cartoes || '1 - 2',
-                        linha: linhaCantos || 'Over Asiático'
+                        tempo: tempoText || 'AO VIVO',
+                        placar: placar,
+                        escanteios: escanteios,
+                        ataquePerigoso: ataqPerigosos,
+                        chutes: chutes,
+                        cartoes: cartoes,
+                        linha: linha
                     });
                 }
             });
 
-            // Filtra duplicados pelo confronto
+            // Remove duplicados por confronto
             const unicos = [];
             const vistos = new Set();
             resultados.forEach(item => {
@@ -123,7 +138,7 @@ async function executarRadarTurbo() {
             return unicos;
         });
 
-        console.log(`⚽ [Bot Turbo] Partidas capturadas com sucesso: ${partidas.length}`);
+        console.log(`⚽ [Bot V3] Partidas AO VIVO VÁLIDAS encontradas: ${partidas.length}`);
 
         if (partidas.length > 0) {
             let enviados = 0;
@@ -132,8 +147,7 @@ async function executarRadarTurbo() {
                 let p = partidas[i];
                 enviados++;
 
-                // Tag de alerta dinâmica
-                let tagPressao = "⚽ EM ANDAMENTO";
+                let tagPressao = "⚽ AO VIVO";
                 if (p.tempo.includes("'")) {
                     let min = parseInt(p.tempo);
                     if (min >= 70) tagPressao = "🚨 PRESSÃO ALTA (RETA FINAL)";
@@ -154,24 +168,24 @@ async function executarRadarTurbo() {
                 card += `  🟨 <b>Cartões:</b> <code>${p.cartoes}</code>\n\n`;
                 card += `📈 <b>LINHA / MERCADO:</b> <code>${p.linha}</code>\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Samuel Mega Bot • Análise Turbo</i>`;
+                card += `🤖 <i>Samuel Mega Bot • Dados Reais</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
                 await new Promise(r => setTimeout(r, 700)); 
             }
 
-            console.log(`✅ ${enviados} Cards Turbos enviados com sucesso para o Telegram!`);
+            console.log(`✅ ${enviados} Cards filtrados enviados para o Telegram!`);
         } else {
-            console.log("⚠️ Nenhuma partida capturada nesta varredura.");
+            console.log("⚠️ Nenhuma partida ao vivo atendeu aos critérios de validação nesta varredura.");
         }
 
     } catch (error) {
-        console.error("❌ Erro na execução do Radar Turbo:", error.message);
+        console.error("❌ Erro na execução do Radar V3:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Executa a cada 5 minutos (300.000 ms)
+// Executa a cada 5 minutos
 setInterval(executarRadarTurbo, 300000);
 executarRadarTurbo();
