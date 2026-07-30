@@ -57,28 +57,23 @@ async function buscarJogosAoVivo() {
             console.log("⚠️ Falha ao clicar na aba Live. Continuando...");
         }
 
-        // 🧠 EXTRATOR BASEADO NO PRINT DO SOCCERWAY
         const partidas = await page.evaluate(() => {
             const resultados = [];
-            // O Soccerway agrupa as partidas em blocos de linhas de confronto
             const blocos = document.querySelectorAll('tr, div, li');
 
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
                 if (!txt || txt.length < 15 || txt.length > 300) return;
 
-                // Ignora menus e rodapés
                 if (/Copyright|Soccerway|Sign up|Full-time|Finished|\bFT\b|ALL|SCHEDULED/i.test(txt)) return;
 
                 const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                 
-                // Procura por um minuto ativo (ex: 67, 71, 52)
                 let indexMinuto = linhas.findIndex(l => /^\d{1,2}'?$/.test(l) || /^\d+\+\d+'?$/.test(l));
-                if (indexMinuto === -1) return; // Se não tem minuto na linha, ignora
+                if (indexMinuto === -1) return;
 
                 let tempo = linhas[indexMinuto].replace("'", "") + "'";
                 
-                // Filtra os textos para isolar os nomes dos times (removendo números isolados e metadados)
                 let limpos = linhas.filter(l => 
                     l !== linhas[indexMinuto] && 
                     !/^\d+$/.test(l) && 
@@ -86,7 +81,6 @@ async function buscarJogosAoVivo() {
                     l.length > 2
                 );
 
-                // Procura por números isolados que representam os gols (ex: o 2 e o 4 do print)
                 let numeros = linhas.filter(l => /^\d+$/.test(l) && l !== linhas[indexMinuto]);
 
                 if (limpos.length >= 2 && numeros.length >= 2) {
@@ -99,7 +93,6 @@ async function buscarJogosAoVivo() {
                 }
             });
 
-            // Remove duplicatas exatas
             const unicas = [];
             const vistas = new Set();
             resultados.forEach(item => {
@@ -121,14 +114,17 @@ async function buscarJogosAoVivo() {
                 let p = partidas[i];
                 enviados++;
 
-                let card = `⚡ *Partida Ao Vivo [${enviados}]*\n`;
-                card += `────────────────────\n`;
-                card += `⏱ *Tempo:* \`${p.tempo}\`\n`;
-                card += `⚽ **${p.timeA}** x **${p.timeB}**\n`;
-                card += `📊 *Placar:* \` ${p.placar} \`\n`;
-                card += `────────────────────`;
+                let card = `🛸 <code>[ SYSTEM // LIVE_RADAR ]</code> ⚡\n`;
+                card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+                card += `⏱  <b>TEMPO</b>  ➔  <code>[ ${p.tempo} ]</code>\n`;
+                card += `⚽  <b>CONFRONTO</b>\n`;
+                card += `    🔹 <b>${p.timeA}</b>\n`;
+                card += `    🔸 <b>${p.timeB}</b>\n`;
+                card += `📊  <b>PLACAR</b>  ➔  ⚡ <code> ${p.placar} </code> ⚡\n`;
+                card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+                card += `🤖 <i>Status: Neural Scan Active</i>`;
 
-                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
+                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
                 await new Promise(r => setTimeout(r, 600)); 
             }
             console.log(`✅ ${enviados} partidas enviadas para o Telegram com sucesso!`);
