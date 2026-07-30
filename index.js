@@ -9,17 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live Total ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V5 TotalCorner ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarLiveTotal() {
+async function executarRadarLiveV5() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot Live Total] Capturando TODOS os jogos ao vivo no momento...");
+        console.log("🕵️‍♂️ [Bot V5] Varrendo partidas AO VIVO no TotalCorner...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -47,22 +47,36 @@ async function executarRadarLiveTotal() {
         console.log("⏳ Aguardando 8 segundos para renderização dos dados...");
         await new Promise(r => setTimeout(r, 8000));
 
-        const partidas = await page.evaluate(() => {
-            const resultados = [];
-            const selector = '#home_page_corner tbody tr, #featured_match_table tbody tr, table.match_table tbody tr';
-            const linhas = document.querySelectorAll(selector);
+        const resultados = await page.evaluate(() => {
+            const lista = [];
+            // Seleciona diretamente as linhas de jogos do TotalCorner (id tr_match_XXXXXX)
+            let linhas = document.querySelectorAll('tr[id^="tr_match_"]');
+            
+            // Fallback caso o layout altere levemente
+            if (linhas.length === 0) {
+                linhas = document.querySelectorAll('table.match_table tbody tr, #home_page_corner tbody tr');
+            }
 
             linhas.forEach(tr => {
                 if (tr.querySelector('th') || tr.cells.length < 5) return;
 
                 const textoLinha = tr.innerText || '';
 
-                // 1. FILTRO DE TEMPO/STATUS (Descarta APENAS jogos futuros ou já encerrados)
-                const statusEl = tr.querySelector('.match_status, .status, td:nth-child(3)');
+                // 1. EXTRAÇÃO DE MINUTO/STATUS
+                const statusEl = tr.querySelector('.match_status, .status, .match_status_minutes, td:nth-child(3)');
                 let tempoText = statusEl ? statusEl.innerText.trim() : '';
 
-                // Se for data (07/30), hora futura (17:00), encerrado (FT) ou cancelado -> DESCARTA
-                if (/\d{2}\/\d{2}/.test(tempoText) || /\d{2}:\d{2}/.test(tempoText) || /\bFT\b/i.test(tempoText) || /\bCanc\b/i.test(tempoText)) {
+                let minutoLive = 'AO VIVO';
+                const matchMinuto = tempoText.match(/\d+['"]|\bHT\b|\b1st\b|\b2nd\b/i) || textoLinha.match(/\b(\d+['"]|\bHT\b)/i);
+                
+                if (matchMinuto) {
+                    minutoLive = matchMinuto[0];
+                } else if (tempoText && !tempoText.includes(':')) {
+                    minutoLive = tempoText;
+                }
+
+                // Se a partida estiver explicitamente encerrada (FT) ou cancelada, ignora
+                if (/\bFT\b/i.test(tempoText) || /\bCanc\b/i.test(tempoText)) {
                     return;
                 }
 
@@ -77,13 +91,8 @@ async function executarRadarLiveTotal() {
                 let placar = golEl ? golEl.innerText.trim() : '';
 
                 if (!placar || placar.toLowerCase() === 'vs') {
-                    const matchPlacar = textoLinha.match(/(\d+\s*-\s*\d+)/);
-                    if (matchPlacar) placar = matchPlacar[1];
-                }
-
-                // Se o placar for "vs" ou não tiver números, o jogo não começou
-                if (!placar || placar.toLowerCase() === 'vs' || !/\d/.test(placar)) {
-                    return;
+                    const mPlacar = textoLinha.match(/(\d+\s*-\s*\d+)/);
+                    if (mPlacar) placar = mPlacar[1];
                 }
 
                 // 4. ESCANTEIOS E ESTATÍSTICAS
@@ -100,7 +109,7 @@ async function executarRadarLiveTotal() {
                 let cartoes = cardEl ? cardEl.innerText.trim() : '0 - 0';
                 let linha = oddsEl ? oddsEl.innerText.trim() : 'Over Asiático';
 
-                // Tratamento para evitar que odds caiam na coluna de cartões
+                // Tratamento de cartões
                 if (cartoes) {
                     let partes = cartoes.split('-').map(n => parseInt(n.trim()));
                     if (partes.some(n => n > 15 || isNaN(n))) {
@@ -109,11 +118,11 @@ async function executarRadarLiveTotal() {
                 }
 
                 if (timeA && timeB && timeA.length > 1) {
-                    resultados.push({
+                    lista.push({
                         timeA: timeA.replace(/\n/g, ' '),
                         timeB: timeB.replace(/\n/g, ' '),
-                        tempo: tempoText || 'AO VIVO',
-                        placar: placar,
+                        tempo: minutoLive,
+                        placar: placar || '0 - 0',
                         escanteios: escanteios,
                         ataquePerigoso: ataqPerigosos,
                         chutes: chutes,
@@ -123,10 +132,10 @@ async function executarRadarLiveTotal() {
                 }
             });
 
-            // Remove duplicatas por confronto
+            // Remove duplicados
             const unicos = [];
             const vistos = new Set();
-            resultados.forEach(item => {
+            lista.forEach(item => {
                 const chave = `${item.timeA} x ${item.timeB}`;
                 if (!vistos.has(chave)) {
                     vistos.add(chave);
@@ -137,13 +146,13 @@ async function executarRadarLiveTotal() {
             return unicos;
         });
 
-        console.log(`⚽ [Bot Live Total] Partidas AO VIVO encontradas: ${partidas.length}`);
+        console.log(`⚽ [Bot V5] Total de partidas AO VIVO capturadas: ${resultados.length}`);
 
-        if (partidas.length > 0) {
+        if (resultados.length > 0) {
             let enviados = 0;
 
-            for (let i = 0; i < Math.min(partidas.length, 20); i++) {
-                let p = partidas[i];
+            for (let i = 0; i < Math.min(resultados.length, 20); i++) {
+                let p = resultados[i];
                 enviados++;
 
                 let tagPressao = "⚽ AO VIVO";
@@ -167,24 +176,24 @@ async function executarRadarLiveTotal() {
                 card += `  🟨 <b>Cartões:</b> <code>${p.cartoes}</code>\n\n`;
                 card += `📈 <b>LINHA / MERCADO:</b> <code>${p.linha}</code>\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Samuel Mega Bot • Todos os Jogos Ao Vivo</i>`;
+                card += `🤖 <i>Samuel Mega Bot • Coleta em Tempo Real</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
                 await new Promise(r => setTimeout(r, 700)); 
             }
 
-            console.log(`✅ ${enviados} cards de jogos LIVE enviados para o Telegram!`);
+            console.log(`✅ ${enviados} cards enviados com sucesso para o Telegram!`);
         } else {
-            console.log("⚠️ Nenhuma partida ao vivo acontecendo no momento.");
+            console.log("⚠️ Nenhuma partida encontrada na verificação.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar Live Total:", error.message);
+        console.error("❌ Erro no Radar V5:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
 // Executa a cada 5 minutos
-setInterval(executarRadarLiveTotal, 300000);
-executarRadarLiveTotal();
+setInterval(executarRadarLiveV5, 300000);
+executarRadarLiveV5();
