@@ -9,17 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V15 🎯</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V16 🔬</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarLiveV15() {
+async function executarRadarLiveV16() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot V15] Varredura cirúrgica iniciada...");
+        console.log("🕵️‍♂️ [Bot V16] Iniciando extração cirúrgica e diagnóstico no TotalCorner...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -37,19 +37,39 @@ async function executarRadarLiveV15() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1440, height: 900 });
 
-        console.log("🌐 Acessando TotalCorner Live...");
+        console.log("🌐 Acessando https://www.totalcorner.com/match/live ...");
         await page.goto('https://www.totalcorner.com/match/live', {
-            waitUntil: 'networkidle2',
+            waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
-        // Rolagem leve para carregar o AJAX
-        await page.evaluate(() => window.scrollBy(0, 300));
-        await new Promise(r => setTimeout(r, 5000));
+        // Aguarda a tabela com as partidas reais ser carregada
+        console.log("⏳ Aguardando renderização dos elementos tr[id^='tr_match_']...");
+        await page.waitForSelector('tr[id^="tr_match_"]', { timeout: 25000 }).catch(() => {
+            console.log("⚠️ Seletor principal tr[id^='tr_match_'] não apareceu dentro do tempo limite.");
+        });
+
+        // Pausa de estabilização dos dados AJAX
+        await new Promise(r => setTimeout(r, 4000));
+
+        // DIAGNÓSTICO IMPRESSO NO LOG DO RENDER
+        const diag = await page.evaluate(() => {
+            const trs = document.querySelectorAll('tr[id^="tr_match_"]');
+            const sampleText = trs.length > 0 ? trs[0].innerText.replace(/\s+/g, ' ') : 'Nenhum elemento encontrado';
+            return {
+                totalMatchRows: trs.length,
+                sample: sampleText
+            };
+        });
+
+        console.log(`📊 Partidas com ID detectadas no DOM: ${diag.totalMatchRows}`);
+        if (diag.totalMatchRows > 0) {
+            console.log(`📝 Amostra da 1ª linha lida: "${diag.sample.substring(0, 100)}..."`);
+        }
 
         const resultados = await page.evaluate(() => {
             const lista = [];
-            const trs = document.querySelectorAll('tr');
+            const trs = document.querySelectorAll('tr[id^="tr_match_"]');
 
             trs.forEach(tr => {
                 // 1. TIMES
@@ -61,25 +81,36 @@ async function executarRadarLiveV15() {
                 let timeA = homeEl.innerText.trim().split('\n')[0];
                 let timeB = awayEl.innerText.trim().split('\n')[0];
 
-                if (!timeA || !timeB || timeA.length < 2 || timeB.length < 2) return;
+                if (!timeA || !timeB) return;
 
-                // 2. CHECAGEM EXCLUSIVA DA CÉLULA DO MINUTO (STATUS)
-                const statusEl = tr.querySelector('.match_status_minutes, .match_status, td[class*="status"]');
-                let minuteText = statusEl ? statusEl.innerText.trim() : '';
+                // 2. MINUTO AO VIVO (Busca na classe específica .match_status_minutes ou .match_status)
+                const statusMinEl = tr.querySelector('.match_status_minutes');
+                const statusTd = tr.querySelector('.match_status');
 
-                // Se a célula do status for estritamente um horário futuro (ex: "14:30") ou encerrado (FT), pula!
-                if (/^\d{1,2}:\d{2}$/.test(minuteText) || /\b(FT|Fin|Canc|Postp)\b/i.test(minuteText)) {
+                let minText = '';
+                if (statusMinEl && statusMinEl.innerText.trim()) {
+                    minText = statusMinEl.innerText.trim();
+                } else if (statusTd && statusTd.innerText.trim()) {
+                    minText = statusTd.innerText.trim();
+                }
+
+                // Descarte de partidas encerradas ou sem indicação de tempo
+                if (!minText || /\b(FT|Fin|Canc|Postp)\b/i.test(minText)) {
                     return;
                 }
 
-                // Busca o número do minuto (ex: 89, 67, 12, 45+1) ou HT
-                let minMatch = minuteText.match(/\b\d+\b|\bHT\b/i);
-                if (!minMatch) return; // Se não encontrou minuto ativo na célula de status, ignora
+                // Se o status for exclusivamente um horário futuro (ex: 15:30), pula
+                if (/^\d{1,2}:\d{2}$/.test(minText)) {
+                    return;
+                }
 
-                let minVal = minMatch[0];
-                let tempoFormatado = minVal.toUpperCase() === 'HT' ? 'HT' : `${minVal}'`;
+                // Captura minutagem válida (ex: 89, 45+2, HT)
+                let minMatch = minText.match(/(\d+\+?\d*|HT)/i);
+                if (!minMatch) return;
 
-                // 3. PLACAR DE GOLS
+                let tempoFormatado = minMatch[0].toUpperCase() === 'HT' ? 'HT' : `${minMatch[0]}'`;
+
+                // 3. PLACAR
                 const goalEl = tr.querySelector('.match_goal, .score');
                 let placarText = goalEl ? goalEl.innerText.trim() : '0 - 0';
                 let matchGols = placarText.match(/\d+\s*[-:]\s*\d+/);
@@ -88,9 +119,9 @@ async function executarRadarLiveV15() {
                 // 4. ESCANTEIOS
                 const cornerEl = tr.querySelector('.match_corner, .corner');
                 let escanteiosText = cornerEl ? cornerEl.innerText.trim() : '0 - 0';
-                if (escanteiosText.includes('.')) escanteiosText = '0 - 0'; // Limpa odds
+                if (escanteiosText.includes('.')) escanteiosText = '0 - 0';
 
-                // 5. ESTATÍSTICAS DE PRESSÃO
+                // 5. DADOS DE PRESSÃO
                 const attachEl = tr.querySelector('.match_attach');
                 const shotEl = tr.querySelector('.match_shot');
                 const cardEl = tr.querySelector('.match_card');
@@ -111,7 +142,7 @@ async function executarRadarLiveV15() {
                 });
             });
 
-            // Evita duplicatas
+            // Elimina duplicatas
             const unicos = [];
             const vistos = new Set();
             lista.forEach(item => {
@@ -125,7 +156,7 @@ async function executarRadarLiveV15() {
             return unicos;
         });
 
-        console.log(`⚽ [Bot V15] Partidas AO VIVO identificadas e validadas: ${resultados.length}`);
+        console.log(`⚽ [Bot V16] Partidas AO VIVO validadas e prontas: ${resultados.length}`);
 
         if (resultados.length > 0) {
             let enviados = 0;
@@ -154,24 +185,24 @@ async function executarRadarLiveV15() {
                 card += `  🎯 <b>Chutes no Gol:</b> <code>${p.chutes}</code>\n`;
                 card += `  🟨 <b>Cartões:</b> <code>${p.cartoes}</code>\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Samuel Mega Bot • Precisão V15 (#${enviados})</i>`;
+                card += `🤖 <i>Samuel Mega Bot • Precisão V16 (#${enviados})</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
                 await new Promise(r => setTimeout(r, 600)); 
             }
 
-            console.log(`✅ ${enviados} cards de jogos reais enviados com sucesso ao Telegram!`);
+            console.log(`✅ ${enviados} cards de jogos ao vivo enviados com sucesso!`);
         } else {
-            console.log("⚠️ Nenhuma partida ao vivo em andamento encontrada neste momento.");
+            console.log("⚠️ Nenhuma partida ao vivo atendeu aos critérios neste ciclo.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V15:", error.message);
+        console.error("❌ Erro no Radar V16:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
 // Executa a cada 5 minutos
-setInterval(executarRadarLiveV15, 300000);
-executarRadarLiveV15();
+setInterval(executarRadarLiveV16, 300000);
+executarRadarLiveV16();
