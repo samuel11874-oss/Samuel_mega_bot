@@ -9,14 +9,14 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V31 Gols Reais ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V33 Ao Vivo ⚡</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-// Ligas Principais
+// Ligas Principais de Elite
 const TOP_LIGAS = [
     'brasil', 'brazil', 'brasileiro', 'serie a', 'serie b', 'copa do brasil', 'paulista', 'carioca',
     'libertadores', 'sudamericana', 'sul-americana', 'argentina', 'colombia', 'chile', 'uruguay', 'paraguay',
@@ -33,10 +33,10 @@ const TERMOS_PROIBIDOS = [
     'amateur', 'amador', 'reserves', 'reservas', 'academy', 'academica'
 ];
 
-async function executarRadarV31() {
+async function executarRadarV33AoVivo() {
     let browser = null;
     try {
-        console.log("📊 [Bot V31] Aguardando carregamento completo de linhas de gols no TotalCorner...");
+        console.log("⚡ [Bot V33] Varrendo jogos AO VIVO no TotalCorner...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -52,17 +52,15 @@ async function executarRadarV31() {
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
 
-        console.log("🌐 Acessando TotalCorner Hoje...");
-        await page.goto('https://www.totalcorner.com/match/today', {
-            waitUntil: 'networkidle0',
+        console.log("🌐 Acessando TotalCorner AO VIVO...");
+        await page.goto('https://www.totalcorner.com/match/live', {
+            waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        // Aguarda 6 segundos para garantir que scripts AJAX de odds/linhas carreguem no DOM
-        console.log("⏳ Aguardando renderização dinâmica das linhas de gols...");
-        await new Promise(r => setTimeout(r, 6000));
+        await new Promise(r => setTimeout(r, 4000));
 
-        const jogosProcessados = await page.evaluate((ligasFiltro, proibidos) => {
+        const jogosAoVivo = await page.evaluate((ligasFiltro, proibidos) => {
             const lista = [];
             const trs = Array.from(document.querySelectorAll('tr'));
 
@@ -75,10 +73,21 @@ async function executarRadarV31() {
 
                 if (!timeA || !timeB || timeA.length < 2 || timeB.length < 2) return;
 
-                // Horário
                 const textoLinha = tr.innerText || '';
-                const horaMatch = textoLinha.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
-                const horaJogo = horaMatch ? horaMatch[0] : 'Hoje';
+
+                // Extração do Minuto / Status do Jogo
+                let tempoJogo = "Ao Vivo";
+                const matchStatusElem = tr.querySelector('.match_status, .status, .timer');
+                if (matchStatusElem && matchStatusElem.innerText.trim()) {
+                    tempoJogo = matchStatusElem.innerText.trim();
+                } else {
+                    const matchMinuto = textoLinha.match(/\b([0-9]{1,2})['′]/);
+                    if (matchMinuto) {
+                        tempoJogo = `${matchMinuto[1]}' min`;
+                    } else if (textoLinha.includes('HT') || textoLinha.includes('Half')) {
+                        tempoJogo = "Intervalo (HT)";
+                    }
+                }
 
                 // Liga
                 let ligaNome = "Campeonato Geral";
@@ -104,29 +113,43 @@ async function executarRadarV31() {
                 if (proibidos.some(termo => contexto.includes(termo))) return;
                 if (!ligasFiltro.some(l => contexto.includes(l))) return;
 
-                // BUSCA ESTATÍSTICA/LINHA DE GOLS NAS CÉLULAS DA LINHA
-                let golLinha = "Média Estimada: ~2.25 Gols";
+                // Extração do Placar (Gols)
+                let placar = "0 - 0";
+                const goalElem = tr.querySelector('.match_goal, .score');
+                if (goalElem && goalElem.innerText.trim()) {
+                    placar = goalElem.innerText.trim();
+                } else {
+                    const matchScore = textoLinha.match(/\b(\d+)\s*[-:]\s*(\d+)\b/);
+                    if (matchScore) placar = `${matchScore[1]} - ${matchScore[2]}`;
+                }
 
-                const tds = Array.from(tr.querySelectorAll('td'));
-                for (const td of tds) {
-                    const txt = td.innerText.replace(/\s+/g, ' ').trim();
-                    // Captura linhas no formato 2.0, 2.25, 2.5, 2.75, 3.0 etc.
-                    const matchGol = txt.match(/\b([1-4]\.(?:0|25|5|75))\b/);
-                    if (matchGol) {
-                        const valor = parseFloat(matchGol[1]);
-                        if (valor >= 1.5 && valor <= 4.5) {
-                            golLinha = `${matchGol[1]} Gols (Linha O/U)`;
-                            break;
-                        }
+                // Extração de Escanteios Ao Vivo
+                let escanteios = "N/I";
+                const cornerElem = tr.querySelector('.match_corner, .corner');
+                if (cornerElem && cornerElem.innerText.trim()) {
+                    const txtCorner = cornerElem.innerText.trim();
+                    const matchCantos = txtCorner.match(/(\d+)\s*[-:]\s*(\d+)/);
+                    if (matchCantos) {
+                        const cA = parseInt(matchCantos[1]);
+                        const cB = parseInt(matchCantos[2]);
+                        escanteios = `${cA} - ${cB} (Total: ${cA + cB})`;
+                    } else {
+                        escanteios = txtCorner;
+                    }
+                } else {
+                    const matchCantosGeral = textoLinha.match(/\b(\d+)\s*[-]\s*(\d+)\b/g);
+                    if (matchCantosGeral && matchCantosGeral.length > 1) {
+                        escanteios = matchCantosGeral[1];
                     }
                 }
 
                 lista.push({
                     timeA: timeA,
                     timeB: timeB,
-                    hora: horaJogo,
+                    tempo: tempoJogo,
                     liga: ligaNome,
-                    gols: golLinha
+                    placar: placar,
+                    escanteios: escanteios
                 });
             });
 
@@ -144,13 +167,13 @@ async function executarRadarV31() {
             return unicos;
         }, TOP_LIGAS, TERMOS_PROIBIDOS);
 
-        console.log(`⚽ [Bot V31] ${jogosProcessados.length} partidas com linhas de gols validadas.`);
+        console.log(`⚡ [Bot V33] ${jogosAoVivo.length} partidas AO VIVO capturadas.`);
 
-        if (jogosProcessados.length > 0) {
-            let headerMsg = `🎯 <b>[ RADAR PRO // LINHAS DE GOLS REAIS V31 ]</b> ⚽\n`;
+        if (jogosAoVivo.length > 0) {
+            let headerMsg = `⚡ <b>[ RADAR AO VIVO // IN-PLAY V33 ]</b> ⚽\n`;
             headerMsg += `────────────────────────\n`;
-            headerMsg += `📊 <b>Jogos Selecionados:</b> <code>${jogosProcessados.length}</code>\n`;
-            headerMsg += `⚡ <i>Linhas de Gols extraídas pós-carregamento</i>\n`;
+            headerMsg += `🔥 <b>Partidas Rolando Agora:</b> <code>${jogosAoVivo.length}</code>\n`;
+            headerMsg += `📡 <i>Atualizações em tempo real do TotalCorner</i>\n`;
             headerMsg += `────────────────────────`;
 
             await bot.sendMessage(CHAT_ID, headerMsg, { parse_mode: 'HTML' }).catch(() => {});
@@ -158,35 +181,39 @@ async function executarRadarV31() {
 
             let enviados = 0;
 
-            for (let i = 0; i < jogosProcessados.length; i++) {
-                const j = jogosProcessados[i];
+            for (let i = 0; i < jogosAoVivo.length; i++) {
+                const j = jogosAoVivo[i];
                 enviados++;
 
-                let card = `⚽ <b>INFORMAÇÕES DA PARTIDA ENCONTRADA #${enviados}</b>\n`;
+                let card = `⚡ <b>PARTIDA AO VIVO ENCONTRADA #${enviados}</b>\n`;
                 card += `────────────────────────\n`;
                 card += `🏆 <b>Liga:</b> <code>${j.liga}</code>\n`;
-                card += `⏰ <b>Horário:</b> <code>${j.hora}</code>\n\n`;
+                card += `⏱️ <b>Tempo:</b> <code>${j.tempo}</code>\n\n`;
                 card += `🏠 <b>${j.timeA}</b>\n`;
                 card += `   <b>VS</b>\n`;
                 card += `✈️ <b>${j.timeB}</b>\n`;
                 card += `────────────────────────\n`;
-                card += `⚽ <b>Média / Linha de Gols:</b> <code>${j.gols}</code>\n`;
+                card += `⚽ <b>Placar Ao Vivo:</b> <code>${j.placar}</code>\n`;
+                card += `🚩 <b>Escanteios Ao Vivo:</b> <code>${j.escanteios}</code>\n`;
                 card += `────────────────────────\n`;
-                card += `🤖 <i>Samuel Mega Bot • V31 Gols Reais</i>`;
+                card += `🤖 <i>Samuel Mega Bot • V33 In-Play Radar</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
                 await new Promise(r => setTimeout(r, 700));
             }
 
-            console.log(`✅ ${enviados} cards entregues com sucesso no Telegram!`);
+            console.log(`✅ ${enviados} cards ao vivo entregues no Telegram!`);
+        } else {
+            console.log("ℹ️ Nenhuma partida das ligas selecionadas rolando ao vivo no momento.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V31:", error.message);
+        console.error("❌ Erro no Radar V33 Ao Vivo:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-setInterval(executarRadarV31, 1800000);
-executarRadarV31();
+// Roda a cada 5 minutos (300.000 ms) para monitorar o ao vivo
+setInterval(executarRadarV33AoVivo, 300000);
+executarRadarV33AoVivo();
