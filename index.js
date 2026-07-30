@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigação Links Ao Vivo 🔍⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V53 Tabela Completa ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function investigarTotalCornerLinks() {
+async function executarRadarV53() {
     let browser = null;
     try {
-        console.log("🔍 [Investigação V52] Varrendo links diretos de partidas ao vivo...");
+        console.log("⚡ [Radar V53] Varrendo todas as linhas da tabela principal...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -38,58 +38,54 @@ async function investigarTotalCornerLinks() {
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando carregamento completo dos elementos dinâmicos...");
-        await new Promise(r => setTimeout(r, 12000));
+        console.log("⏳ Aguardando carregamento completo da tabela...");
+        await new Promise(r => setTimeout(r, 10000));
 
-        // Coleta todos os links de partidas ao vivo na página
-        const linksPartidas = await page.evaluate(() => {
+        // Extrai todas as linhas de tabela (tr) que contêm confrontos
+        const jogosTabela = await page.evaluate(() => {
             const resultados = [];
-            const anchors = document.querySelectorAll('a');
-            
-            anchors.forEach(a => {
-                const href = a.href || '';
-                const texto = a.innerText.replace(/\s+/g, ' ').trim();
+            const linhas = document.querySelectorAll('tr');
+
+            linhas.forEach((tr, index) => {
+                const texto = tr.innerText.replace(/\s+/g, ' ').trim();
                 
-                // Filtra links que levam para a página de detalhe da partida ao vivo
-                if ((href.includes('/live/') || href.includes('/match/')) && texto.length > 3) {
-                    resultados.push({ href, texto });
+                // Pega qualquer linha que possua confronto ("vs" ou "-") e tenha tamanho suficiente
+                if (index > 0 && (texto.includes('vs') || texto.includes(' - ')) && texto.length > 12) {
+                    resultados.push(texto);
                 }
             });
 
             return resultados;
         });
 
-        // Remove duplicatas baseadas no link (href)
-        const unicos = Array.from(new Map(linksPartidas.map(item => [item.href, item])).values());
+        console.log(`📊 Partidas totais na tabela capturadas: ${jogosTabela.length}`);
 
-        console.log(`🔗 Links de partidas únicos encontrados: ${unicos.length}`);
-
-        if (unicos.length > 0) {
-            let msg = `🔍 <b>[INVESTIGAÇÃO - LINKS AO VIVO]</b>\n`;
-            msg += `🔗 Total de links válidos: <code>${unicos.length}</code>\n\n`;
+        if (jogosTabela.length > 0) {
+            let msg = `🔴 <b>[RADAR V53 - TABELA AO VIVO]</b>\n`;
+            msg += `⚽ Total de jogos listados: <code>${jogosTabela.length}</code>\n\n`;
             
             await bot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML' }).catch(() => {});
             await new Promise(r => setTimeout(r, 1000));
 
-            for (let i = 0; i < Math.min(unicos.length, 8); i++) {
-                let card = `⚽ <a href="${unicos[i].href}">${unicos[i].texto}</a>\n`;
-                card += `🔗 <code>${unicos[i].href}</code>\n\n`;
+            for (let i = 0; i < Math.min(jogosTabela.length, 8); i++) {
+                let card = `⚽ <b>JOGO #${i+1}</b>\n`;
+                card += `📄 <code>${jogosTabela[i]}</code>`;
                 
-                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML', disable_web_page_preview: true }).catch(() => {});
+                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
                 await new Promise(r => setTimeout(r, 500));
             }
         } else {
-            console.log("ℹ️ Nenhum link de partida ao vivo encontrado na varredura.");
-            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhum link de partida detectado nesta varredura.`, { parse_mode: 'HTML' });
+            console.log("ℹ️ Nenhum jogo encontrado na tabela.");
+            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhum jogo detectado na tabela principal.`, { parse_mode: 'HTML' });
         }
 
     } catch (error) {
-        console.error("❌ Erro na Investigação:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro Investigação:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro V53:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V53:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-investigarTotalCornerLinks();
-setInterval(investigarTotalCornerLinks, 180000);
+executarRadarV53();
+setInterval(executarRadarV53, 180000);
