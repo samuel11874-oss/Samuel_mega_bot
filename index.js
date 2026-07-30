@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Ao Vivo ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar TotalCorner ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -21,7 +21,7 @@ let historicoPlacares = {};
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot Pro] Varredura periódica de partidas ao vivo...");
+        console.log("🕵️‍♂️ [Bot TC] Iniciando varredura no TotalCorner...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -39,51 +39,42 @@ async function buscarJogosAoVivo() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 768 });
 
-        console.log("🌐 [Bot Pro] Acessando us.soccerway.com...");
-        await page.goto('https://us.soccerway.com/', {
-            waitUntil: 'networkidle2',
+        console.log("🌐 [Bot TC] Acessando totalcorner.com...");
+        await page.goto('https://www.totalcorner.com/match/live', {
+            waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
-        await new Promise(r => setTimeout(r, 5000));
-        
-        try {
-            console.log("🔍 Tentando ativar a aba LIVE...");
-            await page.evaluate(() => {
-                const links = Array.from(document.querySelectorAll('a, span, div'));
-                const abaLive = links.find(el => el.innerText && el.innerText.trim() === 'LIVE');
-                if (abaLive) abaLive.click();
-            });
-            await new Promise(r => setTimeout(r, 7000)); // Tempo extra para renderizar as partidas ao vivo
-        } catch (e) {
-            console.log("⚠️ Aviso ao clicar na aba Live:", e.message);
-        }
+        await new Promise(r => setTimeout(r, 6000)); // Aguarda carregar as tabelas ao vivo
 
         const partidas = await page.evaluate(() => {
             const resultados = [];
-            const blocos = document.querySelectorAll('tr, div, li');
+            // O TotalCorner usa tabelas tradicionais para os jogos ao vivo
+            const linhas = document.querySelectorAll('tr');
 
-            blocos.forEach(b => {
-                const txt = b.innerText ? b.innerText.trim() : '';
-                if (!txt || txt.length < 15 || txt.length > 300) return;
+            linhas.forEach(row => {
+                const txt = row.innerText ? row.innerText.trim() : '';
+                if (!txt || txt.length < 10) return;
 
-                if (/Copyright|Soccerway|Sign up|Full-time|Finished|\bFT\b|ALL|SCHEDULED/i.test(txt)) return;
+                if (/Finished|\bFT\b|Half Time/i.test(txt)) return;
 
-                const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                const colunas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                 
-                let indexMinuto = linhas.findIndex(l => /^\d{1,2}'?$/.test(l) || /^\d+\+\d+'?$/.test(l));
+                // Procura por tempo de jogo (ex: 45', 72', etc.)
+                let indexMinuto = colunas.findIndex(l => /^\d{1,2}'$/.test(l) || /^\d{1,2}\+?\d*'$/.test(l));
                 if (indexMinuto === -1) return;
 
-                let tempo = linhas[indexMinuto].replace("'", "") + "'";
+                let tempo = colunas[indexMinuto];
                 
-                let limpos = linhas.filter(l => 
-                    l !== linhas[indexMinuto] && 
+                // Filtra os nomes dos times e placar com base na linha da tabela
+                let limpos = colunas.filter(l => 
+                    l !== tempo && 
                     !/^\d+$/.test(l) && 
-                    !/^\d{2}:\d{2}$/.test(l) && 
+                    !l.includes('%') && 
                     l.length > 2
                 );
 
-                let numeros = linhas.filter(l => /^\d+$/.test(l) && l !== linhas[indexMinuto]);
+                let numeros = colunas.filter(l => /^\d+$/.test(l) && l !== tempo);
 
                 if (limpos.length >= 2 && numeros.length >= 2) {
                     resultados.push({
@@ -97,6 +88,7 @@ async function buscarJogosAoVivo() {
                 }
             });
 
+            // Remove duplicatas
             const unicas = [];
             const vistas = new Set();
             resultados.forEach(item => {
@@ -110,7 +102,7 @@ async function buscarJogosAoVivo() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Pro] Partidas AO VIVO capturadas: ${partidas.length}`);
+        console.log(`⚽ [Bot TC] Partidas AO VIVO capturadas: ${partidas.length}`);
 
         if (partidas.length > 0) {
             let enviados = 0;
@@ -132,7 +124,7 @@ async function buscarJogosAoVivo() {
 
                 novoHistorico[chaveJogo] = { golsA: p.golsA, golsB: p.golsB };
 
-                let card = `🛸 <code>[ SYSTEM // LIVE_RADAR ]</code> ⚡\n`;
+                let card = `🛸 <code>[ SYSTEM // TOTAL_CORNER ]</code> ⚡\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
                 card += `⏱  <b>TEMPO</b>  ➔  <code>[ ${p.tempo} ]</code>\n`;
                 card += `⚽  <b>CONFRONTO</b>\n`;
@@ -142,25 +134,25 @@ async function buscarJogosAoVivo() {
                 card += `──────────────────────\n`;
                 card += `${statusGol}\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Radar Ativo - Atualização 5m</i>`;
+                card += `🤖 <i>Radar Ativo - TotalCorner</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
                 await new Promise(r => setTimeout(r, 600)); 
             }
 
             historicoPlacares = novoHistorico;
-            console.log(`✅ ${enviados} cards enviados com sucesso!`);
+            console.log(`✅ ${enviados} cards enviados com sucesso via TotalCorner!`);
         } else {
-            console.log("⚠️ Nenhum jogo ao vivo encontrado nesta varredura.");
+            console.log("⚠️ Nenhum jogo ao vivo encontrado no TotalCorner nesta varredura.");
         }
 
     } catch (error) {
-        console.error("❌ Erro na execução:", error.message);
+        console.error("❌ Erro no Bot TC:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Executa a cada 5 minutos (300.000 ms)
+// Roda a cada 5 minutos (300.000 ms)
 setInterval(buscarJogosAoVivo, 300000);
 buscarJogosAoVivo();
