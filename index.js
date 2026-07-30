@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V54 Aba Ao Vivo ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V55 Estruturado ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarV54() {
+async function executarRadarV55() {
     let browser = null;
     try {
-        console.log("⚡ [Radar V54] Acessando e filtrando aba ao vivo real...");
+        console.log("⚡ [Radar V55] Mapeando colunas da tabela ao vivo...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -38,69 +38,58 @@ async function executarRadarV54() {
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando carregamento da página...");
-        await new Promise(r => setTimeout(r, 8000));
+        console.log("⏳ Aguardando renderização completa...");
+        await new Promise(r => setTimeout(r, 10000));
 
-        // Tenta clicar em filtros de "Ao Vivo" caso existam na página
-        await page.evaluate(() => {
-            const botoes = document.querySelectorAll('a, button, span');
-            botoes.forEach(el => {
-                if (el.innerText.toLowerCase().includes('ao vivo') || el.innerText.toLowerCase().includes('live')) {
-                    el.click();
-                }
-            });
-        }).catch(() => {});
+        // Extrai linha por linha mapeando as colunas (td)
+        const dadosEstruturados = await page.evaluate(() => {
+            const lista = [];
+            const trs = document.querySelectorAll('tr');
 
-        await new Promise(r => setTimeout(r, 4000));
-
-        // Extrai apenas as linhas que contêm placar ou minutos em andamento
-        const jogosReaisAoVivo = await page.evaluate(() => {
-            const resultados = [];
-            const linhas = document.querySelectorAll('tr');
-
-            linhas.forEach((tr) => {
-                const texto = tr.innerText.replace(/\s+/g, ' ').trim();
-                
-                // Critério estrito: Deve ter confronto ("vs") E conter marcação de tempo/minuto (ex: 15', 45', HT, 2ºT)
-                const temTempoReal = /\d+'|HT|1ºT|2ºT/i.test(texto);
-                const temConfronto = texto.includes('vs') || texto.includes(' - ');
-
-                if (temConfronto && temTempoReal && texto.length > 15) {
-                    resultados.push(texto);
+            trs.forEach((tr, index) => {
+                const tds = tr.querySelectorAll('td');
+                if (tds.length >= 3) {
+                    const colunas = Array.from(tds).map(td => td.innerText.replace(/\s+/g, ' ').trim());
+                    lista.push({
+                        linhaIndex: index,
+                        colunas: colunas
+                    });
                 }
             });
 
-            return resultados;
+            return lista;
         });
 
-        console.log(`📊 Jogos realmente AO VIVO filtrados: ${jogosReaisAoVivo.length}`);
+        console.log(`📊 Linhas com colunas estruturadas encontradas: ${dadosEstruturados.length}`);
 
-        if (jogosReaisAoVivo.length > 0) {
-            let msg = `🔴 <b>[RADAR V54 - AO VIVO REAL]</b>\n`;
-            msg += `🔥 Jogos rolando agora: <code>${jogosReaisAoVivo.length}</code>\n\n`;
+        if (dadosEstruturados.length > 0) {
+            let msg = `📊 <b>[RADAR V55 - ESTRUTURADO]</b>\n`;
+            msg += `Total de linhas com colunas: <code>${dadosEstruturados.length}</code>\n\n`;
             
             await bot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML' }).catch(() => {});
             await new Promise(r => setTimeout(r, 1000));
 
-            for (let i = 0; i < Math.min(jogosReaisAoVivo.length, 8); i++) {
-                let card = `⚽ <b>AO VIVO #${i+1}</b>\n`;
-                card += `📄 <code>${jogosReaisAoVivo[i]}</code>`;
+            // Envia uma amostra das primeiras linhas detalhando o conteúdo de cada coluna
+            for (let i = 0; i < Math.min(dadosEstruturados.length, 5); i++) {
+                const item = dadosEstruturados[i];
+                let card = `⚽ <b>Linha #${item.linhaIndex}</b>\n`;
+                card += `📄 <code>${item.colunas.join(' | ')}</code>`;
                 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
                 await new Promise(r => setTimeout(r, 500));
             }
         } else {
-            console.log("ℹ️ Nenhum jogo com minuto ao vivo detectado nesta varredura.");
-            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhum jogo com minuto ao vivo detectado no momento.`, { parse_mode: 'HTML' });
+            console.log("ℹ️ Nenhuma estrutura de colunas detectada.");
+            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhuma estrutura de colunas detectada.`, { parse_mode: 'HTML' });
         }
 
     } catch (error) {
-        console.error("❌ Erro V54:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V54:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro V55:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V55:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarV54();
-setInterval(executarRadarV54, 180000);
+executarRadarV55();
+setInterval(executarRadarV55, 180000);
