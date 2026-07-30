@@ -9,17 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V45 Diagnóstico 🕵️‍♂️</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V46 Bruto ⚡</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarV45() {
+async function executarRadarBrutoV46() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot V45 - DIAGNÓSTICO] Iniciando...");
+        console.log("⚡ [Bot V46 - BRUTO] Iniciando varredura...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -35,43 +35,46 @@ async function executarRadarV45() {
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
 
-        console.log("🌐 Acessando https://www.totalcorner.com/match/live ...");
-        await page.goto('https://www.totalcorner.com/match/live', {
-            waitUntil: 'networkidle0',
+        console.log("🌐 Acessando https://www.totalcorner.com/match/today ...");
+        await page.goto('https://www.totalcorner.com/match/today', {
+            waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando 10 segundos para carregar o AJAX do ao vivo...");
-        await new Promise(r => setTimeout(r, 10000));
+        await new Promise(r => setTimeout(r, 4000));
 
-        const diagnosticoTexto = await page.evaluate(() => {
-            return {
-                titulo: document.title,
-                corpoResumo: document.body.innerText.replace(/\s+/g, ' ').substring(0, 800),
-                totalTrs: document.querySelectorAll('tr').length,
-                totalTds: document.querySelectorAll('td').length
-            };
+        // Tenta encontrar e clicar na aba/botão "Live" ou "In-Play" na tela
+        console.log("🖱️ Procurando e clicando na aba 'Live'...");
+        const clicou = await page.evaluate(() => {
+            const elementos = Array.from(document.querySelectorAll('a, button, span, li, div'));
+            for (const el of elementos) {
+                const txt = el.innerText.trim().toLowerCase();
+                if (txt === 'live' || txt === 'in-play' || txt === 'ao vivo') {
+                    el.click();
+                    return true;
+                }
+            }
+            return false;
         });
 
-        console.log("🔍 [DIAGNÓSTICO DA PÁGINA NA NUVEM]:");
-        console.log(`- Título da Página: ${diagnosticoTexto.titulo}`);
-        console.log(`- Total de linhas (tr): ${diagnosticoTexto.totalTrs}`);
-        console.log(`- Total de colunas (td): ${diagnosticoTexto.totalTds}`);
-        console.log(`- Amostra do Conteúdo: "${diagnosticoTexto.corpoResumo}"`);
+        console.log(`🖱️ Botão Live clicado com sucesso? ${clicou}`);
 
-        const dadosAoVivo = await page.evaluate(() => {
+        if (clicou) {
+            console.log("⏳ Aguardando 8 segundos para a tabela ao vivo carregar...");
+            await new Promise(r => setTimeout(r, 8000));
+        }
+
+        // Extração Bruta: pega todas as linhas da tabela da página atual sem filtros restritos
+        const linhasBrutas = await page.evaluate(() => {
             const resultados = [];
             const trs = Array.from(document.querySelectorAll('tr'));
 
-            trs.forEach(tr => {
+            trs.forEach((tr, index) => {
                 const texto = tr.innerText.replace(/\s+/g, ' ').trim();
-                const teamLinks = Array.from(tr.querySelectorAll('a[href*="/team/"]'));
-                
-                if (teamLinks.length >= 2) {
+                if (texto.length > 5) {
                     resultados.push({
-                        timeA: teamLinks[0].innerText.trim(),
-                        timeB: teamLinks[1].innerText.trim(),
-                        textoLinha: texto
+                        id: index,
+                        linha: texto
                     });
                 }
             });
@@ -79,22 +82,31 @@ async function executarRadarV45() {
             return resultados;
         });
 
-        console.log(`⚡ [Bot V45] Total de partidas encontradas: ${dadosAoVivo.length}`);
+        console.log(`📊 Total de linhas brutas encontradas: ${linhasBrutas.length}`);
 
-        let msg = `🕵️‍♂️ <b>[DIAGNÓSTICO V45]</b>\n`;
-        msg += `📊 Linhas (tr): <code>${diagnosticoTexto.totalTrs}</code>\n`;
-        msg += `⚽ Jogos Encontrados: <code>${dadosAoVivo.length}</code>\n`;
-        msg += `📄 <code>${diagnosticoTexto.corpoResumo.substring(0, 200)}</code>`;
+        // Envia um resumo direto para o Telegram
+        let msg = `⚡ <b>[RADAR V46 - INVESTIGAÇÃO BRUTA]</b>\n`;
+        msg += `📊 Linhas capturadas: <code>${linhasBrutas.length}</code>\n\n`;
+
+        if (linhasBrutas.length > 0) {
+            // Mostra as primeiras 5 linhas brutas para análise imediata
+            for (let i = 0; i < Math.min(5, linhasBrutas.length); i++) {
+                msg += `🔹 <code>${linhasBrutas[i].linha.substring(0, 120)}</code>\n`;
+            }
+        } else {
+            msg += `❌ Nenhuma linha encontrada.`;
+        }
+
         await bot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML' }).catch(() => {});
 
     } catch (error) {
-        console.error("❌ Erro V45:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V45:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro V46:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V46:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
 // Roda a cada 3 minutos
-setInterval(executarRadarV45, 180000);
-executarRadarV45();
+setInterval(executarRadarBrutoV46, 180000);
+executarRadarBrutoV46();
