@@ -9,19 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar TotalCorner API ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigação Avançada v2 🔍⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-let historicoPlacares = {};
-
-async function buscarJogosViaAPI() {
+async function investigacaoProfunda() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot API] Iniciando escuta de rede no TotalCorner...");
+        console.log("🕵️‍♂️ [AUDITORIA V2] Iniciando diagnósticos de rede e DOM...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -31,122 +29,80 @@ async function buscarJogosViaAPI() {
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
                 '--disable-gpu',
-                '--single-process'
+                '--single-process',
+                '--window-size=1920,1080'
             ]
         });
 
         const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
-        
-        let listaPartidas = [];
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
+        await page.setViewport({ width: 1920, height: 1080 });
 
-        // Intercepta as respostas de rede para capturar os dados em JSON que o site carrega
-        page.on('response', async (response) => {
-            const url = response.url();
-            if (url.includes('match') || url.includes('data') || url.includes('live')) {
-                try {
-                    const contentType = response.headers()['content-type'] || '';
-                    if (contentType.includes('application/json')) {
-                        const json = await response.json();
-                        if (json && Array.isArray(json.data)) {
-                            listaPartidas = json.data;
-                        } else if (json && Array.isArray(json)) {
-                            listaPartidas = json;
-                        }
-                    }
-                } catch (e) {}
+        // Monitora chamadas de rede para descobrir URLs de APIs ocultas
+        const urlsSolicitadas = [];
+        page.on('request', req => {
+            const u = req.url();
+            if (u.includes('totalcorner') && !u.endsWith('.png') && !u.endsWith('.css') && !u.endsWith('.js')) {
+                urlsSolicitadas.push(`${req.method()} -> ${u}`);
             }
         });
 
-        console.log("🌐 [Bot API] Acessando https://www.totalcorner.com/match/live ...");
-        await page.goto('https://www.totalcorner.com/match/live', {
+        console.log("🌐 [AUDITORIA V2] Navegando para https://www.totalcorner.com/match/live ...");
+        const response = await page.goto('https://www.totalcorner.com/match/live', {
             waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando 10 segundos para captura de pacotes de dados...");
-        await new Promise(r => setTimeout(r, 10000));
+        const status = response ? response.status() : 'Sem Resposta';
+        const titulo = await page.title();
 
-        // Se a interceptação por JSON direta não pegar tudo, faz um fallback para raspar os elementos da tabela renderizada
-        if (listaPartidas.length === 0) {
-            console.log("⚠️ [Bot API] Dados via JSON não capturados diretamente. Buscando elementos visuais renderizados...");
-            listaPartidas = await page.evaluate(() => {
-                const elements = document.querySelectorAll('.match-row, tr');
-                const results = [];
-                elements.forEach(el => {
-                    const text = el.innerText ? el.innerText.trim() : '';
-                    if (text.length > 10 && /\d+['"]/.test(text)) {
-                        results.push({ textoBruto: text });
-                    }
-                });
-                return results;
-            });
-        }
+        console.log(`📡 [HTTP STATUS]: ${status}`);
+        console.log(`📄 [PÁGINA TÍTULO]: "${titulo}"`);
 
-        console.log(`⚽ [Bot API] Total de registros capturados: ${listaPartidas.length}`);
+        console.log("⏳ Aguardando 8 segundos para renderização do DOM...");
+        await new Promise(r => setTimeout(r, 8000));
 
-        if (listaPartidas.length > 0) {
-            let enviados = 0;
-            let novoHistorico = {};
+        // Analisa o DOM da página em busca de tabelas e IDs
+        const diagnosticoDOM = await page.evaluate(() => {
+            const tabelas = Array.from(document.querySelectorAll('table')).map(t => ({
+                id: t.id || 'sem-id',
+                classes: t.className || 'sem-classe',
+                qtdLinhas: t.querySelectorAll('tr').length
+            }));
 
-            for (let i = 0; i < Math.min(listaPartidas.length, 25); i++) {
-                let item = listaPartidas[i];
-                enviados++;
+            const idsPartidas = Array.from(document.querySelectorAll('[data-match_id], tr[id]')).slice(0, 5).map(el => ({
+                tag: el.tagName,
+                id: el.id,
+                dataMatchId: el.getAttribute('data-match_id'),
+                textoAmos: el.innerText ? el.innerText.replace(/\s+/g, ' ').trim().substring(0, 100) : ''
+            }));
 
-                let timeA = item.home_team_name || item.timeA || "Time Casa";
-                let timeB = item.away_team_name || item.timeB || "Time Visitante";
-                let tempo = item.minute || item.tempo || "AO VIVO";
-                let golsA = item.home_score !== undefined ? item.home_score : (item.golsA || 0);
-                let golsB = item.away_score !== undefined ? item.away_score : (item.golsB || 0);
-                let placar = `${golsA} x ${golsB}`;
+            const corpoTexto = document.body ? document.body.innerText.substring(0, 500).replace(/\s+/g, ' ') : '';
 
-                if (item.textoBruto) {
-                    timeA = "Partida Detectada";
-                    timeB = "Ao Vivo";
-                    placar = item.textoBruto.substring(0, 50);
-                }
+            return {
+                tabelas,
+                idsPartidas,
+                previewPagina: corpoTexto
+            };
+        });
 
-                let chaveJogo = `${timeA} x ${timeB}`;
-                let statusGol = "⚡ <code>STATUS: ROLANDO</code>";
+        console.log("\n--- 📊 RESULTADO DA AUDITORIA ---");
+        console.log(`📋 Tabelas Encontradas:`, JSON.stringify(diagnosticoDOM.tabelas, null, 2));
+        console.log(`🔍 Amostra de Elementos de Jogos:`, JSON.stringify(diagnosticoDOM.idsPartidas, null, 2));
+        console.log(`📝 Preview do Texto da Página:`, diagnosticoDOM.previewPagina);
+        console.log(`🌐 Chamadas de Rede Relevantes (Últimas 10):`, urlsSolicitadas.slice(-10));
+        console.log("---------------------------------\n");
 
-                if (historicoPlacares[chaveJogo]) {
-                    let anterior = historicoPlacares[chaveJogo];
-                    if (golsA > anterior.golsA || golsB > anterior.golsB) {
-                        statusGol = "GOOOOOOL! 🚨🔥 ⚽ <b>SAIU GOL RECENTE!</b>";
-                    }
-                }
-
-                novoHistorico[chaveJogo] = { golsA: golsA, golsB: golsB };
-
-                let card = `🛸 <code>[ SYSTEM // TOTAL_CORNER ]</code> ⚡\n`;
-                card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `⏱  <b>TEMPO</b>  ➔  <code>[ ${tempo} ]</code>\n`;
-                card += `⚽  <b>CONFRONTO</b>\n`;
-                card += `    🔹 <b>${timeA}</b>\n`;
-                card += `    🔸 <b>${timeB}</b>\n`;
-                card += `📊  <b>PLACAR</b>  ➔  ⚡ <code> ${placar} </code> ⚡\n`;
-                card += `──────────────────────\n`;
-                card += `${statusGol}\n`;
-                card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Radar Ativo - TotalCorner API</i>`;
-
-                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
-                await new Promise(r => setTimeout(r, 600)); 
-            }
-
-            historicoPlacares = novoHistorico;
-            console.log(`✅ ${enviados} cards enviados com sucesso!`);
-        } else {
-            console.log("⚠️ Nenhum registro retornado nesta varredura.");
-        }
+        await bot.sendMessage(CHAT_ID, `🔍 *[Auditoria V2 Completa]*\nStatus HTTP: \`${status}\`\nTítulo: *${titulo}*\nConsulte o console do Render para ver a estrutura interna!`, { parse_mode: 'Markdown' }).catch(()=>{});
 
     } catch (error) {
-        console.error("❌ Erro na varredura via API:", error.message);
+        console.error("❌ Erro na auditoria v2:", error.message);
+        bot.sendMessage(CHAT_ID, `❌ *Erro na Auditoria V2:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Roda a cada 5 minutos (300.000 ms)
-setInterval(buscarJogosViaAPI, 300000);
-buscarJogosViaAPI();
+// Executa o diagnóstico uma vez ao iniciar e repete a cada 10 minutos
+setInterval(investigacaoProfunda, 600000);
+investigacaoProfunda();
