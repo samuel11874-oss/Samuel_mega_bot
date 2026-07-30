@@ -9,17 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V13 🎯</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V15 🎯</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarLiveV13() {
+async function executarRadarLiveV15() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot V13] Iniciando varredura científica no TotalCorner...");
+        console.log("🕵️‍♂️ [Bot V15] Varredura cirúrgica iniciada...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -43,72 +43,61 @@ async function executarRadarLiveV13() {
             timeout: 60000
         });
 
-        // Rolagem de tela para forçar o carregamento do conteúdo dinâmico
-        await page.evaluate(() => window.scrollBy(0, 400));
-        await new Promise(r => setTimeout(r, 6000));
-
-        const diagnostico = await page.evaluate(() => {
-            const todasLinhas = document.querySelectorAll('tr');
-            return { totalTr: todasLinhas.length };
-        });
-
-        console.log(`📊 Linhas de tabela detectadas no DOM: ${diagnostico.totalTr}`);
+        // Rolagem leve para carregar o AJAX
+        await page.evaluate(() => window.scrollBy(0, 300));
+        await new Promise(r => setTimeout(r, 5000));
 
         const resultados = await page.evaluate(() => {
             const lista = [];
             const trs = document.querySelectorAll('tr');
 
             trs.forEach(tr => {
-                const textLinha = tr.innerText || '';
+                // 1. TIMES
+                const homeEl = tr.querySelector('.match_home a, .match_home, .home_name');
+                const awayEl = tr.querySelector('.match_away a, .match_away, .away_name');
 
-                // 1. REJEIÇÃO CRÍTICA: Jogos futuros (horários como 14:30), datas ou jogos encerrados
-                if (/\b\d{1,2}:\d{2}\b/.test(textLinha) || textLinha.includes('/') || /\b(FT|Fin|Canc|Postp)\b/i.test(textLinha)) {
-                    return;
-                }
+                if (!homeEl || !awayEl) return;
 
-                // 2. BUSCA DO MINUTO REAL
+                let timeA = homeEl.innerText.trim().split('\n')[0];
+                let timeB = awayEl.innerText.trim().split('\n')[0];
+
+                if (!timeA || !timeB || timeA.length < 2 || timeB.length < 2) return;
+
+                // 2. CHECAGEM EXCLUSIVA DA CÉLULA DO MINUTO (STATUS)
                 const statusEl = tr.querySelector('.match_status_minutes, .match_status, td[class*="status"]');
                 let minuteText = statusEl ? statusEl.innerText.trim() : '';
 
-                // Validação de minuto: Deve ser um número (ex: 89, 67) ou HT
+                // Se a célula do status for estritamente um horário futuro (ex: "14:30") ou encerrado (FT), pula!
+                if (/^\d{1,2}:\d{2}$/.test(minuteText) || /\b(FT|Fin|Canc|Postp)\b/i.test(minuteText)) {
+                    return;
+                }
+
+                // Busca o número do minuto (ex: 89, 67, 12, 45+1) ou HT
                 let minMatch = minuteText.match(/\b\d+\b|\bHT\b/i);
-                if (!minMatch) return;
+                if (!minMatch) return; // Se não encontrou minuto ativo na célula de status, ignora
 
                 let minVal = minMatch[0];
                 let tempoFormatado = minVal.toUpperCase() === 'HT' ? 'HT' : `${minVal}'`;
 
-                // 3. IDENTIFICAÇÃO DOS TIMES
-                const homeEl = tr.querySelector('.match_home a, .match_home, .home_name');
-                const awayEl = tr.querySelector('.match_away a, .match_away, .away_name');
-
-                let timeA = homeEl ? homeEl.innerText.trim().split('\n')[0] : '';
-                let timeB = awayEl ? awayEl.innerText.trim().split('\n')[0] : '';
-
-                if (!timeA || !timeB || timeA.length < 2 || timeB.length < 2) return;
-
-                // 4. PLACAR DE GOLS (Apenas números inteiros)
+                // 3. PLACAR DE GOLS
                 const goalEl = tr.querySelector('.match_goal, .score');
-                let placarText = goalEl ? goalEl.innerText.trim() : '';
-                let matchGols = placarText.match(/\b\d+\s*[-:]\s*\d+\b/);
-                
+                let placarText = goalEl ? goalEl.innerText.trim() : '0 - 0';
+                let matchGols = placarText.match(/\d+\s*[-:]\s*\d+/);
                 let placar = matchGols ? matchGols[0].replace(':', ' - ') : '0 - 0';
 
-                // 5. ESCANTEIOS REAL (Filtra para bloquear odds que contêm ponto decimal)
+                // 4. ESCANTEIOS
                 const cornerEl = tr.querySelector('.match_corner, .corner');
                 let escanteiosText = cornerEl ? cornerEl.innerText.trim() : '0 - 0';
-                
-                if (escanteiosText.includes('.')) {
-                    escanteiosText = '0 - 0';
-                }
+                if (escanteiosText.includes('.')) escanteiosText = '0 - 0'; // Limpa odds
 
-                // 6. DADOS DE PRESSÃO
+                // 5. ESTATÍSTICAS DE PRESSÃO
                 const attachEl = tr.querySelector('.match_attach');
                 const shotEl = tr.querySelector('.match_shot');
                 const cardEl = tr.querySelector('.match_card');
 
-                let ataqPerigosos = attachEl && !attachEl.innerText.includes('.') ? attachEl.innerText.trim() : 'S/D';
-                let chutes = shotEl && !shotEl.innerText.includes('.') ? shotEl.innerText.trim() : 'S/D';
-                let cartoes = cardEl && !cardEl.innerText.includes('.') ? cardEl.innerText.trim() : '0 - 0';
+                let ataqPerigosos = (attachEl && !attachEl.innerText.includes('.')) ? attachEl.innerText.trim() : 'S/D';
+                let chutes = (shotEl && !shotEl.innerText.includes('.')) ? shotEl.innerText.trim() : 'S/D';
+                let cartoes = (cardEl && !cardEl.innerText.includes('.')) ? cardEl.innerText.trim() : '0 - 0';
 
                 lista.push({
                     timeA: timeA,
@@ -122,7 +111,7 @@ async function executarRadarLiveV13() {
                 });
             });
 
-            // Elimina duplicatas
+            // Evita duplicatas
             const unicos = [];
             const vistos = new Set();
             lista.forEach(item => {
@@ -136,7 +125,7 @@ async function executarRadarLiveV13() {
             return unicos;
         });
 
-        console.log(`⚽ [Bot V13] Partidas AO VIVO validadas com sucesso: ${resultados.length}`);
+        console.log(`⚽ [Bot V15] Partidas AO VIVO identificadas e validadas: ${resultados.length}`);
 
         if (resultados.length > 0) {
             let enviados = 0;
@@ -165,24 +154,24 @@ async function executarRadarLiveV13() {
                 card += `  🎯 <b>Chutes no Gol:</b> <code>${p.chutes}</code>\n`;
                 card += `  🟨 <b>Cartões:</b> <code>${p.cartoes}</code>\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Samuel Mega Bot • Precisão V13 (#${enviados})</i>`;
+                card += `🤖 <i>Samuel Mega Bot • Precisão V15 (#${enviados})</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
                 await new Promise(r => setTimeout(r, 600)); 
             }
 
-            console.log(`✅ ${enviados} cards de jogos reais enviados com sucesso!`);
+            console.log(`✅ ${enviados} cards de jogos reais enviados com sucesso ao Telegram!`);
         } else {
-            console.log("⚠️ Nenhuma partida ao vivo em andamento encontrada neste ciclo.");
+            console.log("⚠️ Nenhuma partida ao vivo em andamento encontrada neste momento.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V13:", error.message);
+        console.error("❌ Erro no Radar V15:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
 // Executa a cada 5 minutos
-setInterval(executarRadarLiveV13, 300000);
-executarRadarLiveV13();
+setInterval(executarRadarLiveV15, 300000);
+executarRadarLiveV15();
