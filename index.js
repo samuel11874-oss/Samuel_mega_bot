@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Monitor Ao Vivo Completo ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Monitor Ao Vivo ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Acessando e buscando jogos AO VIVO (Completo)...");
+        console.log("🕵️‍♂️ [Bot US] Iniciando navegador com contorno anti-bot...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -29,64 +29,73 @@ async function buscarJogosAoVivo() {
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
                 '--disable-gpu',
-                '--single-process'
+                '--single-process',
+                '--window-size=1920,1080'
             ]
         });
 
         const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36');
-        await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+        await page.setViewport({ width: 1920, height: 1080 });
+
+        // Simula cabeçalhos de um navegador real para evitar bloqueios de IP/Cloudflare
+        await page.setExtraHTTPHeaders({
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
+        });
 
         console.log("🌐 [Bot US] Acessando us.soccerway.com/matches/live/...");
         await page.goto('https://us.soccerway.com/matches/live/', {
-            waitUntil: 'domcontentloaded',
-            timeout: 45000
+            waitUntil: 'networkidle2',
+            timeout: 60000
         });
 
-        await new Promise(r => setTimeout(r, 6000));
+        console.log("⏳ Aguardando renderização e carregamento dos dados (12s)...");
+        await new Promise(r => setTimeout(r, 12000));
+
+        // Diagnóstico: exibe o título da página no log para verificar bloqueio
+        const pageTitle = await page.title();
+        console.log(`📄 [Debug] Título da página capturada: "${pageTitle}"`);
 
         const partidas = await page.evaluate(() => {
             const resultados = [];
-            const blocos = document.querySelectorAll('tr, div, li');
+            const blocos = document.querySelectorAll('tr, .match-row, div.match, .matches-table tr, div');
 
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
-                
-                const ehLixo = txt.includes('FAVORITES') || txt.includes('PREMIER LEAGUE') || 
-                              txt.includes('Copyright') || txt.includes('Soccerway') || 
-                              txt.includes('Sign up') || txt.includes('Gamble') || 
-                              txt.includes('privacy') || txt.length < 5 || txt.length > 350;
+                if (!txt || txt.length < 5 || txt.length > 500) return;
 
-                if (!ehLixo) {
-                    if ((txt.includes("'") || txt.includes("HT") || txt.includes("FT") || /\d+\s*-\s*\d+/.test(txt))) {
-                        const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                        
-                        let tempo = linhas.find(l => /\d+'/.test(l) || l === 'HT' || l === 'FT') || 'AO VIVO';
-                        let placar = linhas.find(l => /^\d+\s*-\s*\d+$/.test(l));
-                        
-                        // Filtra as linhas para isolar os nomes dos times com precisão
-                        const limpos = linhas.filter(l => 
-                            l !== tempo && 
-                            l !== placar && 
-                            !/^\d+$/.test(l) && 
-                            !/^\d{2}:\d{2}$/.test(l) &&
-                            !/copyright|gamble|privacy|soccerway|odds|\+?\d+/i.test(l) &&
-                            l.length > 2
-                        );
+                // Ignora barreiras comuns de erro ou aviso
+                if (/copyright|cloudflare|access denied|captcha|sign up|gamble|cookie/i.test(txt)) return;
 
-                        if (limpos.length >= 2 && placar) {
-                            resultados.push({
-                                tempo: tempo,
-                                timeA: limpos[0],
-                                timeB: limpos[1],
-                                placar: placar
-                            });
-                        }
+                // Procura indicadores de tempo de jogo ou placar
+                if (/\d+'|HT|FT/i.test(txt) || /\d+\s*-\s*\d+/.test(txt)) {
+                    const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                    
+                    let tempo = linhas.find(l => /\d+'/.test(l) || l === 'HT' || l === 'FT') || 'AO VIVO';
+                    let placar = linhas.find(l => /^\d+\s*-\s*\d+$/.test(l));
+
+                    const limpos = linhas.filter(l => 
+                        l !== tempo && 
+                        l !== placar && 
+                        !/^\d+$/.test(l) && 
+                        !/^\d{2}:\d{2}$/.test(l) &&
+                        !/odds|\+?\d+/i.test(l) &&
+                        l.length > 2
+                    );
+
+                    if (limpos.length >= 2 && placar) {
+                        resultados.push({
+                            tempo: tempo,
+                            timeA: limpos[0],
+                            timeB: limpos[1],
+                            placar: placar
+                        });
                     }
                 }
             });
 
-            // Remove duplicatas exatas baseadas nos times
+            // Remove duplicatas
             const unicas = [];
             const vistas = new Set();
             resultados.forEach(m => {
@@ -118,13 +127,14 @@ async function buscarJogosAoVivo() {
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
                 await new Promise(r => setTimeout(r, 500));
             }
-            console.log(`✅ ${enviados} jogos completos enviados ao Telegram.`);
+            console.log(`✅ ${enviados} jogos enviados ao Telegram com sucesso.`);
         } else {
-            bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo encontrado no momento da varredura.*", { parse_mode: 'Markdown' }).catch(()=>{});
+            console.log("⚠️ Nenhuma partida encontrada. Verifique se o Cloudflare bloqueou o IP da Render.");
+            bot.sendMessage(CHAT_ID, "⚠️ *Aviso:* 0 partidas encontradas na varredura atual.", { parse_mode: 'Markdown' }).catch(()=>{});
         }
 
     } catch (error) {
-        console.error("❌ Erro:", error.message);
+        console.error("❌ Erro crítico no bot:", error.message);
         bot.sendMessage(CHAT_ID, `❌ *Erro no Bot:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
     } finally {
         if (browser) await browser.close();
