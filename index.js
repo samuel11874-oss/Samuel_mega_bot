@@ -9,17 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live Real V10 ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V11 🎯</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarLiveV10() {
+async function executarRadarLiveV11() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot V10] Varredura ultra-filtrada de partidas AO VIVO...");
+        console.log("🕵️‍♂️ [Bot V11] Varredura com precisão cirúrgica no TotalCorner Live...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -44,91 +44,75 @@ async function executarRadarLiveV10() {
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando 8 segundos para renderização correta dos dados...");
+        console.log("⏳ Aguardando 8 segundos para renderização...");
         await new Promise(r => setTimeout(r, 8000));
 
         const resultados = await page.evaluate(() => {
             const lista = [];
-            const linhasPartidas = document.querySelectorAll('tr[id^="tr_match_"], tr.match_row');
+            // Pega estritamente as linhas das partidas reais na versão desktop do TotalCorner
+            const trs = document.querySelectorAll('tr[id^="tr_match_"]');
 
-            linhasPartidas.forEach(tr => {
-                const textoCompleto = tr.innerText || '';
+            trs.forEach(tr => {
+                // 1. MINUTO DO JOGO (STATUS)
+                const statusEl = tr.querySelector('.match_status_minutes, .match_status');
+                let minuteRaw = statusEl ? statusEl.innerText.trim() : '';
 
-                // TRAVA 1: Se houver barra "/" na linha ou data, é jogo futuro/separado -> Ignorar
-                if (textoCompleto.includes('/') && !textoCompleto.includes("'")) return;
+                // Se for horário de jogo futuro (ex: 13:30, 20:30) ou jogo encerrado (FT), ignora
+                if (!minuteRaw || /^\d{1,2}:\d{2}$/.test(minuteRaw) || /\b(FT|Fin|Canc|Postp)\b/i.test(minuteRaw)) {
+                    return;
+                }
 
-                // 1. TIMES
-                const homeEl = tr.querySelector('.match_home a, .match_home, .home_name');
-                const awayEl = tr.querySelector('.match_away a, .match_away, .away_name');
+                // Extrai o número do minuto (ex: 89, 67, 45+1) ou HT
+                let minVal = minuteRaw.replace(/['"]/g, '').trim();
+                let ehMinutoValido = !isNaN(parseInt(minVal)) || minVal.toLowerCase() === 'ht';
+
+                if (!ehMinutoValido) return;
+
+                let tempoFormatado = minVal.toLowerCase() === 'ht' ? 'HT' : `${minVal}'`;
+
+                // 2. TIMES
+                const homeEl = tr.querySelector('.match_home a, .match_home');
+                const awayEl = tr.querySelector('.match_away a, .match_away');
 
                 let timeA = homeEl ? homeEl.innerText.trim().split('\n')[0] : '';
                 let timeB = awayEl ? awayEl.innerText.trim().split('\n')[0] : '';
 
-                if (!timeA || !timeB || timeA.length < 2 || timeB.length < 2) return;
+                if (!timeA || !timeB) return;
 
-                // 2. TEMPO / MINUTO AO VIVO REAL
-                const statusMinutesEl = tr.querySelector('.match_status_minutes, .match_status');
-                let statusText = statusMinutesEl ? statusMinutesEl.innerText.trim() : '';
+                // 3. PLACAR DE GOLS
+                const goalEl = tr.querySelector('.match_goal, .score');
+                let placarText = goalEl ? goalEl.innerText.trim() : '0 - 0';
+                if (placarText.toLowerCase() === 'vs') return; // Se for VS, não começou
 
-                // O minuto PRECISA ter o apóstrofo (') ou ser HT/1st/2nd. Se tiver formato de data/hora (ex: 20:30), rejeita.
-                const temMinutoReal = /\d+['"]|\bHT\b|\b1st\b|\b2nd\b/i.test(statusText);
-                if (!temMinutoReal || statusText.includes('/') || /^\d{2}:\d{2}$/.test(statusText)) {
-                    return;
-                }
+                let matchP = placarText.match(/\d+\s*[-:]\s*\d+/);
+                let placar = matchP ? matchP[0].replace(':', ' - ') : '0 - 0';
 
-                let tempoLive = statusText.match(/\d+['"]?|\bHT\b/i)[0];
-                if (!tempoLive.includes("'") && tempoLive.toLowerCase() !== 'ht') {
-                    tempoLive += "'";
-                }
+                // 4. ESCANTEIOS
+                const cornerEl = tr.querySelector('.match_corner');
+                let escanteios = cornerEl ? cornerEl.innerText.trim() : '0 - 0';
 
-                // 3. PLACAR DE GOLS (Estritamente números inteiros, sem pontos de odds)
-                const golEl = tr.querySelector('.match_goal, .score');
-                let placarText = golEl ? golEl.innerText.trim() : '';
-                let matchPlacar = placarText.match(/(\d+\s*[-:]\s*\d+)/);
-                
-                if (!matchPlacar) return; // Se não achar placar em números inteiros, descarta
-                let placar = matchPlacar[1].replace(':', ' -');
-
-                // 4. ESCANTEIOS (Validação para rejeitar odds com ponto decimal)
-                const cornerEl = tr.querySelector('.match_corner, .corner');
-                let escanteiosText = cornerEl ? cornerEl.innerText.trim() : '0 - 0';
-                
-                // Se contiver ponto decimal (ex: 1.70), não são escanteios reais
-                if (escanteiosText.includes('.')) {
-                    escanteiosText = '0 - 0';
-                }
-
-                // 5. ESTATÍSTICAS ADICIONAIS
-                const daEl = tr.querySelector('.match_attach, .match_dangerous_attack');
+                // 5. ATAQUES PERIGOSOS / CHUTES / CARTÕES
+                const attachEl = tr.querySelector('.match_attach');
                 const shotEl = tr.querySelector('.match_shot');
                 const cardEl = tr.querySelector('.match_card');
-                const oddsEl = tr.querySelector('.match_handicap, .match_asian_corner');
 
-                let ataqPerigosos = daEl ? daEl.innerText.trim() : '0';
-                if (ataqPerigosos.includes('.')) ataqPerigosos = '0';
-
-                let chutes = shotEl ? shotEl.innerText.trim() : '0';
-                if (chutes.includes('.')) chutes = '0';
-
+                let ataqPerigosos = attachEl ? attachEl.innerText.trim() : 'S/D';
+                let chutes = shotEl ? shotEl.innerText.trim() : 'S/D';
                 let cartoes = cardEl ? cardEl.innerText.trim() : '0 - 0';
-                if (cartoes.includes('.')) cartoes = '0 - 0';
-
-                let linha = oddsEl ? oddsEl.innerText.trim() : 'Over Asiático';
 
                 lista.push({
                     timeA: timeA,
                     timeB: timeB,
-                    tempo: tempoLive,
+                    tempo: tempoFormatado,
                     placar: placar,
-                    escanteios: escanteiosText,
+                    escanteios: escanteios,
                     ataquePerigoso: ataqPerigosos,
                     chutes: chutes,
-                    cartoes: cartoes,
-                    linha: linha
+                    cartoes: cartoes
                 });
             });
 
-            // Remove duplicatas
+            // Evita duplicatas
             const unicos = [];
             const vistos = new Set();
             lista.forEach(item => {
@@ -142,7 +126,7 @@ async function executarRadarLiveV10() {
             return unicos;
         });
 
-        console.log(`⚽ [Bot V10] Partidas 100% reais validadas: ${resultados.length}`);
+        console.log(`⚽ [Bot V11] Partidas AO VIVO identificadas com precisão: ${resultados.length}`);
 
         if (resultados.length > 0) {
             let enviados = 0;
@@ -152,10 +136,10 @@ async function executarRadarLiveV10() {
                 enviados++;
 
                 let tagPressao = "⚽ BOLA ROLANDO";
-                let minLimpo = parseInt(p.tempo);
-                if (!isNaN(minLimpo)) {
-                    if (minLimpo >= 70) tagPressao = "🚨 RETA FINAL";
-                    else if (minLimpo >= 35 && minLimpo <= 45) tagPressao = "🔥 RETA FINAL HT";
+                let minNum = parseInt(p.tempo);
+                if (!isNaN(minNum)) {
+                    if (minNum >= 70) tagPressao = "🚨 RETA FINAL";
+                    else if (minNum >= 35 && minNum <= 45) tagPressao = "🔥 RETA FINAL HT";
                 }
 
                 let card = `🛸 <b>[ RADAR TOTALCORNER // AO VIVO REAL ]</b> ⚡\n`;
@@ -164,32 +148,31 @@ async function executarRadarLiveV10() {
                 card += `⚽ <b>CONFRONTO:</b>\n`;
                 card += `  🔹 <b>${p.timeA}</b>\n`;
                 card += `  🔸 <b>${p.timeB}</b>\n\n`;
-                card += `📊 <b>PLACAR GOLS:</b> <code> ${p.placar} </code>\n`;
+                card += `📊 <b>PLACAR REAL:</b> <code> ${p.placar} </code>\n`;
                 card += `🚩 <b>ESCANTEIOS:</b>  <code> ${p.escanteios} </code>\n\n`;
                 card += `🔥 <b>PRESSÃO AO VIVO:</b>\n`;
                 card += `  💥 <b>Ataques Perigosos:</b> <code>${p.ataquePerigoso}</code>\n`;
                 card += `  🎯 <b>Chutes no Gol:</b> <code>${p.chutes}</code>\n`;
-                card += `  🟨 <b>Cartões:</b> <code>${p.cartoes}</code>\n\n`;
-                card += `📈 <b>MERCADO / LINHA:</b> <code>${p.linha}</code>\n`;
+                card += `  🟨 <b>Cartões:</b> <code>${p.cartoes}</code>\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Samuel Mega Bot • Filtro Real V10 (#${enviados})</i>`;
+                card += `🤖 <i>Samuel Mega Bot • Precisão V11 (#${enviados})</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
                 await new Promise(r => setTimeout(r, 600)); 
             }
 
-            console.log(`✅ ${enviados} cards de jogos reais enviados ao Telegram!`);
+            console.log(`✅ ${enviados} cards com dados reais foram enviados com sucesso!`);
         } else {
-            console.log("⚠️ Nenhuma partida com minutos reais em Andamento no momento.");
+            console.log("⚠️ Nenhuma partida ao vivo ocorrendo no momento.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V10:", error.message);
+        console.error("❌ Erro no Radar V11:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
 // Executa a cada 5 minutos
-setInterval(executarRadarLiveV10, 300000);
-executarRadarLiveV10();
+setInterval(executarRadarLiveV11, 300000);
+executarRadarLiveV11();
