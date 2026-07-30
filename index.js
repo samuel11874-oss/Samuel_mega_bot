@@ -9,17 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V6 Cirúrgico ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V7 Infalível ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarLiveV6() {
+async function executarRadarLiveV7() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot V6] Filtrando ESTREITAMENTE apenas partidas com bola rolando (AO VIVO)...");
+        console.log("🕵️‍♂️ [Bot V7] Varrendo partidas REALMENTE AO VIVO no TotalCorner...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -58,46 +58,61 @@ async function executarRadarLiveV6() {
             linhas.forEach(tr => {
                 if (tr.querySelector('th') || tr.cells.length < 5) return;
 
-                const textoLinha = tr.innerText || '';
+                const textoLinha = (tr.innerText || '').trim();
 
-                // 1. EXTRAÇÃO DO STATUS/MINUTO
+                // 1. VERIFICAÇÃO DE JOGO ENCERRADO (FT / FIN)
                 const statusEl = tr.querySelector('.match_status_minutes, .match_status, .status, td:nth-child(3)');
                 let tempoText = statusEl ? statusEl.innerText.trim() : '';
 
-                // REGRA CIRÚRGICA DE JOGO AO VIVO:
-                // Precisa ter o apóstrofo de minuto (ex: 15', 42'), ou HT, 1st, 2nd.
-                const matchMinuto = tempoText.match(/\b\d+['"]|\bHT\b|\b1st\b|\b2nd\b/i) || textoLinha.match(/\b(\d+['"]|\bHT\b)/i);
-
-                // Se o campo for apenas horário futuro (ex: "13:00", "14:30") OU não tiver indicador de minuto -> DESCARTA!
-                const ehHorarioFuturo = /^\d{1,2}:\d{2}$/.test(tempoText) || (/\d{1,2}:\d{2}/.test(tempoText) && !tempoText.includes("'") && !tempoText.includes("HT"));
-                const ehEncerradoOuCancelado = /\bFT\b/i.test(tempoText) || /\bCanc\b/i.test(tempoText);
-
-                if (ehHorarioFuturo || ehEncerradoOuCancelado || !matchMinuto) {
-                    return; // Ignora jogos futuros ou finalizados
+                if (/\b(FT|Fin|Finished|Canc|Postp)\b/i.test(tempoText) || /\b(FT|Fin|Finished|Canc|Postp)\b/i.test(textoLinha)) {
+                    return; // Descarta se já terminou
                 }
 
-                let minutoLive = matchMinuto[0];
+                // 2. EXTRAÇÃO E VALIDAÇÃO DO PLACAR (REGRA MESTRE DE JOGO AO VIVO)
+                const golEl = tr.querySelector('.match_goal, .score, td:nth-child(5)');
+                let placarRaw = golEl ? golEl.innerText.trim() : '';
 
-                // 2. EXTRAÇÃO DOS TIMES
+                let matchPlacar = placarRaw.match(/(\d+)\s*-\s*(\d+)/);
+                if (!matchPlacar) {
+                    matchPlacar = textoLinha.match(/(\d+)\s*-\s*(\d+)/);
+                }
+
+                // Se NÃO tem placar numérico (ex: é "vs", vazio ou apenas hora), O JOGO NÃO COMEÇOU!
+                if (!matchPlacar) {
+                    return; 
+                }
+
+                let placar = `${matchPlacar[1]} - ${matchPlacar[2]}`;
+
+                // 3. EXTRAÇÃO DO MINUTO / TEMPO
+                let minutoLive = 'AO VIVO';
+                
+                const minMatch = tempoText.match(/(\d+)['"]/)|| tempoText.match(/\b(HT|1st|2nd)\b/i);
+                if (minMatch) {
+                    minutoLive = minMatch[0].includes("'") || minMatch[0] === 'HT' ? minMatch[0] : `${minMatch[0]}'`;
+                } else {
+                    // Extrai número isolado no campo do tempo (ex: "25" vira "25'")
+                    const numApenas = tempoText.replace(/\d{1,2}:\d{2}/g, '').match(/\b\d{1,2}\b/);
+                    if (numApenas) {
+                        minutoLive = `${numApenas[0]}'`;
+                    }
+                }
+
+                // 4. EXTRAÇÃO DOS TIMES
                 const timeAEl = tr.querySelector('.match_home a, .match_home, .home_name, td:nth-child(4)');
                 const timeBEl = tr.querySelector('.match_away a, .match_away, .away_name, td:nth-child(6)');
                 let timeA = timeAEl ? timeAEl.innerText.trim() : '';
                 let timeB = timeBEl ? timeBEl.innerText.trim() : '';
 
-                // 3. EXTRAÇÃO DO PLACAR AO VIVO
-                const golEl = tr.querySelector('.match_goal, .score, td:nth-child(5)');
-                let placar = golEl ? golEl.innerText.trim() : '';
-
-                if (!placar || placar.toLowerCase() === 'vs') {
-                    const mPlacar = textoLinha.match(/(\d+\s*-\s*\d+)/);
-                    if (mPlacar) placar = mPlacar[1];
+                if (!timeA || !timeB) {
+                    const links = tr.querySelectorAll('a[href*="/team/"]');
+                    if (links.length >= 2) {
+                        timeA = links[0].innerText.trim();
+                        timeB = links[1].innerText.trim();
+                    }
                 }
 
-                if (!placar || placar.toLowerCase() === 'vs') {
-                    placar = '0 - 0';
-                }
-
-                // 4. ESCANTEIOS E ESTATÍSTICAS
+                // 5. ESCANTEIOS E ESTATÍSTICAS DE PRESSÃO
                 const cornerEl = tr.querySelector('.match_corner, .corner, td:nth-child(7)');
                 let escanteios = cornerEl ? cornerEl.innerText.trim() : '0 - 0';
 
@@ -111,10 +126,10 @@ async function executarRadarLiveV6() {
                 let cartoes = cardEl ? cardEl.innerText.trim() : '0 - 0';
                 let linha = oddsEl ? oddsEl.innerText.trim() : 'Over Asiático';
 
-                // Tratamento de segurança para cartões
+                // Tratamento de cartões
                 if (cartoes) {
                     let partes = cartoes.split('-').map(n => parseInt(n.trim()));
-                    if (partes.some(n => n > 15 || isNaN(n))) {
+                    if (partes.some(n => n > 20 || isNaN(n))) {
                         cartoes = '0 - 0';
                     }
                 }
@@ -148,7 +163,7 @@ async function executarRadarLiveV6() {
             return unicos;
         });
 
-        console.log(`⚽ [Bot V6] Partidas REALMENTE AO VIVO validadas: ${resultados.length}`);
+        console.log(`⚽ [Bot V7] Partidas REALMENTE AO VIVO identificadas: ${resultados.length}`);
 
         if (resultados.length > 0) {
             let enviados = 0;
@@ -184,18 +199,18 @@ async function executarRadarLiveV6() {
                 await new Promise(r => setTimeout(r, 600)); 
             }
 
-            console.log(`✅ ${enviados} cards de jogos EXCLUSIVAMENTE AO VIVO foram enviados!`);
+            console.log(`✅ ${enviados} cards de jogos em andamento foram enviados com sucesso!`);
         } else {
-            console.log("⚠️ Nenhuma partida com bola rolando encontrada no momento.");
+            console.log("⚠️ Nenhuma partida ao vivo acontecendo neste exato momento.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V6:", error.message);
+        console.error("❌ Erro no Radar V7:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
 // Executa a cada 5 minutos
-setInterval(executarRadarLiveV6, 300000);
-executarRadarLiveV6();
+setInterval(executarRadarLiveV7, 300000);
+executarRadarLiveV7();
