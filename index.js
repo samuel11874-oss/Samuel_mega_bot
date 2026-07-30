@@ -9,17 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V12 🚀</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V13 🎯</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarLiveV12() {
+async function executarRadarLiveV13() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot V12] Iniciando varredura ultra-precisa no TotalCorner...");
+        console.log("🕵️‍♂️ [Bot V13] Iniciando varredura científica no TotalCorner...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -29,96 +29,93 @@ async function executarRadarLiveV12() {
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
                 '--disable-gpu',
-                '--single-process',
                 '--window-size=1440,900'
             ]
         });
 
         const page = await browser.newPage();
-        
-        // Cabeçalhos para evitar detecção de bot
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
-        await page.setExtraHTTPHeaders({
-            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
-        });
         await page.setViewport({ width: 1440, height: 900 });
 
-        console.log("🌐 Acessando https://www.totalcorner.com/match/live ...");
+        console.log("🌐 Acessando TotalCorner Live...");
         await page.goto('https://www.totalcorner.com/match/live', {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        // Checagem de título para diagnosticar bloqueios do Cloudflare
-        const title = await page.title();
-        console.log(`📄 Título da página carregada: "${title}"`);
+        // Rolagem de tela para forçar o carregamento do conteúdo dinâmico
+        await page.evaluate(() => window.scrollBy(0, 400));
+        await new Promise(r => setTimeout(r, 6000));
 
-        if (title.includes("Just a moment") || title.includes("Attention Required")) {
-            console.log("⚠️ Alerta: Cloudflare bloqueou a requisição nesta tentativa.");
-            return;
-        }
-
-        // Aguarda a tabela de jogos ao vivo carregar
-        console.log("⏳ Aguardando renderização das partidas ao vivo...");
-        await page.waitForSelector('tr[id^="tr_match_"], .match_row', { timeout: 15000 }).catch(() => {
-            console.log("⚠️ Seletor de partidas não foi encontrado a tempo.");
+        const diagnostico = await page.evaluate(() => {
+            const todasLinhas = document.querySelectorAll('tr');
+            return { totalTr: todasLinhas.length };
         });
 
-        await new Promise(r => setTimeout(r, 4000));
+        console.log(`📊 Linhas de tabela detectadas no DOM: ${diagnostico.totalTr}`);
 
         const resultados = await page.evaluate(() => {
             const lista = [];
-            const trs = document.querySelectorAll('tr[id^="tr_match_"], tr.match_row');
+            const trs = document.querySelectorAll('tr');
 
             trs.forEach(tr => {
-                // 1. TIMES
-                const homeEl = tr.querySelector('.match_home a, .match_home');
-                const awayEl = tr.querySelector('.match_away a, .match_away');
+                const textLinha = tr.innerText || '';
+
+                // 1. REJEIÇÃO CRÍTICA: Jogos futuros (horários como 14:30), datas ou jogos encerrados
+                if (/\b\d{1,2}:\d{2}\b/.test(textLinha) || textLinha.includes('/') || /\b(FT|Fin|Canc|Postp)\b/i.test(textLinha)) {
+                    return;
+                }
+
+                // 2. BUSCA DO MINUTO REAL
+                const statusEl = tr.querySelector('.match_status_minutes, .match_status, td[class*="status"]');
+                let minuteText = statusEl ? statusEl.innerText.trim() : '';
+
+                // Validação de minuto: Deve ser um número (ex: 89, 67) ou HT
+                let minMatch = minuteText.match(/\b\d+\b|\bHT\b/i);
+                if (!minMatch) return;
+
+                let minVal = minMatch[0];
+                let tempoFormatado = minVal.toUpperCase() === 'HT' ? 'HT' : `${minVal}'`;
+
+                // 3. IDENTIFICAÇÃO DOS TIMES
+                const homeEl = tr.querySelector('.match_home a, .match_home, .home_name');
+                const awayEl = tr.querySelector('.match_away a, .match_away, .away_name');
 
                 let timeA = homeEl ? homeEl.innerText.trim().split('\n')[0] : '';
                 let timeB = awayEl ? awayEl.innerText.trim().split('\n')[0] : '';
 
-                if (!timeA || !timeB) return;
+                if (!timeA || !timeB || timeA.length < 2 || timeB.length < 2) return;
 
-                // 2. TEMPO / MINUTO REAL
-                const statusEl = tr.querySelector('.match_status_minutes, .match_status, td[class*="status"]');
-                let minuteRaw = statusEl ? statusEl.innerText.trim() : '';
-
-                // Descarte de pré-jogo (ex: 13:30) ou partidas encerradas (FT)
-                if (!minuteRaw || /^\d{1,2}:\d{2}$/.test(minuteRaw) || /\b(FT|Fin|Canc|Postp)\b/i.test(minuteRaw)) {
-                    return;
-                }
-
-                let tempoFormatado = minuteRaw;
-                if (/^\d+$/.test(tempoFormatado)) {
-                    tempoFormatado += "'";
-                }
-
-                // 3. PLACAR DE GOLS
+                // 4. PLACAR DE GOLS (Apenas números inteiros)
                 const goalEl = tr.querySelector('.match_goal, .score');
-                let placarText = goalEl ? goalEl.innerText.trim() : '0 - 0';
-                let matchP = placarText.match(/\d+\s*[-:]\s*\d+/);
-                let placar = matchP ? matchP[0].replace(':', ' - ') : '0 - 0';
+                let placarText = goalEl ? goalEl.innerText.trim() : '';
+                let matchGols = placarText.match(/\b\d+\s*[-:]\s*\d+\b/);
+                
+                let placar = matchGols ? matchGols[0].replace(':', ' - ') : '0 - 0';
 
-                // 4. ESCANTEIOS
-                const cornerEl = tr.querySelector('.match_corner');
-                let escanteios = cornerEl ? cornerEl.innerText.trim() : '0 - 0';
+                // 5. ESCANTEIOS REAL (Filtra para bloquear odds que contêm ponto decimal)
+                const cornerEl = tr.querySelector('.match_corner, .corner');
+                let escanteiosText = cornerEl ? cornerEl.innerText.trim() : '0 - 0';
+                
+                if (escanteiosText.includes('.')) {
+                    escanteiosText = '0 - 0';
+                }
 
-                // 5. ESTATÍSTICAS DE PRESSÃO
+                // 6. DADOS DE PRESSÃO
                 const attachEl = tr.querySelector('.match_attach');
                 const shotEl = tr.querySelector('.match_shot');
                 const cardEl = tr.querySelector('.match_card');
 
-                let ataqPerigosos = attachEl ? attachEl.innerText.trim() : 'S/D';
-                let chutes = shotEl ? shotEl.innerText.trim() : 'S/D';
-                let cartoes = cardEl ? cardEl.innerText.trim() : '0 - 0';
+                let ataqPerigosos = attachEl && !attachEl.innerText.includes('.') ? attachEl.innerText.trim() : 'S/D';
+                let chutes = shotEl && !shotEl.innerText.includes('.') ? shotEl.innerText.trim() : 'S/D';
+                let cartoes = cardEl && !cardEl.innerText.includes('.') ? cardEl.innerText.trim() : '0 - 0';
 
                 lista.push({
                     timeA: timeA,
                     timeB: timeB,
                     tempo: tempoFormatado,
                     placar: placar,
-                    escanteios: escanteios,
+                    escanteios: escanteiosText,
                     ataquePerigoso: ataqPerigosos,
                     chutes: chutes,
                     cartoes: cartoes
@@ -139,7 +136,7 @@ async function executarRadarLiveV12() {
             return unicos;
         });
 
-        console.log(`⚽ [Bot V12] Partidas AO VIVO identificadas: ${resultados.length}`);
+        console.log(`⚽ [Bot V13] Partidas AO VIVO validadas com sucesso: ${resultados.length}`);
 
         if (resultados.length > 0) {
             let enviados = 0;
@@ -155,7 +152,7 @@ async function executarRadarLiveV12() {
                     else if (minNum >= 35 && minNum <= 45) tagPressao = "🔥 RETA FINAL HT";
                 }
 
-                let card = `🛸 <b>[ RADAR TOTALCORNER // LIVE PRECISO ]</b> ⚡\n`;
+                let card = `🛸 <b>[ RADAR TOTALCORNER // AO VIVO REAL ]</b> ⚡\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
                 card += `⏱️ <b>MINUTO REAL:</b> <code>[ ${p.tempo} ]</code> ${tagPressao}\n\n`;
                 card += `⚽ <b>CONFRONTO:</b>\n`;
@@ -168,24 +165,24 @@ async function executarRadarLiveV12() {
                 card += `  🎯 <b>Chutes no Gol:</b> <code>${p.chutes}</code>\n`;
                 card += `  🟨 <b>Cartões:</b> <code>${p.cartoes}</code>\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Samuel Mega Bot • Precisão V12 (#${enviados})</i>`;
+                card += `🤖 <i>Samuel Mega Bot • Precisão V13 (#${enviados})</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
                 await new Promise(r => setTimeout(r, 600)); 
             }
 
-            console.log(`✅ ${enviados} cards de jogos reais enviados com sucesso ao Telegram!`);
+            console.log(`✅ ${enviados} cards de jogos reais enviados com sucesso!`);
         } else {
-            console.log("⚠️ Nenhuma partida ao vivo encontrada neste ciclo.");
+            console.log("⚠️ Nenhuma partida ao vivo em andamento encontrada neste ciclo.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V12:", error.message);
+        console.error("❌ Erro no Radar V13:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
 // Executa a cada 5 minutos
-setInterval(executarRadarLiveV12, 300000);
-executarRadarLiveV12();
+setInterval(executarRadarLiveV13, 300000);
+executarRadarLiveV13();
