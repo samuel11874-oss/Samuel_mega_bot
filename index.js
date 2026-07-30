@@ -9,17 +9,24 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V19 🎯</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Agenda Pré-Jogo V20 📅</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarV19() {
+// Palavras-chave das ligas principais para destacar
+const LIGAS_DE_DESTAQUE = [
+    'brazil', 'brasil', 'libertadores', 'sudamericana', 'champions', 'premier',
+    'la liga', 'serie a', 'bundesliga', 'ligue 1', 'england', 'spain', 'italy',
+    'germany', 'france', 'argentina', 'cup', 'copa'
+];
+
+async function executarAgendaHojeV20() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot V19] Iniciando busca por Cards e Tabelas no TotalCorner PT...");
+        console.log("📅 [Bot V20 - Pré-Jogo] Varrendo agenda de partidas para hoje...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -35,85 +42,69 @@ async function executarRadarV19() {
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
 
-        console.log("🌐 Acessando TotalCorner Hoje/Ao Vivo...");
-        const response = await page.goto('https://www.totalcorner.com/pt/match/today', {
+        console.log("🌐 Acessando jogos do dia no TotalCorner...");
+        const response = await page.goto('https://www.totalcorner.com/match/today', {
             waitUntil: 'networkidle2',
             timeout: 60000
         });
 
         console.log(`📡 Status HTTP: ${response ? response.status() : 0}`);
 
-        // Rola a página para forçar o carregamento de todos os cards
-        await page.evaluate(() => window.scrollBy(0, 500));
-        await new Promise(r => setTimeout(r, 6000));
+        await new Promise(r => setTimeout(r, 5000));
 
-        const partidasAoVivo = await page.evaluate(() => {
+        const jogosAgendados = await page.evaluate((ligasChave) => {
             const lista = [];
+            const trs = document.querySelectorAll('tr');
 
-            // Captura tanto elementos de tabela quanto blocos/cards de partidas
-            const blocos = document.querySelectorAll('tr[id^="tr_match_"], div[class*="match_"], .row[id^="match_"]');
+            trs.forEach(tr => {
+                const texto = tr.innerText || '';
 
-            // Caso o layout seja em cards div genéricos
-            const todosElementos = blocos.length > 0 ? blocos : document.querySelectorAll('div, tr');
+                // Busca por padrão de hora (ex: 15:00, 19:30, 21:00)
+                const horaMatch = texto.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
+                if (!horaMatch) return;
 
-            todosElementos.forEach(el => {
-                const texto = el.innerText || '';
+                const horaJogo = horaMatch[0];
 
-                // Verifica se o bloco contém indicadores de jogo ao vivo (Ex: "Mín" ou minutos ativos)
-                if (!texto.includes('Mín') && !/\b\d{1,2}'\b/.test(texto) && !/\bHT\b/.test(texto)) {
-                    return;
-                }
-
-                // Captura o minuto (busca números no trecho do Mín)
-                let minMatch = texto.match(/Mín\s*(\d+)/i) || texto.match(/\b(\d{1,2})\b/);
-                if (!minMatch) return;
-
-                let minuto = minMatch[1];
-                let minNum = parseInt(minuto);
-                if (isNaN(minNum) || minNum <= 0 || minNum > 100) return;
-
-                // Captura de Times
-                const links = el.querySelectorAll('a');
+                // Busca os nomes dos times nos links da linha
+                const links = tr.querySelectorAll('a');
                 let times = [];
                 links.forEach(a => {
-                    let name = a.innerText.trim();
-                    if (name.length > 2 && !/^(Estatísticas|Cotas|Ao vivo|Stats|Odds|App)$/i.test(name)) {
-                        times.push(name);
+                    const txt = a.innerText.trim();
+                    if (txt.length > 2 && !/^(stats|odds|vip|analysis|live|today|app)$/i.test(txt)) {
+                        times.push(txt);
                     }
                 });
 
-                if (times.length < 2) return;
+                if (times.length >= 2) {
+                    const timeA = times[0];
+                    const timeB = times[1];
 
-                let timeA = times[0];
-                let timeB = times[1];
+                    // Tenta identificar a liga no contexto do elemento pai ou texto da linha
+                    let ligaNome = "Campeonato Geral";
+                    const prevRow = tr.previousElementSibling;
+                    if (prevRow && (prevRow.classList.contains('league') || prevRow.innerText.length < 50)) {
+                        ligaNome = prevRow.innerText.trim();
+                    }
 
-                // Captura do Placar (Ex: 0 - 1 ou 1 - 0)
-                let placarMatch = texto.match(/\b(\d+\s*[-:]\s*\d+)\b/);
-                let placar = placarMatch ? placarMatch[1].replace(':', ' - ') : '0 - 0';
+                    // Verifica se pertence a uma liga de destaque
+                    const textoLower = (texto + ' ' + ligaNome).toLowerCase();
+                    const eDestaque = ligasChave.some(liga => textoLower.includes(liga));
 
-                // Captura de Escanteios (Ex: 3 - 2)
-                let escanteiosMatch = texto.match(/Escanteios\s*(\d+\s*-\s*\d+)/i) || texto.match(/(\d+\s*-\s*\d+)\s*\(\d+-\d+\)/);
-                let escanteios = escanteiosMatch ? escanteiosMatch[1] : '0 - 0';
-
-                // Captura de Perigo/Ataques
-                let perigoMatch = texto.match(/Perigo\s*(\d+\s*-\s*\d+)/i);
-                let perigo = perigoMatch ? perigoMatch[1] : 'S/D';
-
-                lista.push({
-                    timeA: timeA,
-                    timeB: timeB,
-                    tempo: `${minuto}'`,
-                    placar: placar,
-                    escanteios: escanteios,
-                    perigo: perigo
-                });
+                    lista.push({
+                        hora: horaJogo,
+                        timeA: timeA,
+                        timeB: timeB,
+                        liga: ligaNome,
+                        eDestaque: eDestaque
+                    });
+                }
             });
 
             // Remove duplicatas
             const unicos = [];
             const vistos = new Set();
             lista.forEach(item => {
-                const chave = `${item.timeA} x ${item.timeB}`;
+                const chave = `${item.timeA} x ${item.timeB} - ${item.hora}`;
                 if (!vistos.has(chave)) {
                     vistos.add(chave);
                     unicos.push(item);
@@ -121,45 +112,52 @@ async function executarRadarV19() {
             });
 
             return unicos;
-        });
+        }, LIGAS_DE_DESTAQUE);
 
-        console.log(`⚽ [Bot V19] Partidas AO VIVO encontradas nos Cards: ${partidasAoVivo.length}`);
+        console.log(`⚽ [Bot V20] Total de partidas agendadas para hoje encontradas: ${jogosAgendados.length}`);
 
-        if (partidasAoVivo.length > 0) {
+        if (jogosAgendados.length > 0) {
+            // Prioriza os jogos das ligas de destaque no topo
+            jogosAgendados.sort((a, b) => b.eDestaque - a.eDestaque);
+
+            const limite = Math.min(jogosAgendados.length, 15);
             let enviados = 0;
 
-            for (let i = 0; i < partidasAoVivo.length; i++) {
-                let p = partidasAoVivo[i];
+            for (let i = 0; i < limite; i++) {
+                const j = jogosAgendados[i];
                 enviados++;
 
-                let card = `🛸 <b>[ RADAR TOTALCORNER // AO VIVO ]</b> ⚡\n`;
+                const iconeLiga = j.eDestaque ? "🏆 <b>LIGA DE DESTAQUE</b>" : "⚽ <b>PRÉ-JOGO AGENDA</b>";
+
+                let card = `🛸 <b>[ AGENDA DE JOGOS DE HOJE ]</b> 📅\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `⏱️ <b>MINUTO REAL:</b> <code>[ ${p.tempo} ]</code>\n\n`;
-                card += `⚽ <b>CONFRONTO:</b>\n`;
-                card += `  🔹 <b>${p.timeA}</b>\n`;
-                card += `  🔸 <b>${p.timeB}</b>\n\n`;
-                card += `📊 <b>PLACAR REAL:</b> <code> ${p.placar} </code>\n`;
-                card += `🚩 <b>ESCANTEIOS:</b>  <code> ${p.escanteios} </code>\n`;
-                card += `💥 <b>Ataques Perigosos:</b> <code> ${p.perigo} </code>\n`;
+                card += `${iconeLiga}\n`;
+                card += `⏰ <b>HORÁRIO DE INÍCIO:</b> <code> ${j.hora} </code>\n\n`;
+                card += `⚔️ <b>CONFRONTO:</b>\n`;
+                card += `  🔹 <b>${j.timeA}</b>\n`;
+                card += `  🔸 <b>${j.timeB}</b>\n\n`;
+                if (j.liga && j.liga !== "Campeonato Geral") {
+                    card += `🏆 <b>Torneio:</b> <i>${j.liga}</i>\n`;
+                }
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Samuel Mega Bot • Precisão V19 (#${enviados})</i>`;
+                card += `🤖 <i>Samuel Mega Bot • Visão Pré-Jogo V20 (#${enviados})</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
                 await new Promise(r => setTimeout(r, 600));
             }
 
-            console.log(`✅ ${enviados} partidas enviadas para o Telegram com sucesso!`);
+            console.log(`✅ ${enviados} cards da agenda do dia enviados ao Telegram com sucesso!`);
         } else {
-            console.log("⚠️ Nenhum card com minuto ao vivo foi identificado nesta rodada.");
+            console.log("⚠️ Nenhuma partida agendada com horário foi identificada nesta busca.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V19:", error.message);
+        console.error("❌ Erro no Radar V20:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Executa a cada 5 minutos
-setInterval(executarRadarV19, 300000);
-executarRadarV19();
+// Executa a cada 30 minutos (suficiente para agenda pré-jogo)
+setInterval(executarAgendaHojeV20, 1800000);
+executarAgendaHojeV20();
