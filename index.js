@@ -9,28 +9,25 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Top Ligas V21 🏆</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Agenda VIP V22 🏆</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-// Lista completa das melhores ligas do Brasil, América do Sul e Europa
+// Lista das principais ligas do Brasil, América do Sul e Europa
 const TOP_LIGAS = [
-    // Brasil
     'brasil', 'brazil', 'brasileiro', 'serie a', 'serie b', 'copa do brasil', 'paulista', 'carioca',
-    // América do Sul
     'libertadores', 'sudamericana', 'sul-americana', 'argentina', 'colombia', 'chile', 'uruguay', 'paraguay',
-    // Europa & Campeonatos Principais
     'champions', 'europa league', 'conference league', 'premier league', 'england', 'la liga', 'spain',
-    'serie a italy', 'italy', 'bundesliga', 'germany', 'ligue 1', 'france', 'portugal', 'eredivisie', 'netherlands'
+    'italy', 'bundesliga', 'germany', 'ligue 1', 'france', 'portugal', 'eredivisie'
 ];
 
-async function executarTopLigasV21() {
+async function executarAgendaV22() {
     let browser = null;
     try {
-        console.log("🏆 [Bot V21 - Top Ligas] Mapeando 100% das partidas das principais ligas...");
+        console.log("🎯 [Bot V22 - VIP] Extração cirúrgica com separação exata de Times e Ligas...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -46,7 +43,7 @@ async function executarTopLigasV21() {
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
 
-        console.log("🌐 Acessando a lista completa de hoje no TotalCorner...");
+        console.log("🌐 Acessando TotalCorner Hoje...");
         const response = await page.goto('https://www.totalcorner.com/match/today', {
             waitUntil: 'networkidle2',
             timeout: 60000
@@ -55,57 +52,66 @@ async function executarTopLigasV21() {
         console.log(`📡 Status HTTP: ${response ? response.status() : 0}`);
         await new Promise(r => setTimeout(r, 5000));
 
-        const jogosFiltrados = await page.evaluate((ligasEspecial) => {
+        const jogosLimpos = await page.evaluate((ligasFiltro) => {
             const lista = [];
-            const trs = document.querySelectorAll('tr');
+            const trs = document.querySelectorAll('tr[id^="tr_match_"], tr');
 
             trs.forEach(tr => {
-                const texto = tr.innerText || '';
+                // Seleção isolada dos elementos no HTML do TotalCorner
+                const homeEl = tr.querySelector('.match_home a, .match_home, td.home');
+                const awayEl = tr.querySelector('.match_away a, .match_away, td.away');
+                const leagueEl = tr.querySelector('.league_name a, .league_name, td.league');
 
-                // Procura horário formatado (ex: 16:00, 21:30)
-                const horaMatch = texto.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
-                if (!horaMatch) return;
+                if (!homeEl || !awayEl) return;
 
-                const horaJogo = horaMatch[0];
+                let timeA = homeEl.innerText.trim().split('\n')[0];
+                let timeB = awayEl.innerText.trim().split('\n')[0];
 
-                // Extrai times dos links da linha
-                const links = tr.querySelectorAll('a');
-                let times = [];
-                links.forEach(a => {
-                    const txt = a.innerText.trim();
-                    if (txt.length > 2 && !/^(stats|odds|vip|analysis|live|today|app)$/i.test(txt)) {
-                        times.push(txt);
+                if (!timeA || !timeB || timeA.length < 2 || timeB.length < 2) return;
+
+                // Descarta se capturar texto do sistema
+                if (/^(stats|odds|vip|live|today|corner)$/i.test(timeA) || /^(stats|odds|vip|live|today|corner)$/i.test(timeB)) return;
+
+                // Extração limpa de horário
+                const textoLinha = tr.innerText || '';
+                const horaMatch = textoLinha.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
+                const horaJogo = horaMatch ? horaMatch[0] : 'Hoje';
+
+                // Extração limpa do nome da liga
+                let ligaNome = "Campeonato Geral";
+                if (leagueEl && leagueEl.innerText.trim()) {
+                    ligaNome = leagueEl.innerText.trim();
+                } else {
+                    let prev = tr.previousElementSibling;
+                    while (prev) {
+                        if (prev.classList.contains('league') || prev.querySelector('.league_name') || prev.innerText.length < 50) {
+                            let txt = prev.innerText.trim();
+                            if (txt.length > 2 && txt.length < 60) {
+                                ligaNome = txt.split('\n')[0];
+                                break;
+                            }
+                        }
+                        prev = prev.previousElementSibling;
                     }
-                });
+                }
 
-                if (times.length >= 2) {
-                    const timeA = times[0];
-                    const timeB = times[1];
+                ligaNome = ligaNome.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
 
-                    // Tenta identificar o nome da liga
-                    let ligaNome = "Campeonato Geral";
-                    const prevRow = tr.previousElementSibling;
-                    if (prevRow && (prevRow.classList.contains('league') || prevRow.innerText.length < 60)) {
-                        ligaNome = prevRow.innerText.trim();
-                    }
+                // Filtro para manter apenas as Top Ligas
+                const contextoLower = (textoLinha + ' ' + ligaNome).toLowerCase();
+                const eTop = ligasFiltro.some(l => contextoLower.includes(l));
 
-                    const contextoCompleto = (texto + ' ' + ligaNome).toLowerCase();
-
-                    // Verifica se pertence a uma Top Liga
-                    const eTopLiga = ligasEspecial.some(liga => contextoCompleto.includes(liga));
-
-                    if (eTopLiga) {
-                        lista.push({
-                            hora: horaJogo,
-                            timeA: timeA,
-                            timeB: timeB,
-                            liga: ligaNome
-                        });
-                    }
+                if (eTop) {
+                    lista.push({
+                        timeA: timeA,
+                        timeB: timeB,
+                        hora: horaJogo,
+                        liga: ligaNome
+                    });
                 }
             });
 
-            // Remove duplicatas
+            // Elimina duplicatas
             const unicos = [];
             const vistos = new Set();
             lista.forEach(item => {
@@ -119,56 +125,50 @@ async function executarTopLigasV21() {
             return unicos;
         }, TOP_LIGAS);
 
-        console.log(`⚽ [Bot V21] Total de partidas de TOP LIGAS encontradas para hoje: ${jogosFiltrados.length}`);
+        console.log(`⚽ [Bot V22] Total de partidas TOP LIGAS organizadas: ${jogosLimpos.length}`);
 
-        if (jogosFiltrados.length > 0) {
-            // Avisa no Telegram quantas partidas das principais ligas foram encontradas
-            let resumo = `🚨 <b>[ RADAR DE HOJE - TOP LIGAS ]</b> 🏆\n`;
-            resumo += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-            resumo += `📊 <b>Total de Jogos de Elite Hoje:</b> <code>${jogosFiltrados.length}</code>\n`;
-            resumo += `🌎 <i>América do Sul, Brasil & Europa</i>\n`;
-            resumo += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-            resumo += `👇 <i>Enviando lista completa abaixo...</i>`;
+        if (jogosLimpos.length > 0) {
+            // Card de Abertura
+            let headerMsg = `🏆 <b>[ AGENDA DE ELITE // HOJE ]</b> 🏆\n`;
+            headerMsg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+            headerMsg += `📊 <b>Jogos Selecionados:</b> <code>${jogosLimpos.length}</code>\n`;
+            headerMsg += `🎯 <i>Organização Cirúrgica de Confrontos</i>\n`;
+            headerMsg += `━━━━━━━━━━━━━━━━━━━━━━`;
 
-            await bot.sendMessage(CHAT_ID, resumo, { parse_mode: 'HTML' }).catch(() => {});
+            await bot.sendMessage(CHAT_ID, headerMsg, { parse_mode: 'HTML' }).catch(() => {});
             await new Promise(r => setTimeout(r, 1000));
 
             let enviados = 0;
 
-            // ENVIA TODOS OS JOGOS SEM CORTAR EM 15
-            for (let i = 0; i < jogosFiltrados.length; i++) {
-                const j = jogosFiltrados[i];
+            for (let i = 0; i < jogosLimpos.length; i++) {
+                const j = jogosLimpos[i];
                 enviados++;
 
-                let card = `🛸 <b>[ AGENDA TOP LIGAS ]</b> (#${enviados})\n`;
+                let card = `📌 <b>PARTIDA #${enviados}</b>\n`;
+                card += `🏆 <b>Liga:</b> <code>${j.liga}</code>\n`;
+                card += `⏰ <b>Horário:</b> <code>${j.hora}</code>\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `⏰ <b>HORÁRIO:</b> <code> ${j.hora} </code>\n\n`;
-                card += `⚔️ <b>CONFRONTO:</b>\n`;
-                card += `  🔹 <b>${j.timeA}</b>\n`;
-                card += `  🔸 <b>${j.timeB}</b>\n\n`;
-                if (j.liga && j.liga !== "Campeonato Geral") {
-                    card += `🏆 <b>Liga/Torneio:</b> <i>${j.liga}</i>\n`;
-                }
+                card += `⚽ <b>CONFRONTO:</b>\n`;
+                card += `  🏠 <b>${j.timeA}</b>\n`;
+                card += `  ✈️ <b>${j.timeB}</b>\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Samuel Mega Bot • Precisão V21</i>`;
+                card += `🤖 <i>Samuel Mega Bot • V22 VIP</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
-                // Pausa de 700ms para respeitar a velocidade do Telegram
                 await new Promise(r => setTimeout(r, 700));
             }
 
-            console.log(`✅ Todos os ${enviados} cards das principais ligas foram entregues no Telegram!`);
+            console.log(`✅ ${enviados} cards profissionais entregues no Telegram com sucesso!`);
         } else {
-            console.log("⚠️ Nenhuma partida das Top Ligas foi identificada para o dia de hoje.");
+            console.log("⚠️ Nenhuma partida filtrada para envio.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V21:", error.message);
+        console.error("❌ Erro no Radar V22:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Executa a cada 30 minutos
-setInterval(executarTopLigasV21, 1800000);
-executarTopLigasV21();
+setInterval(executarAgendaV22, 1800000);
+executarAgendaV22();
