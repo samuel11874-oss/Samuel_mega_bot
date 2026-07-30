@@ -9,17 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V38 Espião Ao Vivo 🕵️‍♂️⚡</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V39 Sniffer de API 🕵️‍♂️📡</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarV38EspiaoAoVivo() {
+async function executarRadarV39Sniffer() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot V38 - ESPIÃO AO VIVO] Entrando em /match/live para inspecionar o HTML...");
+        console.log("🕵️‍♂️ [Bot V39 - SNIFFER DE API] Monitorando requisições de rede do TotalCorner...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -35,60 +35,42 @@ async function executarRadarV38EspiaoAoVivo() {
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
 
+        // Intercepta e escuta todas as respostas de rede do navegador
+        page.on('response', async (response) => {
+            const url = response.url();
+            // Filtra URLs que possam conter dados de partidas
+            if (url.includes('match') || url.includes('live') || url.includes('data') || url.includes('json') || url.includes('ajax') || url.includes('get')) {
+                try {
+                    const contentType = response.headers()['content-type'] || '';
+                    if (contentType.includes('json') || contentType.includes('javascript') || contentType.includes('text')) {
+                        const text = await response.text().catch(() => '');
+                        if (text.length > 50 && (text.includes('home') || text.includes('away') || text.includes('corner') || text.includes('score'))) {
+                            console.log(`\n📦 [API CAPTURADA] URL: ${url}`);
+                            console.log(`📄 Amostra do Conteúdo: ${text.substring(0, 300)}...\n`);
+                        }
+                    }
+                } catch (e) {}
+            }
+        });
+
         console.log("🌐 Acessando https://www.totalcorner.com/match/live ...");
-        const response = await page.goto('https://www.totalcorner.com/match/live', {
+        await page.goto('https://www.totalcorner.com/match/live', {
             waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        const status = response ? response.status() : 0;
-        const pageTitle = await page.title();
-        console.log(`📡 Status HTTP: ${status} | Título: "${pageTitle}"`);
+        console.log("⏳ Aguardando 10 segundos para capturar as chamadas de dados ao vivo...");
+        await new Promise(r => setTimeout(r, 10000));
 
-        console.log("⏳ Aguardando 8 segundos para o AJAX carregar os dados ao vivo...");
-        await new Promise(r => setTimeout(r, 8000));
-
-        const espiaoAoVivo = await page.evaluate(() => {
-            const trs = Array.from(document.querySelectorAll('tr'));
-            
-            // Pega as primeiras 15 linhas da tabela para ver o que tem dentro
-            const amostras = trs.slice(0, 15).map((tr, idx) => {
-                let texto = tr.innerText.replace(/\s+/g, ' ').trim();
-                let links = Array.from(tr.querySelectorAll('a')).map(a => a.getAttribute('href')).filter(h => h);
-                return `Linha #${idx + 1} [Links: ${links.slice(0, 3).join(', ')}]: ${texto.substring(0, 120)}`;
-            });
-
-            // Pega o texto do corpo para garantir que a página carregou dados
-            const textoBody = document.body.innerText.replace(/\s+/g, ' ').substring(0, 300);
-
-            return {
-                totalTRs: trs.length,
-                amostras: amostras,
-                textoBody: textoBody
-            };
-        });
-
-        console.log(`\n================ RELATÓRIO DO ESPIÃO AO VIVO ================`);
-        console.log(`🔍 Total de <tr> encontrados em /match/live: ${espiaoAoVivo.totalTRs}`);
-        console.log(`📝 TEXTO DO CORPO:\n"${espiaoAoVivo.textoBody}"\n`);
-        console.log(`👀 CONTEÚDO DAS PRIMEIRAS LINHAS:`);
-        espiaoAoVivo.amostras.forEach(linha => console.log(linha));
-        console.log(`=============================================================\n`);
-
-        let msgTelegram = `🕵️‍♂️ <b>[ESPIÃO AO VIVO V38]</b>\n`;
-        msgTelegram += `────────────────────────\n`;
-        msgTelegram += `📡 <b>Status:</b> <code>${status}</code>\n`;
-        msgTelegram += `📊 <b>Total de <tr>:</b> <code>${espiaoAoVivo.totalTRs}</code>\n`;
-        msgTelegram += `────────────────────────\n`;
-        msgTelegram += `⚠️ <i>Olhe o LOG do RENDER para ver o texto exato da tabela ao vivo!</i>`;
-
-        await bot.sendMessage(CHAT_ID, msgTelegram, { parse_mode: 'HTML' }).catch(() => {});
+        console.log("✅ [Bot V39] Sniffing de rede finalizado.");
+        await bot.sendMessage(CHAT_ID, `🕵️‍♂️ <b>[V39 SNIFFER]</b> Varredura de API concluída. Confira o log no Render!`, { parse_mode: 'HTML' }).catch(() => {});
 
     } catch (error) {
-        console.error("❌ Erro no Espião V38:", error.message);
+        console.error("❌ Erro no Sniffer V39:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V39:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarV38EspiaoAoVivo();
+executarRadarV39Sniffer();
