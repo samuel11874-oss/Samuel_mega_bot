@@ -5,23 +5,22 @@ const express = require('express');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const TelegramBot = require('node-telegram-bot-api');
+const fs = require('fs');
 
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar TotalCorner ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Modo Investigação TotalCorner 🔍⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-let historicoPlacares = {};
-
-async function buscarJogosAoVivo() {
+async function investigarTotalCorner() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot TC] Iniciando varredura no TotalCorner...");
+        console.log("🕵️‍♂️ [INVESTIGAÇÃO] Iniciando varredura de auditoria no TotalCorner...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -39,120 +38,48 @@ async function buscarJogosAoVivo() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 768 });
 
-        console.log("🌐 [Bot TC] Acessando totalcorner.com...");
-        await page.goto('https://www.totalcorner.com/match/live', {
-            waitUntil: 'domcontentloaded',
+        console.log("🌐 [INVESTIGAÇÃO] Acessando https://www.totalcorner.com/match/today ...");
+        await page.goto('https://www.totalcorner.com/match/today', {
+            waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        await new Promise(r => setTimeout(r, 6000)); // Aguarda carregar as tabelas ao vivo
+        console.log("⏳ Aguardando 8 segundos para renderização total da página...");
+        await new Promise(r => setTimeout(r, 8000));
 
-        const partidas = await page.evaluate(() => {
-            const resultados = [];
-            // O TotalCorner usa tabelas tradicionais para os jogos ao vivo
-            const linhas = document.querySelectorAll('tr');
+        // 1. Tira um print para sabermos exatamente o que o servidor está vendo
+        const caminhoPrint = path.join(__dirname, 'screenshot.png');
+        await page.screenshot({ path: caminhoPrint, fullPage: true });
+        console.log("📸 [INVESTIGAÇÃO] Print de tela salvo com sucesso no servidor!");
 
-            linhas.forEach(row => {
-                const txt = row.innerText ? row.innerText.trim() : '';
-                if (!txt || txt.length < 10) return;
-
-                if (/Finished|\bFT\b|Half Time/i.test(txt)) return;
-
-                const colunas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                
-                // Procura por tempo de jogo (ex: 45', 72', etc.)
-                let indexMinuto = colunas.findIndex(l => /^\d{1,2}'$/.test(l) || /^\d{1,2}\+?\d*'$/.test(l));
-                if (indexMinuto === -1) return;
-
-                let tempo = colunas[indexMinuto];
-                
-                // Filtra os nomes dos times e placar com base na linha da tabela
-                let limpos = colunas.filter(l => 
-                    l !== tempo && 
-                    !/^\d+$/.test(l) && 
-                    !l.includes('%') && 
-                    l.length > 2
-                );
-
-                let numeros = colunas.filter(l => /^\d+$/.test(l) && l !== tempo);
-
-                if (limpos.length >= 2 && numeros.length >= 2) {
-                    resultados.push({
-                        tempo: tempo,
-                        timeA: limpos[0],
-                        timeB: limpos[1],
-                        placar: `${numeros[0]} x ${numeros[1]}`,
-                        golsA: parseInt(numeros[0]),
-                        golsB: parseInt(numeros[1])
-                    });
+        // 2. Extrai e exibe no log do Render todo o texto bruto encontrado nas tabelas ou divs principais
+        const dadosBrutos = await page.evaluate(() => {
+            const elementos = document.querySelectorAll('tr, .match-row, div');
+            const amostras = [];
+            
+            elementos.forEach((el, index) => {
+                const txt = el.innerText ? el.innerText.trim() : '';
+                // Pega textos que tenham tamanho útil de partidas
+                if (txt.length > 20 && txt.length < 400 && index < 30) {
+                    amostras.push(txt);
                 }
             });
-
-            // Remove duplicatas
-            const unicas = [];
-            const vistas = new Set();
-            resultados.forEach(item => {
-                const chave = `${item.timeA}x${item.timeB}`;
-                if (!vistas.has(chave)) {
-                    vistas.add(chave);
-                    unicas.push(item);
-                }
-            });
-
-            return unicas;
+            return amostras;
         });
 
-        console.log(`⚽ [Bot TC] Partidas AO VIVO capturadas: ${partidas.length}`);
+        console.log("📊 [INVESTIGAÇÃO] Amostras de texto encontradas na página:");
+        console.log(JSON.stringify(dadosBrutos, null, 2));
 
-        if (partidas.length > 0) {
-            let enviados = 0;
-            let novoHistorico = {};
-
-            for (let i = 0; i < Math.min(partidas.length, 25); i++) {
-                let p = partidas[i];
-                enviados++;
-
-                let chaveJogo = `${p.timeA} x ${p.timeB}`;
-                let statusGol = "⚡ <code>STATUS: ROLANDO</code>";
-
-                if (historicoPlacares[chaveJogo]) {
-                    let anterior = historicoPlacares[chaveJogo];
-                    if (p.golsA > anterior.golsA || p.golsB > anterior.golsB) {
-                        statusGol = "GOOOOOOL! 🚨🔥 ⚽ <b>SAIU GOL RECENTE!</b>";
-                    }
-                }
-
-                novoHistorico[chaveJogo] = { golsA: p.golsA, golsB: p.golsB };
-
-                let card = `🛸 <code>[ SYSTEM // TOTAL_CORNER ]</code> ⚡\n`;
-                card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `⏱  <b>TEMPO</b>  ➔  <code>[ ${p.tempo} ]</code>\n`;
-                card += `⚽  <b>CONFRONTO</b>\n`;
-                card += `    🔹 <b>${p.timeA}</b>\n`;
-                card += `    🔸 <b>${p.timeB}</b>\n`;
-                card += `📊  <b>PLACAR</b>  ➔  ⚡ <code> ${p.placar} </code> ⚡\n`;
-                card += `──────────────────────\n`;
-                card += `${statusGol}\n`;
-                card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Radar Ativo - TotalCorner</i>`;
-
-                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
-                await new Promise(r => setTimeout(r, 600)); 
-            }
-
-            historicoPlacares = novoHistorico;
-            console.log(`✅ ${enviados} cards enviados com sucesso via TotalCorner!`);
-        } else {
-            console.log("⚠️ Nenhum jogo ao vivo encontrado no TotalCorner nesta varredura.");
-        }
+        bot.sendMessage(CHAT_ID, "🔍 *[Modo Investigação]* O bot analisou o TotalCorner. Veja os logs no Render para inspecionar os dados coletados!", { parse_mode: 'Markdown' }).catch(()=>{});
 
     } catch (error) {
-        console.error("❌ Erro no Bot TC:", error.message);
+        console.error("❌ Erro na investigação:", error.message);
+        bot.sendMessage(CHAT_ID, `❌ *Erro na Investigação:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Roda a cada 5 minutos (300.000 ms)
-setInterval(buscarJogosAoVivo, 300000);
-buscarJogosAoVivo();
+// Roda a cada 10 minutos durante a fase de testes e investigação
+setInterval(investigarTotalCorner, 600000);
+investigarTotalCorner();
