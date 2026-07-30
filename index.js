@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Top Ligas Oficial ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro Anti-Feminino Máximo ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -19,24 +19,18 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 let jogosEnviadosSet = new Set();
 let ultimaDataRegistrada = '';
 
-// Retorna a data atual rigorosamente no Horário de Brasília (YYYY-MM-DD)
-function getDataBrasil() {
-    const agora = new Date();
-    return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-}
-
 async function buscarJogosDoDia() {
     let browser = null;
     try {
-        const hoje = getDataBrasil();
+        const hoje = new Date().toISOString().split('T')[0];
 
         if (ultimaDataRegistrada !== hoje) {
-            console.log(`📅 [Virada de Dia] Nova data do Brasil detectada: ${hoje}. Limpando histórico.`);
+            console.log(`📅 [Virada de Dia] Nova data detectada: ${hoje}. Limpando histórico.`);
             jogosEnviadosSet.clear();
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Bot Top Ligas] Acessando agenda para hoje (${hoje}) no horário do Brasil...`);
+        console.log(`🕵️‍♂️ [Bot Anti-Feminino] Acessando agenda para: ${hoje}`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -67,47 +61,30 @@ async function buscarJogosDoDia() {
 
         const dadosExtraidos = await page.evaluate(() => {
             const resultados = [];
-            let ligaAtual = '';
-            const linhas = document.querySelectorAll('tr');
+            const elementos = document.querySelectorAll('tr, div, li');
 
-            linhas.forEach(tr => {
-                const text = tr.innerText ? tr.innerText.trim() : '';
-                if (!text) return;
+            elementos.forEach(el => {
+                const text = el.innerText ? el.innerText.trim() : '';
+                
+                const matchHorario = text.match(/\d{2}:\d{2}/);
+                if (!matchHorario) return;
 
-                // Identifica se é um cabeçalho de competição/liga no Soccerway
-                const ehCabecalho = tr.querySelector('th') || tr.className.includes('competition') || tr.className.includes('group') || tr.className.includes('header');
-                if (ehCabecalho && text.length < 120) {
-                    ligaAtual = text.toLowerCase();
-                    return;
-                }
-
+                const horario = matchHorario[0];
                 const textoBaixo = text.toLowerCase();
-                const contextoCompleto = (ligaAtual + " " + textoBaixo);
+                
+                // Filtros rigorosos cobrindo W isolado, women, feminino, sub-idades e amistosos
+                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub-21|u21|reserves|amador/i.test(textoBaixo);
 
-                // 🎯 FILTRO EXCLUSIVO DE MELHORES LIGAS (Nomes oficiais no Soccerway)
-                const ehTopLiga = /brasileiro|série a|serie a|premier league|la liga|bundesliga|ligue 1|champions league|libertadores|copa do brasil|primera division|primeira liga|eredivisie|championship|super lig|conmebol/i.test(contextoCompleto);
-                if (!ehTopLiga) return;
-
-                // Filtros anti-lixo (feminino, base, amistosos)
-                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-|u20|u19|u17|u21|reserves|amador|youth/i.test(contextoCompleto);
                 if (ehLixo) return;
 
-                // Descarta jogos encerrados
-                const jaTerminou = /\b(ft|aet|pen)\b/i.test(textoBaixo);
-                if (jaTerminou) return;
+                const linhasTexto = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                const limpos = linhasTexto.filter(l => !/\d{2}:\d{2}/.test(l) && !/^\d+-\d+$/.test(l) && l !== '-' && l.length > 2);
 
-                const matchHorario = text.match(/\d{2}:\d{2}/);
-                const aoVivoMinuto = text.match(/\d{1,2}'/) || textoBaixo.includes('ht') || textoBaixo.includes('live');
+                if (limpos.length >= 2) {
+                    let timeA = limpos[0];
+                    let timeB = limpos[1];
 
-                if (!matchHorario && !aoVivoMinuto) return;
-
-                const horario = matchHorario ? matchHorario[0] : 'AO VIVO 🔴';
-
-                const colunas = tr.querySelectorAll('td');
-                if (colunas.length >= 3) {
-                    let timeA = colunas[1] ? colunas[1].innerText.trim() : '';
-                    let timeB = colunas[3] ? colunas[3].innerText.trim() : '';
-
+                    // Validação cirúrgica nos nomes dos times para pegar casos como "Ghana W"
                     const contemFemininoNoNome = /\b(w)\b|\(w\)|women|feminino|sub-|u20|u19|u17|u21|reserves/i.test(timeA + " " + timeB);
 
                     if (!contemFemininoNoNome && timeA.length > 2 && timeB.length > 2) {
@@ -119,7 +96,7 @@ async function buscarJogosDoDia() {
             const unicas = [];
             const vistas = new Set();
             resultados.forEach(m => {
-                const chave = `${m[1]}x${m[2]}`;
+                const chave = `${m[1]}x${m[2]}_${m[0]}`;
                 if (!vistas.has(chave)) {
                     vistas.add(chave);
                     unicas.push(m);
@@ -129,7 +106,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Top Ligas] Partidas válidas das melhores ligas encontradas: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Anti-Feminino] Partidas realmente masculinas/principais: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -140,7 +117,7 @@ async function buscarJogosDoDia() {
                 let timeA = p[1];
                 let timeB = p[2];
 
-                let chaveUnica = `${timeA}x${timeB}`;
+                let chaveUnica = `${timeA}x${timeB}_${horario}`;
 
                 if (!jogosEnviadosSet.has(chaveUnica)) {
                     jogosEnviadosSet.add(chaveUnica);
@@ -148,9 +125,9 @@ async function buscarJogosDoDia() {
 
                     let mediaRealCantos = (Math.random() * (11.5 - 9.5) + 9.5).toFixed(1);
 
-                    let card = `🔥 *Top Match [${novosEnviados}]*\n`;
+                    let card = `🔥 *Partida Aprovada [${novosEnviados}]*\n`;
                     card += `📅 *Data:* \`${hoje}\`\n`;
-                    card += `🕒 *Horário/Status:* \`${horario}\`\n`;
+                    card += `🕒 *Horário:* \`${horario}\`\n`;
                     card += `⚔️ **${timeA}** x **${timeB}**\n`;
                     card += `📊 *Média Projetada FT:* \` ${mediaRealCantos} Cantos \`\n`;
                     card += `────────────────────`;
@@ -161,11 +138,11 @@ async function buscarJogosDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Top Ligas] ${novosEnviados} novos jogos enviados no Telegram.`);
+                console.log(`✅ [Bot Anti-Feminino] ${novosEnviados} novos jogos enviados no Telegram.`);
             }
 
         } else {
-            console.log("⚠️ [Bot Top Ligas] Nenhuma partida correspondente às melhores ligas hoje.");
+            console.log("⚠️ [Bot Anti-Feminino] Nenhuma partida correspondente após o filtro reforçado.");
         }
 
     } catch (error) {
