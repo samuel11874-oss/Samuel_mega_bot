@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V25 Stats Pro 📊</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V27 Métricas Reais 📊</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -33,10 +33,10 @@ const TERMOS_PROIBIDOS = [
     'amateur', 'amador', 'reserves', 'reservas', 'academy', 'academica'
 ];
 
-async function executarRadarV25() {
+async function executarRadarV27() {
     let browser = null;
     try {
-        console.log("📊 [Bot V25] Mapeando jogos profissionais + Estatísticas de Cantos, Cartões e Gols...");
+        console.log("📊 [Bot V27] Mapeando jogos e buscando dados ESTATÍSTICOS REAIS no TotalCorner...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -61,23 +61,28 @@ async function executarRadarV25() {
         console.log(`📡 Status HTTP: ${response ? response.status() : 0}`);
 
         await page.waitForSelector('a[href*="/team/"]', { timeout: 15000 }).catch(() => {
-            console.log("⚠️ Aguardando renderização dos elementos...");
+            console.log("⚠️ Aguardando renderização do DOM...");
         });
 
         await new Promise(r => setTimeout(r, 3000));
 
-        const jogosComEstatistica = await page.evaluate((ligasFiltro, proibidos) => {
+        // Extração dos confrontos e busca das estatísticas REAIS via fetch interno no browser
+        const jogosComEstatistica = await page.evaluate(async (ligasFiltro, proibidos) => {
             const lista = [];
-            const trs = document.querySelectorAll('tr');
+            const trs = Array.from(document.querySelectorAll('tr'));
 
-            trs.forEach(tr => {
+            for (const tr of trs) {
                 const teamLinks = Array.from(tr.querySelectorAll('a[href*="/team/"]'));
-                if (teamLinks.length < 2) return;
+                if (teamLinks.length < 2) continue;
 
                 const timeA = teamLinks[0].innerText.trim();
                 const timeB = teamLinks[1].innerText.trim();
 
-                if (!timeA || !timeB || timeA.length < 2 || timeB.length < 2) return;
+                if (!timeA || !timeB || timeA.length < 2 || timeB.length < 2) continue;
+
+                // Captura link das estatísticas reais do jogo no TotalCorner
+                const statLinkEl = tr.querySelector('a[href*="/match/stat/"], a[href*="/match/corner/"], a[href*="/match/detail/"]');
+                const matchUrl = statLinkEl ? statLinkEl.href : null;
 
                 // Extração do Horário
                 const textoLinha = tr.innerText || '';
@@ -107,51 +112,81 @@ async function executarRadarV25() {
                 const contextoCompleto = (timeA + ' ' + timeB + ' ' + ligaNome + ' ' + textoLinha).toLowerCase();
 
                 // BLOQUEIO DE JOGOS DA BASE / AMADORES
-                const eProibido = proibidos.some(termo => contextoCompleto.includes(termo));
-                if (eProibido) return;
+                if (proibidos.some(termo => contextoCompleto.includes(termo))) continue;
 
                 // FILTRO DE LIGAS PRINCIPAIS
-                const eTop = ligasFiltro.some(l => contextoCompleto.includes(l));
+                if (!ligasFiltro.some(l => contextoCompleto.includes(l))) continue;
 
-                if (eTop) {
-                    // EXTRAÇÃO DE ESTATÍSTICAS NA LINHA DA TABELA
-                    const tds = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim());
-                    
-                    // Procura por médias de escanteios (ex: 9.5, 10.2)
-                    let cantosAvg = "N/A";
-                    let cartoesAvg = "N/A";
-                    let golsCasa = "1.5";
-                    let golsFora = "1.2";
+                // EXTRAÇÃO REAIS DE ESTATÍSTICAS
+                let cantosReal = "Não informado no site";
+                let cartoesReal = "Não informado no site";
+                let golsStr = "Não informado no site";
 
-                    tds.forEach(t => {
-                        // Padrão de cantos ou handicaps de escanteios
-                        if (/^\d{1,2}\.\d$/.test(t) && parseFloat(t) >= 6 && parseFloat(t) <= 15) {
-                            cantosAvg = `${t} / jogo`;
+                // Tenta pegar a linha de escanteios informada diretamente na tabela principal
+                const tds = Array.from(tr.querySelectorAll('td'));
+                tds.forEach(td => {
+                    const txt = td.innerText.trim();
+                    if (/^\d{1,2}\.\d$/.test(txt) && parseFloat(txt) >= 7.0 && parseFloat(txt) <= 14.5) {
+                        cantosReal = `${txt} (Linha/Média TotalCorner)`;
+                    }
+                });
+
+                // Se houver URL do jogo, faz requisição em tempo real para obter a ficha estatística completa
+                if (matchUrl) {
+                    try {
+                        const resp = await fetch(matchUrl);
+                        if (resp.ok) {
+                            const html = await resp.text();
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(html, 'text/html');
+
+                            // Varre os textos da ficha técnica real
+                            const allTexts = Array.from(doc.querySelectorAll('tr, div, td')).map(el => el.innerText.trim());
+
+                            let hcasa = null, hfora = null;
+
+                            allTexts.forEach(t => {
+                                // Média Real de Escanteios
+                                if ((t.includes('Corner') || t.includes('Escanteio')) && /\d+\.\d+/.test(t)) {
+                                    const val = t.match(/\d+\.\d+/);
+                                    if (val) cantosReal = `${val[0]} / jogo`;
+                                }
+                                // Média Real de Cartões
+                                if ((t.includes('Yellow Card') || t.includes('Card')) && /\d+\.\d+/.test(t)) {
+                                    const val = t.match(/\d+\.\d+/);
+                                    if (val) cartoesReal = `${val[0]} / jogo`;
+                                }
+                                // Média Real de Gols
+                                if (t.includes('Goal Avg') || t.includes('Average Goals')) {
+                                    const vals = t.match(/\d+\.\d+/g);
+                                    if (vals && vals.length >= 2) {
+                                        hcasa = vals[0];
+                                        hfora = vals[1];
+                                    }
+                                }
+                            });
+
+                            if (hcasa && hfora) {
+                                golsStr = `🏠 ${hcasa} | ✈️ ${hfora}`;
+                            }
                         }
-                        // Padrão de cartões (ex: 4.5, 5.0)
-                        if (/^\d{1}\.\d$/.test(t) && parseFloat(t) >= 2 && parseFloat(t) <= 9 && cantosAvg !== `${t} / jogo`) {
-                            cartoesAvg = `${t} / jogo`;
-                        }
-                    });
-
-                    // Se não encontrar o valor exato no resumo rápido, atribui a estimativa padrão da liga
-                    if (cantosAvg === "N/A") cantosAvg = "9.8 / jogo";
-                    if (cartoesAvg === "N/A") cartoesAvg = "4.5 / jogo";
-
-                    lista.push({
-                        timeA: timeA,
-                        timeB: timeB,
-                        hora: horaJogo,
-                        liga: ligaNome,
-                        cantosAvg: cantosAvg,
-                        cartoesAvg: cartoesAvg,
-                        golsCasa: golsCasa,
-                        golsFora: golsFora
-                    });
+                    } catch (err) {
+                        // Mantém a extração inicial se houver erro de rede pontual
+                    }
                 }
-            });
 
-            // Elimina duplicatas
+                lista.push({
+                    timeA: timeA,
+                    timeB: timeB,
+                    hora: horaJogo,
+                    liga: ligaNome,
+                    cantosAvg: cantosReal,
+                    cartoesAvg: cartoesReal,
+                    golsStr: golsStr
+                });
+            }
+
+            // Deduplicação
             const unicos = [];
             const vistos = new Set();
             lista.forEach(item => {
@@ -165,14 +200,13 @@ async function executarRadarV25() {
             return unicos;
         }, TOP_LIGAS, TERMOS_PROIBIDOS);
 
-        console.log(`⚽ [Bot V25] Partidas com estatísticas completas encontradas: ${jogosComEstatistica.length}`);
+        console.log(`⚽ [Bot V27] Partidas com dados estatísticos reais processadas: ${jogosComEstatistica.length}`);
 
         if (jogosComEstatistica.length > 0) {
-            // Header do Relatório
-            let headerMsg = `🎯 <b>[ RADAR PRO // STATS COMPLETO ]</b> 📊\n`;
+            let headerMsg = `🎯 <b>[ RADAR PRO // STATS 100% REAIS ]</b> 📊\n`;
             headerMsg += `────────────────────────\n`;
             headerMsg += `📊 <b>Jogos Selecionados:</b> <code>${jogosComEstatistica.length}</code>\n`;
-            headerMsg += `🚩 <i>Inclui: Cantos FT, Cartões e Gols</i>\n`;
+            headerMsg += `⚡ <i>Métricas extraídas em tempo real do TotalCorner</i>\n`;
             headerMsg += `────────────────────────`;
 
             await bot.sendMessage(CHAT_ID, headerMsg, { parse_mode: 'HTML' }).catch(() => {});
@@ -184,8 +218,7 @@ async function executarRadarV25() {
                 const j = jogosComEstatistica[i];
                 enviados++;
 
-                // DESIGN DO CARD COM TODAS AS ESTATÍSTICAS
-                let card = `⚽ <b>CONFRONTO #${enviados}</b>\n`;
+                let card = `⚽ <b>INFORMAÇÕES DA PARTIDA ENCONTRADA #${enviados}</b>\n`;
                 card += `────────────────────────\n`;
                 card += `🏆 <b>Liga:</b> <code>${j.liga}</code>\n`;
                 card += `⏰ <b>Horário:</b> <code>${j.hora}</code>\n\n`;
@@ -193,29 +226,28 @@ async function executarRadarV25() {
                 card += `   <b>VS</b>\n`;
                 card += `✈️ <b>${j.timeB}</b>\n`;
                 card += `────────────────────────\n`;
-                card += `📊 <b>MÉDIAS DO CONFRONTO (FT)</b>\n`;
+                card += `📊 <b>MÉDIAS REAIS DO TOTALCORNER (FT)</b>\n`;
                 card += `🚩 <b>Escanteios:</b> <code>${j.cantosAvg}</code>\n`;
                 card += `🟨 <b>Cartões:</b> <code>${j.cartoesAvg}</code>\n`;
-                card += `⚽ <b>Gols (Média):</b> <code>🏠 ${j.golsCasa} | ✈️ ${j.golsFora}</code>\n`;
+                card += `⚽ <b>Gols (Média):</b> <code>${j.golsStr}</code>\n`;
                 card += `────────────────────────\n`;
-                card += `🤖 <i>Samuel Mega Bot • V25 Stats Pro</i>`;
+                card += `🤖 <i>Samuel Mega Bot • V27 Dados Reais</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
                 await new Promise(r => setTimeout(r, 700));
             }
 
-            console.log(`✅ ${enviados} cards com estatísticas completas entregues no Telegram!`);
+            console.log(`✅ ${enviados} cards com dados reais entregues com sucesso!`);
         } else {
             console.log("⚠️ Nenhuma partida filtrada para envio nesta rodada.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V25:", error.message);
+        console.error("❌ Erro no Radar V27:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Executa a cada 30 minutos
-setInterval(executarRadarV25, 1800000);
-executarRadarV25();
+setInterval(executarRadarV27, 1800000);
+executarRadarV27();
