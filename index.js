@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Restaurando configuração base e buscando AO VIVO...");
+        console.log("🕵️‍♂️ [Bot US] Acessando e buscando jogos AO VIVO (Código Original Corrigido)...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -34,10 +34,10 @@ async function buscarJogosAoVivo() {
         });
 
         const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 768 });
 
-        console.log("🌐 [Bot US] Acessando us.soccerway.com (Página Principal)...");
+        console.log("🌐 [Bot US] Acessando us.soccerway.com...");
         await page.goto('https://us.soccerway.com/', {
             waitUntil: 'domcontentloaded',
             timeout: 45000
@@ -46,106 +46,110 @@ async function buscarJogosAoVivo() {
         await new Promise(r => setTimeout(r, 4000));
         
         try {
-            console.log("🔍 [Bot US] Clicando dinamicamente na aba 'LIVE'...");
+            console.log("🔍 [Bot US] Procurando e clicando na aba 'LIVE'...");
             await page.evaluate(() => {
-                const links = Array.from(document.querySelectorAll('a, span, div, li'));
+                const links = Array.from(document.querySelectorAll('a, span, div'));
                 const abaLive = links.find(el => el.innerText && el.innerText.trim() === 'LIVE');
                 if (abaLive) abaLive.click();
             });
-            await new Promise(r => setTimeout(r, 5000));
+            // Tempo de espera garantido para carregar os blocos do LIVE após o clique
+            await new Promise(r => setTimeout(r, 6000));
         } catch (e) {
-            console.log("⚠️ Falha ao clicar, prosseguindo com varredura...");
+            console.log("⚠️ Não foi possível clicar na aba Live diretamente.");
         }
 
-        // Extrai os blocos exatamente como fizemos quando retornou 34 jogos
-        const partidasRaw = await page.evaluate(() => {
+        // --- CÓDIGO ORIGINAL DE RASPAGEM (O QUE ACHOU AS 34 PARTIDAS) ---
+        const partidas = await page.evaluate(() => {
             const resultados = [];
             const blocos = document.querySelectorAll('tr, div, li');
 
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
-                if (!txt || txt.length < 10 || txt.length > 300) return;
-
-                // 🚫 Ignora lixo e JOGOS ENCERRADOS!
-                const ehLixo = /FAVORITES|PREMIER LEAGUE|Copyright|Soccerway|Sign up|privacy|cookie|FT|Full-time|Finished/i.test(txt);
                 
+                const ehLixo = txt.includes('FAVORITES') || txt.includes('PREMIER LEAGUE') || 
+                               txt.includes('Copyright') || txt.includes('Soccerway') || txt.includes('Sign up') || 
+                               txt.length < 10 || txt.length > 140;
+
                 if (!ehLixo) {
-                    const formatado = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                    if (formatado.length >= 3) {
-                        resultados.push(formatado);
+                    // Expandimos a validação para capturar também minutos puros (ex: 39, 88) e acréscimos
+                    if ((txt.includes("'") || txt.includes("Half Time") || txt.includes("HT") || txt.includes("FT") || /\b\d{1,2}\b/.test(txt) || /\d+[\s-]+\d+/.test(txt))) {
+                        const formatado = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                        
+                        if (formatado.length >= 3 && !resultados.some(r => r.join('|') === formatado.join('|'))) {
+                            resultados.push(formatado);
+                        }
                     }
                 }
             });
             return resultados;
         });
 
-        // 🧠 Filtro Inteligente no Node: Organiza times, tempos e placares
-        const unicas = new Map();
-
-        partidasRaw.forEach(p => {
-            // 1. Acha o Tempo: Procura o primeiro número, ou HT (Half Time)
-            let indexMinuto = p.findIndex(item => /^\d+[']?$/.test(item) || /^\d+\+\d+[']?$/.test(item) || item === 'HT' || /Half/.test(item));
-            if (indexMinuto === -1) return; // Se não tem tempo, não está ao vivo
-
-            let tempo = p[indexMinuto];
-            if (!tempo.includes("'") && tempo !== 'HT' && !/Half/.test(tempo)) tempo = tempo + "'";
-
-            // 2. Acha os Times (Textos que não são números isolados e não têm ':')
-            let times = p.filter((x, idx) => idx !== indexMinuto && !/^\d+$/.test(x) && !/^\d+\s*-\s*\d+$/.test(x) && !x.includes(':') && x.length > 2);
-            if (times.length < 2) return;
-            
-            let timeA = times[0];
-            let timeB = times[1];
-
-            // 3. Acha o Placar (Procura formato "2 - 1" ou números isolados das linhas)
-            let placarMatch = p.find(item => /^\d+\s*-\s*\d+$/.test(item));
-            let golA, golB;
-
-            if (placarMatch) {
-                let partes = placarMatch.split('-');
-                golA = partes[0].trim();
-                golB = partes[1].trim();
-            } else {
-                let numeros = p.filter((x, idx) => idx !== indexMinuto && /^\d+$/.test(x));
-                if (numeros.length >= 2) {
-                    golA = numeros[0];
-                    golB = numeros[1];
-                } else {
-                    return; // Sem placar
-                }
-            }
-
-            // Salva apenas partidas únicas
-            const chave = `${timeA} x ${timeB}`;
-            if (!unicas.has(chave)) {
-                unicas.set(chave, { tempo, timeA, timeB, placar: `${golA} x ${golB}` });
-            }
-        });
-
-        const partidas = Array.from(unicas.values());
-        console.log(`⚽ [Bot US] Partidas AO VIVO capturadas: ${partidas.length}`);
+        console.log(`⚽ [Bot US] Blocos de partidas brutas capturados: ${partidas.length}`);
 
         if (partidas.length > 0) {
             let enviados = 0;
-            for (let i = 0; i < Math.min(partidas.length, 25); i++) {
-                let p = partidas[i];
-                enviados++;
+            
+            for (let i = 0; i < partidas.length; i++) {
+                if(enviados >= 25) break; 
 
+                let p = partidas[i];
+                
+                // 1. Identifica o tempo
+                let tempo = p.find(item => item.includes("'") || item.includes("Half") || item === 'HT' || item === 'FT' || item === 'Full-time' || /^\d{1,2}$/.test(item) || /^\d+\+\d+$/.test(item)) || p[0] || "Ao Vivo";
+
+                // 🔴 A CORREÇÃO DOS JOGOS ENCERRADOS: Se tiver FT ou Full-time na linha, pula esse jogo!
+                if (p.some(item => /FT|Full-time|Finished/i.test(item))) {
+                    continue; 
+                }
+
+                // 2. Separa os times (nomes têm letras, então length > 2 e não são apenas números)
+                let times = p.filter(x => x !== tempo && x !== '-' && !x.includes(':') && x.length > 2 && !/^\d+$/.test(x));
+                
+                // 3. Separa os números soltos para pegar os gols
+                let numeros = p.filter(x => x !== tempo && /^\d+$/.test(x));
+                
+                let placarHifen = p.find(item => /^\d+\s*-\s*\d+$/.test(item));
+
+                let timeA = times[0];
+                let timeB = times[1];
+
+                if (!timeA || !timeB) continue;
+
+                let golA = "0", golB = "0";
+
+                // 🔴 A CORREÇÃO DO PLACAR: Agora ele pega os números corretos e não zera
+                if (placarHifen) {
+                    let partes = placarHifen.split('-');
+                    golA = partes[0].trim();
+                    golB = partes[1].trim();
+                } else if (numeros.length >= 2) {
+                    golA = numeros[0];
+                    golB = numeros[1];
+                } else {
+                    continue; // Se não tem placar real sendo exibido, ignora para não mandar falso 0x0
+                }
+
+                // Deixa visualmente bonito adicionando o ' no minuto se ele não vier (ex: 39 -> 39')
+                let tempoFormatado = tempo;
+                if (/^\d+$/.test(tempo) || /^\d+\+\d+$/.test(tempo)) tempoFormatado += "'";
+
+                enviados++;
+                
                 let card = `⚡ *Partida Ao Vivo [${enviados}]*\n`;
                 card += `────────────────────\n`;
-                card += `⏱ *Tempo:* \`${p.tempo}\`\n`;
-                card += `⚽ **${p.timeA}** x **${p.timeB}**\n`;
-                card += `📊 *Placar:* \` ${p.placar} \`\n`;
+                card += `⏱ *Tempo:* \`${tempoFormatado}\`\n`;
+                card += `⚽ **${timeA}** x **${timeB}**\n`;
+                card += `📊 *Placar:* \` ${golA} x ${golB} \`\n`;
                 card += `📐 *Cantos / Cartões:* \`Aguardando dados oficiais\`\n`;
                 card += `────────────────────`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
-                await new Promise(r => setTimeout(r, 500));
+                
+                await new Promise(r => setTimeout(r, 600));
             }
-            console.log(`✅ ${enviados} jogos enviados ao Telegram!`);
+            console.log(`✅ ${enviados} partidas rolando agora foram enviadas!`);
         } else {
-            console.log("⚠️ Nenhuma partida rolando no momento da varredura.");
-            bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo ao vivo encontrado no momento da varredura.*", { parse_mode: 'Markdown' }).catch(()=>{});
+            bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo encontrado no momento da varredura.*", { parse_mode: 'Markdown' }).catch(()=>{});
         }
 
     } catch (error) {
