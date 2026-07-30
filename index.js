@@ -9,17 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V4.1 ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live Total ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarLiveElite() {
+async function executarRadarLiveTotal() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot V4.1] Buscando jogos masculinos profissionais AO VIVO...");
+        console.log("🕵️‍♂️ [Bot Live Total] Capturando TODOS os jogos ao vivo no momento...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -47,47 +47,32 @@ async function executarRadarLiveElite() {
         console.log("⏳ Aguardando 8 segundos para renderização dos dados...");
         await new Promise(r => setTimeout(r, 8000));
 
-        const diagnostico = await page.evaluate(() => {
+        const partidas = await page.evaluate(() => {
             const resultados = [];
             const selector = '#home_page_corner tbody tr, #featured_match_table tbody tr, table.match_table tbody tr';
             const linhas = document.querySelectorAll(selector);
 
-            // Exclui Feminino, Categorias de Base (Sub-X / U-X), Amador, Esports
-            const regexExcluir = /\b(Women|Women's|Fem|Feminino|\(W\)|U15|U17|U18|U19|U20|U21|U23|Sub[\s-]?15|Sub[\s-]?17|Sub[\s-]?18|Sub[\s-]?19|Sub[\s-]?20|Sub[\s-]?21|Sub[\s-]?23|Youth|Junior|Juniors|Reserve|Reserves|Amateur|Amador|Cyber|Esports|3x3|4x4|5x5|Short Football|SRL)\b/i;
-
-            let totalLinhasAnalise = 0;
-            let descartadosPreJogo = 0;
-            let descartadosFemininoBase = 0;
-
             linhas.forEach(tr => {
                 if (tr.querySelector('th') || tr.cells.length < 5) return;
-                totalLinhasAnalise++;
 
                 const textoLinha = tr.innerText || '';
 
-                // 1. BLOQUEIO DE FEMININO / BASE / AMADOR
-                if (regexExcluir.test(textoLinha)) {
-                    descartadosFemininoBase++;
-                    return;
-                }
-
-                // 2. EXTRAÇÃO E FILTRO DO STATUS DO JOGO
+                // 1. FILTRO DE TEMPO/STATUS (Descarta APENAS jogos futuros ou já encerrados)
                 const statusEl = tr.querySelector('.match_status, .status, td:nth-child(3)');
                 let tempoText = statusEl ? statusEl.innerText.trim() : '';
 
-                // Descarta se for data (07/30), hora futura (17:00), encerrado (FT) ou cancelado
+                // Se for data (07/30), hora futura (17:00), encerrado (FT) ou cancelado -> DESCARTA
                 if (/\d{2}\/\d{2}/.test(tempoText) || /\d{2}:\d{2}/.test(tempoText) || /\bFT\b/i.test(tempoText) || /\bCanc\b/i.test(tempoText)) {
-                    descartadosPreJogo++;
                     return;
                 }
 
-                // 3. EXTRAÇÃO DOS TIMES
+                // 2. EXTRAÇÃO DOS TIMES
                 const timeAEl = tr.querySelector('.match_home a, .match_home, .home_name, td:nth-child(4)');
                 const timeBEl = tr.querySelector('.match_away a, .match_away, .away_name, td:nth-child(6)');
                 let timeA = timeAEl ? timeAEl.innerText.trim() : '';
                 let timeB = timeBEl ? timeBEl.innerText.trim() : '';
 
-                // 4. EXTRAÇÃO DO PLACAR
+                // 3. EXTRAÇÃO DO PLACAR
                 const golEl = tr.querySelector('.match_goal, .score, td:nth-child(5)');
                 let placar = golEl ? golEl.innerText.trim() : '';
 
@@ -96,12 +81,12 @@ async function executarRadarLiveElite() {
                     if (matchPlacar) placar = matchPlacar[1];
                 }
 
+                // Se o placar for "vs" ou não tiver números, o jogo não começou
                 if (!placar || placar.toLowerCase() === 'vs' || !/\d/.test(placar)) {
-                    descartadosPreJogo++;
                     return;
                 }
 
-                // 5. ESCANTEIOS E ESTATÍSTICAS
+                // 4. ESCANTEIOS E ESTATÍSTICAS
                 const cornerEl = tr.querySelector('.match_corner, .corner, td:nth-child(7)');
                 let escanteios = cornerEl ? cornerEl.innerText.trim() : '0 - 0';
 
@@ -115,7 +100,7 @@ async function executarRadarLiveElite() {
                 let cartoes = cardEl ? cardEl.innerText.trim() : '0 - 0';
                 let linha = oddsEl ? oddsEl.innerText.trim() : 'Over Asiático';
 
-                // Trata inconsistência de cartões se puxar odd por erro
+                // Tratamento para evitar que odds caiam na coluna de cartões
                 if (cartoes) {
                     let partes = cartoes.split('-').map(n => parseInt(n.trim()));
                     if (partes.some(n => n > 15 || isNaN(n))) {
@@ -149,29 +134,23 @@ async function executarRadarLiveElite() {
                 }
             });
 
-            return {
-                partidas: unicos,
-                stats: { totalLinhasAnalise, descartadosPreJogo, descartadosFemininoBase }
-            };
+            return unicos;
         });
 
-        console.log(`📊 [Diagnóstico] Linhas lidas: ${diagnostico.stats.totalLinhasAnalise} | Pré-jogo/Encerrados: ${diagnostico.stats.descartadosPreJogo} | Base/Feminino: ${diagnostico.stats.descartadosFemininoBase}`);
-        console.log(`⚽ [Bot V4.1] Jogos masculinos profissionais AO VIVO validados: ${diagnostico.partidas.length}`);
-
-        const partidas = diagnostico.partidas;
+        console.log(`⚽ [Bot Live Total] Partidas AO VIVO encontradas: ${partidas.length}`);
 
         if (partidas.length > 0) {
             let enviados = 0;
 
-            for (let i = 0; i < Math.min(partidas.length, 15); i++) {
+            for (let i = 0; i < Math.min(partidas.length, 20); i++) {
                 let p = partidas[i];
                 enviados++;
 
                 let tagPressao = "⚽ AO VIVO";
                 if (p.tempo.includes("'")) {
                     let min = parseInt(p.tempo);
-                    if (min >= 70) tagPressao = "🚨 PRESSÃO ALTA (RETA FINAL)";
-                    else if (min >= 35 && min <= 45) tagPressao = "🔥 PRESSÃO HT (1º TEMPO)";
+                    if (min >= 70) tagPressao = "🚨 RETA FINAL";
+                    else if (min >= 35 && min <= 45) tagPressao = "🔥 RETA FINAL HT";
                 }
 
                 let card = `🛸 <b>[ RADAR TOTALCORNER // LIVE ]</b> ⚡\n`;
@@ -188,24 +167,24 @@ async function executarRadarLiveElite() {
                 card += `  🟨 <b>Cartões:</b> <code>${p.cartoes}</code>\n\n`;
                 card += `📈 <b>LINHA / MERCADO:</b> <code>${p.linha}</code>\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Samuel Mega Bot • Apenas Principais Ligas Live</i>`;
+                card += `🤖 <i>Samuel Mega Bot • Todos os Jogos Ao Vivo</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
                 await new Promise(r => setTimeout(r, 700)); 
             }
 
-            console.log(`✅ ${enviados} cards de jogos LIVE profissionais enviados!`);
+            console.log(`✅ ${enviados} cards de jogos LIVE enviados para o Telegram!`);
         } else {
-            console.log("⚠️ Nenhuma partida ao vivo atendeu a todos os critérios de seleção nesta varredura.");
+            console.log("⚠️ Nenhuma partida ao vivo acontecendo no momento.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V4.1:", error.message);
+        console.error("❌ Erro no Radar Live Total:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
 // Executa a cada 5 minutos
-setInterval(executarRadarLiveElite, 300000);
-executarRadarLiveElite();
+setInterval(executarRadarLiveTotal, 300000);
+executarRadarLiveTotal();
