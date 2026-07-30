@@ -9,17 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V5 TotalCorner ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Total Live ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarLiveV5() {
+async function executarRadarLiveTotal() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot V5] Varrendo partidas AO VIVO no TotalCorner...");
+        console.log("🕵️‍♂️ [Bot V5.1] Capturando 100% dos jogos ao vivo com Placar e Minuto...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -49,10 +49,8 @@ async function executarRadarLiveV5() {
 
         const resultados = await page.evaluate(() => {
             const lista = [];
-            // Seleciona diretamente as linhas de jogos do TotalCorner (id tr_match_XXXXXX)
             let linhas = document.querySelectorAll('tr[id^="tr_match_"]');
             
-            // Fallback caso o layout altere levemente
             if (linhas.length === 0) {
                 linhas = document.querySelectorAll('table.match_table tbody tr, #home_page_corner tbody tr');
             }
@@ -62,20 +60,22 @@ async function executarRadarLiveV5() {
 
                 const textoLinha = tr.innerText || '';
 
-                // 1. EXTRAÇÃO DE MINUTO/STATUS
-                const statusEl = tr.querySelector('.match_status, .status, .match_status_minutes, td:nth-child(3)');
+                // 1. EXTRAÇÃO RÍGIDA DO CRONÔMETRO (MINUTO AO VIVO)
+                const statusEl = tr.querySelector('.match_status_minutes, .match_status, .status, td:nth-child(3)');
                 let tempoText = statusEl ? statusEl.innerText.trim() : '';
 
-                let minutoLive = 'AO VIVO';
+                let minutoLive = '';
                 const matchMinuto = tempoText.match(/\d+['"]|\bHT\b|\b1st\b|\b2nd\b/i) || textoLinha.match(/\b(\d+['"]|\bHT\b)/i);
                 
                 if (matchMinuto) {
                     minutoLive = matchMinuto[0];
                 } else if (tempoText && !tempoText.includes(':')) {
                     minutoLive = tempoText;
+                } else {
+                    minutoLive = 'AO VIVO';
                 }
 
-                // Se a partida estiver explicitamente encerrada (FT) ou cancelada, ignora
+                // Descarta apenas se a partida estiver totalmente encerrada ou cancelada
                 if (/\bFT\b/i.test(tempoText) || /\bCanc\b/i.test(tempoText)) {
                     return;
                 }
@@ -86,7 +86,7 @@ async function executarRadarLiveV5() {
                 let timeA = timeAEl ? timeAEl.innerText.trim() : '';
                 let timeB = timeBEl ? timeBEl.innerText.trim() : '';
 
-                // 3. EXTRAÇÃO DO PLACAR
+                // 3. EXTRAÇÃO DO PLACAR AO VIVO
                 const golEl = tr.querySelector('.match_goal, .score, td:nth-child(5)');
                 let placar = golEl ? golEl.innerText.trim() : '';
 
@@ -95,7 +95,9 @@ async function executarRadarLiveV5() {
                     if (mPlacar) placar = mPlacar[1];
                 }
 
-                // 4. ESCANTEIOS E ESTATÍSTICAS
+                if (!placar) placar = '0 - 0';
+
+                // 4. ESCANTEIOS E ESTATÍSTICAS DE PRESSÃO
                 const cornerEl = tr.querySelector('.match_corner, .corner, td:nth-child(7)');
                 let escanteios = cornerEl ? cornerEl.innerText.trim() : '0 - 0';
 
@@ -109,7 +111,7 @@ async function executarRadarLiveV5() {
                 let cartoes = cardEl ? cardEl.innerText.trim() : '0 - 0';
                 let linha = oddsEl ? oddsEl.innerText.trim() : 'Over Asiático';
 
-                // Tratamento de cartões
+                // Tratamento de segurança para cartões
                 if (cartoes) {
                     let partes = cartoes.split('-').map(n => parseInt(n.trim()));
                     if (partes.some(n => n > 15 || isNaN(n))) {
@@ -122,7 +124,7 @@ async function executarRadarLiveV5() {
                         timeA: timeA.replace(/\n/g, ' '),
                         timeB: timeB.replace(/\n/g, ' '),
                         tempo: minutoLive,
-                        placar: placar || '0 - 0',
+                        placar: placar,
                         escanteios: escanteios,
                         ataquePerigoso: ataqPerigosos,
                         chutes: chutes,
@@ -132,7 +134,7 @@ async function executarRadarLiveV5() {
                 }
             });
 
-            // Remove duplicados
+            // Remove duplicatas por confronto
             const unicos = [];
             const vistos = new Set();
             lista.forEach(item => {
@@ -146,12 +148,13 @@ async function executarRadarLiveV5() {
             return unicos;
         });
 
-        console.log(`⚽ [Bot V5] Total de partidas AO VIVO capturadas: ${resultados.length}`);
+        console.log(`⚽ [Bot V5.1] Encontradas ${resultados.length} partidas AO VIVO no momento.`);
 
         if (resultados.length > 0) {
             let enviados = 0;
 
-            for (let i = 0; i < Math.min(resultados.length, 20); i++) {
+            // ENVIA TODOS OS JOGOS CAPTURADOS (SEM LIMITE DE 20)
+            for (let i = 0; i < resultados.length; i++) {
                 let p = resultados[i];
                 enviados++;
 
@@ -164,7 +167,7 @@ async function executarRadarLiveV5() {
 
                 let card = `🛸 <b>[ RADAR TOTALCORNER // LIVE ]</b> ⚡\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `⏱️ <b>MINUTO:</b> <code>[ ${p.tempo} ]</code> ${tagPressao}\n\n`;
+                card += `⏱️ <b>MINUTO AO VIVO:</b> <code>[ ${p.tempo} ]</code> ${tagPressao}\n\n`;
                 card += `⚽ <b>CONFRONTO:</b>\n`;
                 card += `  🔹 <b>${p.timeA}</b>\n`;
                 card += `  🔸 <b>${p.timeB}</b>\n\n`;
@@ -176,24 +179,25 @@ async function executarRadarLiveV5() {
                 card += `  🟨 <b>Cartões:</b> <code>${p.cartoes}</code>\n\n`;
                 card += `📈 <b>LINHA / MERCADO:</b> <code>${p.linha}</code>\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Samuel Mega Bot • Coleta em Tempo Real</i>`;
+                card += `🤖 <i>Samuel Mega Bot • Jogo #${enviados} de ${resultados.length}</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
-                await new Promise(r => setTimeout(r, 700)); 
+                // Delay curto para respeitar os limites do Telegram sem travar
+                await new Promise(r => setTimeout(r, 600)); 
             }
 
-            console.log(`✅ ${enviados} cards enviados com sucesso para o Telegram!`);
+            console.log(`✅ Todos os ${enviados} cards de jogos LIVE foram enviados ao Telegram!`);
         } else {
             console.log("⚠️ Nenhuma partida encontrada na verificação.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V5:", error.message);
+        console.error("❌ Erro no Radar V5.1:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
 // Executa a cada 5 minutos
-setInterval(executarRadarLiveV5, 300000);
-executarRadarLiveV5();
+setInterval(executarRadarLiveTotal, 300000);
+executarRadarLiveTotal();
