@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live Elite V4 ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Live V4.1 ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function executarRadarLiveElite() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot V4 Elite] Filtrando estritamente jogos masculinos profissionais AO VIVO...");
+        console.log("🕵️‍♂️ [Bot V4.1] Buscando jogos masculinos profissionais AO VIVO...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -44,39 +44,40 @@ async function executarRadarLiveElite() {
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando 8 segundos para renderização dos jogos...");
+        console.log("⏳ Aguardando 8 segundos para renderização dos dados...");
         await new Promise(r => setTimeout(r, 8000));
 
-        const partidas = await page.evaluate(() => {
+        const diagnostico = await page.evaluate(() => {
             const resultados = [];
             const selector = '#home_page_corner tbody tr, #featured_match_table tbody tr, table.match_table tbody tr';
             const linhas = document.querySelectorAll(selector);
 
-            // RegEx para eliminar Feminino, Sub-X, Amador, Esports e Reservas
+            // Exclui Feminino, Categorias de Base (Sub-X / U-X), Amador, Esports
             const regexExcluir = /\b(Women|Women's|Fem|Feminino|\(W\)|U15|U17|U18|U19|U20|U21|U23|Sub[\s-]?15|Sub[\s-]?17|Sub[\s-]?18|Sub[\s-]?19|Sub[\s-]?20|Sub[\s-]?21|Sub[\s-]?23|Youth|Junior|Juniors|Reserve|Reserves|Amateur|Amador|Cyber|Esports|3x3|4x4|5x5|Short Football|SRL)\b/i;
+
+            let totalLinhasAnalise = 0;
+            let descartadosPreJogo = 0;
+            let descartadosFemininoBase = 0;
 
             linhas.forEach(tr => {
                 if (tr.querySelector('th') || tr.cells.length < 5) return;
+                totalLinhasAnalise++;
 
                 const textoLinha = tr.innerText || '';
 
-                // 1. FILTRO DE LIGA/TIME: Se for Feminino, Base ou Amador -> DESCARTA
+                // 1. BLOQUEIO DE FEMININO / BASE / AMADOR
                 if (regexExcluir.test(textoLinha)) {
+                    descartadosFemininoBase++;
                     return;
                 }
 
-                // 2. FILTRO DE HORÁRIO/STATUS (Apenas jogos LIVE)
+                // 2. EXTRAÇÃO E FILTRO DO STATUS DO JOGO
                 const statusEl = tr.querySelector('.match_status, .status, td:nth-child(3)');
                 let tempoText = statusEl ? statusEl.innerText.trim() : '';
 
-                // Se tiver data, horário (17:00), FT (encerrado) ou Canc -> DESCARTA
-                if (/\d{2}\/\d{2}/.test(tempoText) || /\d{2}:\d{2}/.test(tempoText) || /^FT$/i.test(tempoText) || /^Canc/i.test(tempoText)) {
-                    return;
-                }
-
-                // Valida se o minuto é realmente ao vivo (ex: 28', 45', HT, 88')
-                const temMinutoLive = /\d+['"]|HT/i.test(tempoText) || /\d+['"]|HT/i.test(textoLinha);
-                if (!temMinutoLive) {
+                // Descarta se for data (07/30), hora futura (17:00), encerrado (FT) ou cancelado
+                if (/\d{2}\/\d{2}/.test(tempoText) || /\d{2}:\d{2}/.test(tempoText) || /\bFT\b/i.test(tempoText) || /\bCanc\b/i.test(tempoText)) {
+                    descartadosPreJogo++;
                     return;
                 }
 
@@ -96,6 +97,7 @@ async function executarRadarLiveElite() {
                 }
 
                 if (!placar || placar.toLowerCase() === 'vs' || !/\d/.test(placar)) {
+                    descartadosPreJogo++;
                     return;
                 }
 
@@ -113,7 +115,7 @@ async function executarRadarLiveElite() {
                 let cartoes = cardEl ? cardEl.innerText.trim() : '0 - 0';
                 let linha = oddsEl ? oddsEl.innerText.trim() : 'Over Asiático';
 
-                // Trata inconsistência de cartões
+                // Trata inconsistência de cartões se puxar odd por erro
                 if (cartoes) {
                     let partes = cartoes.split('-').map(n => parseInt(n.trim()));
                     if (partes.some(n => n > 15 || isNaN(n))) {
@@ -125,7 +127,7 @@ async function executarRadarLiveElite() {
                     resultados.push({
                         timeA: timeA.replace(/\n/g, ' '),
                         timeB: timeB.replace(/\n/g, ' '),
-                        tempo: tempoText.includes("'") || tempoText === 'HT' ? tempoText : 'AO VIVO',
+                        tempo: tempoText || 'AO VIVO',
                         placar: placar,
                         escanteios: escanteios,
                         ataquePerigoso: ataqPerigosos,
@@ -136,7 +138,7 @@ async function executarRadarLiveElite() {
                 }
             });
 
-            // Remove duplicatas
+            // Remove duplicatas por confronto
             const unicos = [];
             const vistos = new Set();
             resultados.forEach(item => {
@@ -147,10 +149,16 @@ async function executarRadarLiveElite() {
                 }
             });
 
-            return unicos;
+            return {
+                partidas: unicos,
+                stats: { totalLinhasAnalise, descartadosPreJogo, descartadosFemininoBase }
+            };
         });
 
-        console.log(`⚽ [Bot V4 Elite] Partidas LIVE PROFISSIONAIS encontradas: ${partidas.length}`);
+        console.log(`📊 [Diagnóstico] Linhas lidas: ${diagnostico.stats.totalLinhasAnalise} | Pré-jogo/Encerrados: ${diagnostico.stats.descartadosPreJogo} | Base/Feminino: ${diagnostico.stats.descartadosFemininoBase}`);
+        console.log(`⚽ [Bot V4.1] Jogos masculinos profissionais AO VIVO validados: ${diagnostico.partidas.length}`);
+
+        const partidas = diagnostico.partidas;
 
         if (partidas.length > 0) {
             let enviados = 0;
@@ -188,11 +196,11 @@ async function executarRadarLiveElite() {
 
             console.log(`✅ ${enviados} cards de jogos LIVE profissionais enviados!`);
         } else {
-            console.log("⚠️ Nenhum jogo masculino profissional em andamento atendeu aos filtros no momento.");
+            console.log("⚠️ Nenhuma partida ao vivo atendeu a todos os critérios de seleção nesta varredura.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V4 Elite:", error.message);
+        console.error("❌ Erro no Radar V4.1:", error.message);
     } finally {
         if (browser) await browser.close();
     }
