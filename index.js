@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Top Ligas Completo ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Monitor Ao Vivo ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -17,26 +17,11 @@ const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
 let jogosEnviadosSet = new Set();
-let ultimaDataRegistrada = '';
 
-// Retorna a data atual rigorosamente no Horário de Brasília (YYYY-MM-DD)
-function getDataBrasil() {
-    const agora = new Date();
-    return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-}
-
-async function buscarJogosDoDia() {
+async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        const hoje = getDataBrasil();
-
-        if (ultimaDataRegistrada !== hoje) {
-            console.log(`📅 [Virada de Dia] Nova data do Brasil detectada: ${hoje}. Limpando histórico.`);
-            jogosEnviadosSet.clear();
-            ultimaDataRegistrada = hoje;
-        }
-
-        console.log(`🕵️‍♂️ [Bot Top Ligas] Acessando agenda para hoje (${hoje}) no horário do Brasil...`);
+        console.log("🕵️‍♂️ [Bot Ao Vivo] Acessando a página de jogos ao vivo no Soccerway...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -54,79 +39,76 @@ async function buscarJogosDoDia() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 2000 });
 
-        const urlDia = `https://us.soccerway.com/matches/?date=${hoje}`;
-        console.log(`🌐 URL: ${urlDia}`);
+        // Navegação direta para a página oficial de partidas ao vivo do Soccerway
+        const urlLive = 'https://us.soccerway.com/matches/live/';
+        console.log(`🌐 [Bot Ao Vivo] URL: ${urlLive}`);
 
-        await page.goto(urlDia, {
+        await page.goto(urlLive, {
             waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando renderização completa da página...");
-        await new Promise(r => setTimeout(r, 8000));
+        console.log("⏳ Aguardando renderização completa da página ao vivo...");
+        await new Promise(r => setTimeout(r, 7000));
 
-        const dadosExtraidos = await page.evaluate(() => {
+        const partidas = await page.evaluate(() => {
             const resultados = [];
-            let ligaAtual = 'MELHOR LIGA';
             const linhas = document.querySelectorAll('tr');
 
             linhas.forEach(tr => {
-                const text = tr.innerText ? tr.innerText.trim() : '';
-                if (!text) return;
+                const txt = tr.innerText ? tr.innerText.trim() : '';
+                if (!txt) return;
 
-                // Identifica se é cabeçalho de competição/liga
-                const ehCabecalho = tr.querySelector('th') || tr.className.includes('competition') || tr.className.includes('group') || tr.className.includes('header') || tr.tagName === 'TH';
-                if (ehCabecalho && text.length < 150) {
-                    ligaAtual = text;
-                    return;
-                }
-
-                const textoBaixo = text.toLowerCase();
-                const contextoCompleto = (ligaAtual + " " + textoBaixo);
-
-                // 🎯 FILTRO DE MELHORES LIGAS (Amplo e flexível)
-                const ehTopLiga = /brasileiro|série a|serie a|premier league|la liga|bundesliga|ligue 1|champions league|libertadores|copa do brasil|primera division|primeira liga|eredivisie|championship|super lig|conmebol|copa|torneo|liga/i.test(contextoCompleto);
-                if (!ehTopLiga) return;
-
-                // Filtros anti-lixo (feminino, base, amistosos)
-                const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-|u20|u19|u17|u21|reserves|amador|youth/i.test(contextoCompleto);
-                if (ehLixo) return;
-
-                const matchHorario = text.match(/\d{2}:\d{2}/);
-                const scoreMatch = text.match(/\d+\s*-\s*\d+/);
-                const statusMatch = text.match(/\b(ft|ht|live|\d{1,2}'|aet|pen)\b/i);
-
-                if (!matchHorario && !scoreMatch && !statusMatch) return;
-
-                let infoStatus = matchHorario ? matchHorario[0] : '🕒';
-                if (scoreMatch) {
-                    infoStatus = scoreMatch[0];
-                    if (statusMatch) {
-                        infoStatus += ` (${statusMatch[0].toUpperCase()})`;
-                    } else {
-                        infoStatus += ` (FT)`;
-                    }
-                } else if (statusMatch) {
-                    infoStatus += ` (${statusMatch[0].toUpperCase()})`;
-                }
+                // Identifica se há indicativo de tempo ao vivo ou placar na linha
+                const temTempoOuPlacar = /\d+'|HT|FT|\d+\s*-\s*\d+/.test(txt);
+                if (!temTempoOuPlacar) return;
 
                 const colunas = tr.querySelectorAll('td');
                 if (colunas.length >= 3) {
-                    let timeA = colunas[1] ? colunas[1].innerText.trim() : '';
-                    let timeB = colunas[3] ? colunas[3].innerText.trim() : '';
+                    let tempo = '';
+                    let timeA = '';
+                    let timeB = '';
+                    let placar = '0 x 0';
 
-                    const contemFemininoNoNome = /\b(w)\b|\(w\)|women|feminino|sub-|u20|u19|u17|u21|reserves/i.test(timeA + " " + timeB);
+                    colunas.forEach((td, index) => {
+                        const t = td.innerText.trim();
+                        if (/^\d+'$|^HT$|^FT$|^\d{2}:\d{2}$/i.test(t)) {
+                            tempo = t;
+                        } else if (/^\d+\s*-\s*\d+$/.test(t)) {
+                            placar = t;
+                        } else if (index === 1 || (index > 0 && !timeA && t.length > 2 && !/^\d+$/.test(t))) {
+                            if (!timeA) timeA = t;
+                            else if (!timeB && t !== timeA) timeB = t;
+                        } else if (index === 3 && !timeB) {
+                            timeB = t;
+                        }
+                    });
 
-                    if (!contemFemininoNoNome && timeA.length > 2 && timeB.length > 2) {
-                        resultados.push([infoStatus, timeA, timeB, ligaAtual]);
+                    // Fallback se faltou extrair os nomes pelas colunas exatas
+                    if (!timeA || !timeB) {
+                        const linhasLimpas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+                        if (linhasLimpas.length >= 2) {
+                            if (!timeA) timeA = linhasLimpas[0];
+                            if (!timeB) timeB = linhasLimpas[1];
+                        }
+                    }
+
+                    if (timeA && timeB && timeA !== timeB) {
+                        resultados.push({
+                            tempo: tempo || 'AO VIVO',
+                            timeA: timeA,
+                            timeB: timeB,
+                            placar: placar
+                        });
                     }
                 }
             });
 
+            // Remove duplicatas exatas
             const unicas = [];
             const vistas = new Set();
             resultados.forEach(m => {
-                const chave = `${m[1]}x${m[2]}`;
+                const chave = `${m.timeA}x${m.timeB}`;
                 if (!vistas.has(chave)) {
                     vistas.add(chave);
                     unicas.push(m);
@@ -136,50 +118,43 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Top Ligas] Partidas válidas (incluindo finalizadas) encontradas: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Ao Vivo] Partidas ativas encontradas: ${partidas.length}`);
 
-        if (dadosExtraidos.length > 0) {
+        if (partidas.length > 0) {
             let novosEnviados = 0;
 
-            for (let i = 0; i < dadosExtraidos.length; i++) {
-                let p = dadosExtraidos[i];
-                let infoStatus = p[0];
-                let timeA = p[1];
-                let timeB = p[2];
-                let liga = p[3] ? p[3].toUpperCase() : 'MELHOR LIGA';
+            for (let i = 0; i < partidas.length; i++) {
+                let p = partidas[i];
+                let chaveUnica = `${p.timeA}x${p.timeB}`;
 
-                let chaveUnica = `${timeA}x${timeB}`;
+                // Envia novos ou atualizados
+                novosEnviados++;
 
-                if (!jogosEnviadosSet.has(chaveUnica)) {
-                    jogosEnviadosSet.add(chaveUnica);
-                    novosEnviados++;
+                let card = `⚡ *Partida Ao Vivo [${novosEnviados}]*\n`;
+                card += `────────────────────\n`;
+                card += `⏱ *Tempo:* \`${p.tempo}\`\n`;
+                card += `⚽ **${p.timeA}** x **${p.timeB}**\n`;
+                card += `📊 *Placar:* \` ${p.placar} \`\n`;
+                card += `📐 *Status:* \`Monitorando ao vivo\`\n`;
+                card += `────────────────────`;
 
-                    let card = `⚽ *Partida [${novosEnviados}]*\n`;
-                    card += `🏆 *Competição:* \`${liga}\`\n`;
-                    card += `📅 *Data:* \`${hoje}\`\n`;
-                    card += `🕒 *Status / Placar:* \`${infoStatus}\`\n`;
-                    card += `⚔️ **${timeA}** x **${timeB}**\n`;
-                    card += `────────────────────`;
-
-                    await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
-                    await new Promise(r => setTimeout(r, 700));
-                }
+                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
+                await new Promise(r => setTimeout(r, 600));
             }
 
-            if (novosEnviados > 0) {
-                console.log(`✅ [Bot Top Ligas] ${novosEnviados} jogos enviados no Telegram.`);
-            }
+            console.log(`✅ [Bot Ao Vivo] ${novosEnviados} partidas enviadas para o Telegram.`);
 
         } else {
-            console.log("⚠️ [Bot Top Ligas] Nenhuma partida correspondente encontrada hoje.");
+            console.log("⚠️ Nenhuma partida ao vivo no momento da varredura.");
         }
 
     } catch (error) {
-        console.error("❌ ERRO CRÍTICO NA EXECUÇÃO:", error.message);
+        console.error("❌ Erro crítico no monitor ao vivo:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-buscarJogosDoDia();
-setInterval(buscarJogosDoDia, 4 * 60 * 60 * 1000);
+// Roda a verificação a cada 10 minutos
+setInterval(buscarJogosAoVivo, 10 * 60 * 1000);
+buscarJogosAoVivo();
