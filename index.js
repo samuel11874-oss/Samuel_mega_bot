@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro Anti-Feminino Máximo ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Filtro Rigoroso Jogos de Hoje (Brasil) ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -19,18 +19,24 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 let jogosEnviadosSet = new Set();
 let ultimaDataRegistrada = '';
 
+// Retorna a data atual rigorosamente no Horário de Brasília (YYYY-MM-DD)
+function getDataBrasil() {
+    const agora = new Date();
+    return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+}
+
 async function buscarJogosDoDia() {
     let browser = null;
     try {
-        const hoje = new Date().toISOString().split('T')[0];
+        const hoje = getDataBrasil();
 
         if (ultimaDataRegistrada !== hoje) {
-            console.log(`📅 [Virada de Dia] Nova data detectada: ${hoje}. Limpando histórico.`);
+            console.log(`📅 [Virada de Dia] Nova data do Brasil detectada: ${hoje}. Limpando histórico.`);
             jogosEnviadosSet.clear();
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Bot Anti-Feminino] Acessando agenda para: ${hoje}`);
+        console.log(`🕵️‍♂️ [Bot Dinâmico] Acessando agenda exclusiva para hoje (${hoje}) no horário do Brasil...`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -106,7 +112,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Anti-Feminino] Partidas realmente masculinas/principais: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Dinâmico] Partidas de hoje encontradas: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -125,7 +131,7 @@ async function buscarJogosDoDia() {
 
                     let mediaRealCantos = (Math.random() * (11.5 - 9.5) + 9.5).toFixed(1);
 
-                    let card = `🔥 *Partida Aprovada [${novosEnviados}]*\n`;
+                    let card = `🔥 *Partida de Hoje [${novosEnviados}]*\n`;
                     card += `📅 *Data:* \`${hoje}\`\n`;
                     card += `🕒 *Horário:* \`${horario}\`\n`;
                     card += `⚔️ **${timeA}** x **${timeB}**\n`;
@@ -138,11 +144,11 @@ async function buscarJogosDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Anti-Feminino] ${novosEnviados} novos jogos enviados no Telegram.`);
+                console.log(`✅ [Bot Dinâmico] ${novosEnviados} novos jogos de hoje enviados no Telegram.`);
             }
 
         } else {
-            console.log("⚠️ [Bot Anti-Feminino] Nenhuma partida correspondente após o filtro reforçado.");
+            console.log("⚠️ [Bot Dinâmico] Nenhuma partida correspondente para hoje.");
         }
 
     } catch (error) {
