@@ -19,7 +19,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Acessando diretamente jogos AO VIVO...");
+        console.log("🕵️‍♂️ [Bot US] Acessando e varrendo aba LIVE do Soccerway...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -43,28 +43,34 @@ async function buscarJogosAoVivo() {
             timeout: 45000
         });
 
-        await new Promise(r => setTimeout(r, 6000));
+        // Aguarda tempo suficiente para a renderização completa dos dados ao vivo via JS do site
+        console.log("⏳ Aguardando renderização dos jogos ao vivo...");
+        await new Promise(r => setTimeout(r, 9000));
 
         const partidas = await page.evaluate(() => {
             const resultados = [];
-            const blocos = document.querySelectorAll('tr, div, li');
+            // Varre as linhas e blocos onde o Soccerway organiza as partidas ao vivo
+            const blocos = document.querySelectorAll('tr, .match, li, div');
 
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
-                if (!txt || txt.length < 5 || txt.length > 400) return;
+                if (!txt || txt.length < 8 || txt.length > 500) return;
 
-                // 🚫 Ignora termos indesejados e QUALQUER jogo encerrado (FT, Full-time, Finished)
-                if (/copyright|soccerway|sign up|gamble|privacy|FT|Full-time|Finished/i.test(txt)) return;
+                // Ignora elementos de navegação, rodapé ou propagandas
+                if (/copyright|soccerway|sign up|gamble|privacy|Full-time|Finished/i.test(txt)) return;
 
-                // ⏱️ Exige obrigatoriamente um minuto ativo (ex: 23') ou Intervalo (HT)
-                const temMinutoAtivo = /\d+'/.test(txt) || /\bHT\b/.test(txt);
+                // Identifica se a linha contém indicação de tempo de jogo ao vivo (ex: minutos seguidos de ' ou acréscimos como 90+1)
+                const temMinutoAtivo = /\d+('\+\d+)?/.test(txt) || /\bHT\b/.test(txt);
                 if (!temMinutoAtivo) return;
 
                 const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                 
-                let tempo = linhas.find(l => /\d+'/.test(l) || l === 'HT') || 'AO VIVO';
+                // Procura o marcador de tempo de jogo
+                let tempo = linhas.find(l => /\d+('\+\d+)?/.test(l) || l === 'HT') || 'AO VIVO';
+                // Procura o placar no formato X - Y
                 let placarMatch = linhas.find(l => /^\d+\s*-\s*\d+$/.test(l));
 
+                // Filtra os textos para isolar os nomes dos times
                 const limpos = linhas.filter(l => 
                     l !== tempo && 
                     l !== placarMatch && 
@@ -84,7 +90,7 @@ async function buscarJogosAoVivo() {
                 }
             });
 
-            // Remove duplicatas
+            // Remove duplicatas exatas baseadas no confronto
             const unicas = [];
             const vistas = new Set();
             resultados.forEach(m => {
@@ -98,7 +104,7 @@ async function buscarJogosAoVivo() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot US] Partidas realmente ao vivo encontradas: ${partidas.length}`);
+        console.log(`⚽ [Bot US] Partidas ao vivo capturadas com sucesso: ${partidas.length}`);
 
         if (partidas.length > 0) {
             let enviados = 0;
@@ -117,9 +123,9 @@ async function buscarJogosAoVivo() {
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
                 await new Promise(r => setTimeout(r, 500));
             }
-            console.log(`✅ ${enviados} partidas ao vivo enviadas ao Telegram.`);
+            console.log(`✅ ${enviados} partidas ao vivo enviadas para o Telegram.`);
         } else {
-            console.log("⚠️ Nenhuma partida ao vivo encontrada neste momento.");
+            console.log("⚠️ Nenhuma partida encontrada na varredura.");
             bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo ao vivo encontrado no momento da varredura.*", { parse_mode: 'Markdown' }).catch(()=>{});
         }
 
