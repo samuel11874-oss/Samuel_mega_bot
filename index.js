@@ -9,14 +9,14 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V29 Stats Reais 📊</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V30 Gols ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-// Ligas Principais de Elite
+// Ligas Principais
 const TOP_LIGAS = [
     'brasil', 'brazil', 'brasileiro', 'serie a', 'serie b', 'copa do brasil', 'paulista', 'carioca',
     'libertadores', 'sudamericana', 'sul-americana', 'argentina', 'colombia', 'chile', 'uruguay', 'paraguay',
@@ -33,10 +33,10 @@ const TERMOS_PROIBIDOS = [
     'amateur', 'amador', 'reserves', 'reservas', 'academy', 'academica'
 ];
 
-async function executarRadarV29() {
+async function executarRadarV30() {
     let browser = null;
     try {
-        console.log("📊 [Bot V29] Mapeando lista de jogos para extração profunda...");
+        console.log("📊 [Bot V30] Buscando partidas e extraindo Linhas de Gols reais...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -53,17 +53,19 @@ async function executarRadarV29() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
 
         console.log("🌐 Acessando TotalCorner Hoje...");
-        await page.goto('https://www.totalcorner.com/match/today', {
+        const response = await page.goto('https://www.totalcorner.com/match/today', {
             waitUntil: 'networkidle2',
             timeout: 60000
         });
 
+        console.log(`📡 Status HTTP: ${response ? response.status() : 0}`);
+
         await page.waitForSelector('a[href*="/team/"]', { timeout: 15000 }).catch(() => {});
         await new Promise(r => setTimeout(r, 2000));
 
-        // 1. Extrai links das partidas qualificadas
-        const listaPartidas = await page.evaluate((ligasFiltro, proibidos) => {
-            const matches = [];
+        // Extração direta da tabela principal
+        const jogosProcessados = await page.evaluate((ligasFiltro, proibidos) => {
+            const lista = [];
             const trs = Array.from(document.querySelectorAll('tr'));
 
             trs.forEach(tr => {
@@ -75,14 +77,12 @@ async function executarRadarV29() {
 
                 if (!timeA || !timeB || timeA.length < 2 || timeB.length < 2) return;
 
-                // Captura link do detalhe do jogo
-                const statLink = tr.querySelector('a[href*="/match/stat/"], a[href*="/match/corner/"], a[href*="/match/detail/"]');
-                const linkUrl = statLink ? statLink.href : null;
-
+                // Horário
                 const textoLinha = tr.innerText || '';
                 const horaMatch = textoLinha.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
                 const horaJogo = horaMatch ? horaMatch[0] : 'Hoje';
 
+                // Liga
                 let ligaNome = "Campeonato Geral";
                 const leagueLink = tr.querySelector('a[href*="/league/"]');
 
@@ -103,39 +103,60 @@ async function executarRadarV29() {
                 ligaNome = ligaNome.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
                 const contexto = (timeA + ' ' + timeB + ' ' + ligaNome + ' ' + textoLinha).toLowerCase();
 
+                // Filtro Anti-Base/Amador
                 if (proibidos.some(termo => contexto.includes(termo))) return;
+
+                // Filtro de Ligas Principais
                 if (!ligasFiltro.some(l => contexto.includes(l))) return;
 
-                matches.push({
-                    timeA,
-                    timeB,
+                // EXTRAÇÃO REAIS DA LINHA DE GOLS
+                let golLinha = "Linha Não Definida Pré-Jogo";
+
+                // Procura na coluna específica de Goal Line ou varre as células da linha
+                const tds = Array.from(tr.querySelectorAll('td'));
+                const tdsText = tds.map(td => td.innerText.trim());
+
+                for (const txt of tdsText) {
+                    // Detecta padrões de linhas de gols do TotalCorner (ex: 1.5, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5)
+                    if (/^(?:1|2|3|4)\.(?:0|25|5|75)$/.test(txt) || /^(?:1|2|3|4)\.(?:0|5)\/(?:2|3|4)\.(?:0|5)$/.test(txt)) {
+                        const num = parseFloat(txt);
+                        if (num >= 1.5 && num <= 4.5) {
+                            golLinha = `${txt} Gols (Linha O/U)`;
+                            break;
+                        }
+                    }
+                }
+
+                lista.push({
+                    timeA: timeA,
+                    timeB: timeB,
                     hora: horaJogo,
                     liga: ligaNome,
-                    linkUrl
+                    gols: golLinha
                 });
             });
 
-            // Remove duplicados
+            // Deduplicação
             const unicos = [];
             const vistos = new Set();
-            matches.forEach(m => {
-                const chave = `${m.timeA} x ${m.timeB}`;
+            lista.forEach(item => {
+                const chave = `${item.timeA} x ${item.timeB}`;
                 if (!vistos.has(chave)) {
                     vistos.add(chave);
-                    unicos.push(m);
+                    unicos.push(item);
                 }
             });
 
             return unicos;
         }, TOP_LIGAS, TERMOS_PROIBIDOS);
 
-        console.log(`🎯 [Bot V29] ${listaPartidas.length} partidas filtradas. Iniciando navegação cadenciada para extração das médias...`);
+        console.log(`⚽ [Bot V30] Partidas com dados reais de Gols processadas: ${jogosProcessados.length}`);
 
-        if (listaPartidas.length > 0) {
-            let headerMsg = `🎯 <b>[ RADAR PRO // STATS REAIS DE HOJE ]</b> 📊\n`;
+        if (jogosProcessados.length > 0) {
+            let headerMsg = `🎯 <b>[ RADAR PRO // LINHAS DE GOLS REAIS ]</b> ⚽\n`;
             headerMsg += `────────────────────────\n`;
-            headerMsg += `📊 <b>Jogos Selecionados:</b> <code>${listaPartidas.length}</code>\n`;
-            headerMsg += `⚡ <i>Métricas extraídas diretamente das páginas oficiais</i>\n`;
+            headerMsg += `📊 <b>Jogos Selecionados:</b> <code>${jogosProcessados.length}</code>\n`;
+            headerMsg += `⚡ <i>Linhas de Gols Over/Under do TotalCorner</i>\n`;
             headerMsg += `────────────────────────`;
 
             await bot.sendMessage(CHAT_ID, headerMsg, { parse_mode: 'HTML' }).catch(() => {});
@@ -143,57 +164,10 @@ async function executarRadarV29() {
 
             let enviados = 0;
 
-            for (const j of listaPartidas) {
+            for (let i = 0; i < jogosProcessados.length; i++) {
+                const j = jogosProcessados[i];
                 enviados++;
-                let cantosAvg = "N/I";
-                let cartoesAvg = "N/I";
-                let golsAvg = "N/I";
 
-                // Se houver página individual do confronto, navega para extrair dados reais
-                if (j.linkUrl) {
-                    try {
-                        console.log(`🔍 [${enviados}/${listaPartidas.length}] Raspando estatísticas de: ${j.timeA} x ${j.timeB}`);
-                        await page.goto(j.linkUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-                        
-                        // Aguarda 1.5s para evitar bloqueios por taxa de requisição
-                        await new Promise(r => setTimeout(r, 1500));
-
-                        const statsExtraidas = await page.evaluate(() => {
-                            const bodyText = document.body.innerText;
-                            let cantos = "Sem registro prévio";
-                            let cartoes = "Sem registro prévio";
-                            let gcasa = "1.2", gfora = "1.0";
-
-                            // Busca por padrões estatísticos na página do TotalCorner
-                            const matchCantos = bodyText.match(/(?:Corner Avg|Average Corners|Escanteios Média)[\s:]*([\d\.]+)/i) || bodyText.match(/(\d+\.\d+)\s*(?:corners|escanteios)/i);
-                            if (matchCantos) cantos = `${matchCantos[1]} / jogo`;
-
-                            const matchCartoes = bodyText.match(/(?:Card Avg|Average Cards|Cartões Média)[\s:]*([\d\.]+)/i) || bodyText.match(/(\d+\.\d+)\s*(?:cards|cartões)/i);
-                            if (matchCartoes) cartoes = `${matchCartoes[1]} / jogo`;
-
-                            const matchGols = bodyText.match(/(?:Goal Avg|Average Goals)[\s:]*([\d\.]+)\s*-\s*([\d\.]+)/i);
-                            if (matchGols) {
-                                gcasa = matchGols[1];
-                                gfora = matchGols[2];
-                            }
-
-                            return {
-                                cantos,
-                                cartoes,
-                                gols: `🏠 ${gcasa} | ✈️ ${gfora}`
-                            };
-                        });
-
-                        cantosAvg = statsExtraidas.cantos;
-                        cartoesAvg = statsExtraidas.cartoes;
-                        golsAvg = statsExtraidas.gols;
-
-                    } catch (e) {
-                        console.log(`⚠️ Não foi possível abrir detalhes de ${j.timeA} x ${j.timeB}: ${e.message}`);
-                    }
-                }
-
-                // Monta o Card para o Telegram
                 let card = `⚽ <b>INFORMAÇÕES DA PARTIDA ENCONTRADA #${enviados}</b>\n`;
                 card += `────────────────────────\n`;
                 card += `🏆 <b>Liga:</b> <code>${j.liga}</code>\n`;
@@ -202,28 +176,25 @@ async function executarRadarV29() {
                 card += `   <b>VS</b>\n`;
                 card += `✈️ <b>${j.timeB}</b>\n`;
                 card += `────────────────────────\n`;
-                card += `📊 <b>MÉDIAS REAIS DO CONFRONTO (FT)</b>\n`;
-                card += `🚩 <b>Escanteios:</b> <code>${cantosAvg}</code>\n`;
-                card += `🟨 <b>Cartões:</b> <code>${cartoesAvg}</code>\n`;
-                card += `⚽ <b>Gols (Média):</b> <code>${golsAvg}</code>\n`;
+                card += `⚽ <b>Linha / Média de Gols:</b> <code>${j.gols}</code>\n`;
                 card += `────────────────────────\n`;
-                card += `🤖 <i>Samuel Mega Bot • V29 Stats Reais</i>`;
+                card += `🤖 <i>Samuel Mega Bot • V30 Foco em Gols</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
-                await new Promise(r => setTimeout(r, 800));
+                await new Promise(r => setTimeout(r, 700));
             }
 
-            console.log(`✅ ${enviados} partidas com médias reais entregues no Telegram!`);
+            console.log(`✅ ${enviados} cards de gols entregues com sucesso no Telegram!`);
         } else {
-            console.log("⚠️ Nenhuma partida filtrada para envio nesta rodada.");
+            console.log("⚠️ Nenhuma partida filtrada nesta rodada.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V29:", error.message);
+        console.error("❌ Erro no Radar V30:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-setInterval(executarRadarV29, 1800000);
-executarRadarV29();
+setInterval(executarRadarV30, 1800000);
+executarRadarV30();
