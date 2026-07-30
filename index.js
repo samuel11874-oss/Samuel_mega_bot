@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Passo 4 TotalCorner ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar TotalCorner Ativo ⚽⚡</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function passo4TotalCorner() {
+async function executarRadarTotalCorner() {
     let browser = null;
     try {
-        console.log("🏁 [Passo 4] Coletando e filtrando partidas do TotalCorner...");
+        console.log("⚡ [Radar] Iniciando varredura automatizada no TotalCorner...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -42,14 +42,12 @@ async function passo4TotalCorner() {
         await page.waitForSelector('tr', { timeout: 20000 }).catch(() => {});
         await new Promise(r => setTimeout(r, 4000));
 
-        // Extrai e filtra as linhas da tabela
         const partidas = await page.evaluate(() => {
             const lista = [];
             const trs = document.querySelectorAll('tr');
             
             trs.forEach((tr, index) => {
                 const texto = tr.innerText.replace(/\s+/g, ' ').trim();
-                // Ignora o cabeçalho e linhas muito curtas
                 if (index > 0 && texto.includes('vs') && texto.length > 10) {
                     lista.push(texto);
                 }
@@ -57,29 +55,33 @@ async function passo4TotalCorner() {
             return lista;
         });
 
-        console.log(`📊 Partidas válidas encontradas: ${partidas.length}`);
-
-        let mensagem = `⚡ <b>[RADAR TOTALCORNER - PASSO 4]</b>\n`;
-        mensagem += `⚽ Jogos encontrados: <code>${partidas.length}</code>\n\n`;
+        console.log(`📊 Partidas ativas capturadas: ${partidas.length}`);
 
         if (partidas.length > 0) {
-            // Exibe até 5 jogos limpos no Telegram
-            for (let i = 0; i < Math.min(5, partidas.length); i++) {
-                mensagem += `🔹 <code>${partidas[i]}</code>\n\n`;
+            let header = `⚡ <b>[RADAR TOTALCORNER - AO VIVO]</b>\n🔥 Total de jogos: <code>${partidas.length}</code>\n\n`;
+            await bot.sendMessage(CHAT_ID, header, { parse_mode: 'HTML' }).catch(() => {});
+            await new Promise(r => setTimeout(r, 1000));
+
+            // Envia em blocos organizados para não estourar o limite do Telegram
+            for (let i = 0; i < Math.min(partidas.length, 10); i++) {
+                let card = `⚽ <b>JOGO #${i+1}</b>\n`;
+                card += `📄 <code>${partidas[i]}</code>`;
+
+                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
+                await new Promise(r => setTimeout(r, 500));
             }
         } else {
-            mensagem += `❌ Nenhuma partida válida localizada no momento.`;
+            console.log("ℹ️ Nenhuma partida ativa no momento.");
         }
 
-        await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'HTML' });
-
     } catch (error) {
-        console.error("❌ Erro no Passo 4:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro Passo 4:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro no Radar:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro no Radar:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Executa para validar
-passo4TotalCorner();
+// Roda a primeira vez ao iniciar e depois a cada 3 minutos (180000 ms)
+executarRadarTotalCorner();
+setInterval(executarRadarTotalCorner, 180000);
