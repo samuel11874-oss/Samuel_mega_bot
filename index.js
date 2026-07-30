@@ -9,7 +9,7 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigador & Jogos do Dia ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Melhores Ligas & Cantos ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -36,7 +36,7 @@ async function buscarJogosDoDia() {
             ultimaDataRegistrada = hoje;
         }
 
-        console.log(`🕵️‍♂️ [Investigação Bot] Acessando agenda para hoje (${hoje}) no horário do Brasil...`);
+        console.log(`🕵️‍♂️ [Bot Melhores Ligas] Acessando agenda para hoje (${hoje}) no horário do Brasil...`);
         
         browser = await puppeteer.launch({
             headless: true,
@@ -65,25 +65,8 @@ async function buscarJogosDoDia() {
         console.log("⏳ Aguardando renderização completa da página...");
         await new Promise(r => setTimeout(r, 9000));
 
-        // 🔍 MODO INVESTIGAÇÃO: Captura dados de diagnóstico se falhar
-        const diagnostico = await page.evaluate(() => {
-            const bodyText = document.body ? document.body.innerText.trim() : '';
-            const matchBlocks = document.querySelectorAll('.match, tr, .match-row, [class*="match"]');
-            return {
-                totalTamanhoTexto: bodyText.length,
-                amostraTexto: bodyText.substring(0, 400),
-                totalElementosEncontrados: matchBlocks.length
-            };
-        });
-
-        console.log(`🔍 [Relatório de Investigação]: Tamanho do texto na página: ${diagnostico.totalTamanhoTexto} caracteres. Blocos encontrados: ${diagnostico.totalElementosEncontrados}`);
-        if (diagnostico.totalTamanhoTexto < 200) {
-            console.log(`⚠️ [Alerta Investigação] A página parece vazia ou bloqueada. Amostra: "${diagnostico.amostraTexto}"`);
-        }
-
         const dadosExtraidos = await page.evaluate(() => {
             const resultados = [];
-            // Busca por linhas ou blocos de partidas
             const elementos = document.querySelectorAll('tr, .match-row, li, div');
 
             elementos.forEach(el => {
@@ -92,11 +75,15 @@ async function buscarJogosDoDia() {
 
                 const textoBaixo = text.toLowerCase();
 
-                // Filtros rigorosos anti-lixo (feminino, sub-idades, amistosos, etc.)
+                // 1️⃣ FILTRO DE MELHORES LIGAS (Exige que seja de torneios principais)
+                const ehMelhorLiga = /brasileiro|série a|serie a|premier league|la liga|bundesliga|ligue 1|champions league|libertadores|sul-americana|copa do brasil|eredivisie|primeira liga|championship|super lig|liga profesional|primeira division|serie b/i.test(textoBaixo);
+                if (!ehMelhorLiga) return;
+
+                // 2️⃣ FILTRO ANTI-LIXO (Feminino, sub-idades, amistosos, etc.)
                 const ehLixo = /amistoso|friendly|friendlies|feminino|women|wsl|damen|femenino|femme|\b(w)\b|\(w\)|sub-20|sub 20|u20|under 20|sub20|sub-19|sub 19|u19|under 19|sub19|juniors|youth|sub-17|u17|sub-21|u21|reserves|amador/i.test(textoBaixo);
                 if (ehLixo) return;
 
-                // Descarta jogos encerrados
+                // 3️⃣ Descarta jogos encerrados
                 const jaTerminou = /\b(ft|aet|pen)\b/i.test(textoBaixo);
                 if (jaTerminou) return;
 
@@ -107,7 +94,6 @@ async function buscarJogosDoDia() {
 
                 const horario = matchHorario ? matchHorario[0] : 'AO VIVO 🔴';
 
-                // Tenta extrair linhas limpas
                 const linhas = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
                 const limpos = linhas.filter(l => !/\d{2}:\d{2}/.test(l) && !/^\d+-\d+$/.test(l) && l !== '-');
 
@@ -136,7 +122,7 @@ async function buscarJogosDoDia() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Investigador] Partidas válidas encontradas para hoje: ${dadosExtraidos.length}`);
+        console.log(`⚽ [Bot Melhores Ligas] Partidas de elite encontradas para hoje: ${dadosExtraidos.length}`);
 
         if (dadosExtraidos.length > 0) {
             let novosEnviados = 0;
@@ -155,7 +141,7 @@ async function buscarJogosDoDia() {
 
                     let mediaRealCantos = (Math.random() * (11.5 - 9.5) + 9.5).toFixed(1);
 
-                    let card = `🔥 *Partida de Hoje [${novosEnviados}]*\n`;
+                    let card = `🔥 *Elite Match [${novosEnviados}]*\n`;
                     card += `📅 *Data:* \`${hoje}\`\n`;
                     card += `🕒 *Horário/Status:* \`${horario}\`\n`;
                     card += `⚔️ **${timeA}** x **${timeB}**\n`;
@@ -168,15 +154,15 @@ async function buscarJogosDoDia() {
             }
 
             if (novosEnviados > 0) {
-                console.log(`✅ [Bot Investigador] ${novosEnviados} novos jogos enviados no Telegram.`);
+                console.log(`✅ [Bot Melhores Ligas] ${novosEnviados} jogos de elite enviados no Telegram.`);
             }
 
         } else {
-            console.log("⚠️ [Bot Investigador] Nenhuma partida correspondente encontrada para hoje. Verifique os logs de investigação acima.");
+            console.log("⚠️ [Bot Melhores Ligas] Nenhuma partida das principais ligas encontrada no momento.");
         }
 
     } catch (error) {
-        console.error("❌ ERRO CRÍTICO NA INVESTIGAÇÃO/EXECUÇÃO:", error.message);
+        console.error("❌ ERRO CRÍTICO NA EXECUÇÃO:", error.message);
     } finally {
         if (browser) await browser.close();
     }
