@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar TotalCorner Ativo ⚽⚡</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Ao Vivo Real ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarTotalCorner() {
+async function executarRadarAoVivoReal() {
     let browser = null;
     try {
-        console.log("⚡ [Radar] Iniciando varredura automatizada no TotalCorner...");
+        console.log("⚡ [Radar] Buscando apenas jogos em andamento real...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -42,36 +42,40 @@ async function executarRadarTotalCorner() {
         await page.waitForSelector('tr', { timeout: 20000 }).catch(() => {});
         await new Promise(r => setTimeout(r, 4000));
 
-        const partidas = await page.evaluate(() => {
+        const jogosAoVivoReais = await page.evaluate(() => {
             const lista = [];
             const trs = document.querySelectorAll('tr');
             
             trs.forEach((tr, index) => {
                 const texto = tr.innerText.replace(/\s+/g, ' ').trim();
-                if (index > 0 && texto.includes('vs') && texto.length > 10) {
+                
+                // Critério rigoroso: Precisa ter "vs" E conter indicador de tempo ao vivo (ex: minutos com ' ou HT)
+                // Jogos futuros mostram horário (ex: 21:30), jogos ao vivo mostram minutos (ex: 35', 70', HT)
+                const temMinutoAoVivo = /\d+'|HT|1ºT|2ºT/i.test(texto);
+
+                if (index > 0 && texto.includes('vs') && temMinutoAoVivo) {
                     lista.push(texto);
                 }
             });
             return lista;
         });
 
-        console.log(`📊 Partidas ativas capturadas: ${partidas.length}`);
+        console.log(`📊 Jogos realmente AO VIVO capturados: ${jogosAoVivoReais.length}`);
 
-        if (partidas.length > 0) {
-            let header = `⚡ <b>[RADAR TOTALCORNER - AO VIVO]</b>\n🔥 Total de jogos: <code>${partidas.length}</code>\n\n`;
+        if (jogosAoVivoReais.length > 0) {
+            let header = `🔴 <b>[RADAR TOTALCORNER - AO VIVO REAL]</b>\n🔥 Jogos rolando agora: <code>${jogosAoVivoReais.length}</code>\n\n`;
             await bot.sendMessage(CHAT_ID, header, { parse_mode: 'HTML' }).catch(() => {});
             await new Promise(r => setTimeout(r, 1000));
 
-            // Envia em blocos organizados para não estourar o limite do Telegram
-            for (let i = 0; i < Math.min(partidas.length, 10); i++) {
-                let card = `⚽ <b>JOGO #${i+1}</b>\n`;
-                card += `📄 <code>${partidas[i]}</code>`;
+            for (let i = 0; i < Math.min(jogosAoVivoReais.length, 10); i++) {
+                let card = `⚽ <b>AO VIVO #${i+1}</b>\n`;
+                card += `📄 <code>${jogosAoVivoReais[i]}</code>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
                 await new Promise(r => setTimeout(r, 500));
             }
         } else {
-            console.log("ℹ️ Nenhuma partida ativa no momento.");
+            console.log("ℹ️ Nenhum jogo realmente ao vivo no momento da varredura.");
         }
 
     } catch (error) {
@@ -82,6 +86,5 @@ async function executarRadarTotalCorner() {
     }
 }
 
-// Roda a primeira vez ao iniciar e depois a cada 3 minutos (180000 ms)
-executarRadarTotalCorner();
-setInterval(executarRadarTotalCorner, 180000);
+executarRadarAoVivoReal();
+setInterval(executarRadarAoVivoReal, 180000);
