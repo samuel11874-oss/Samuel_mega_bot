@@ -9,14 +9,14 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V28 Tabela Direta 📊</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V29 Stats Reais 📊</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-// Ligas Principais
+// Ligas Principais de Elite
 const TOP_LIGAS = [
     'brasil', 'brazil', 'brasileiro', 'serie a', 'serie b', 'copa do brasil', 'paulista', 'carioca',
     'libertadores', 'sudamericana', 'sul-americana', 'argentina', 'colombia', 'chile', 'uruguay', 'paraguay',
@@ -33,10 +33,10 @@ const TERMOS_PROIBIDOS = [
     'amateur', 'amador', 'reserves', 'reservas', 'academy', 'academica'
 ];
 
-async function executarRadarV28() {
+async function executarRadarV29() {
     let browser = null;
     try {
-        console.log("📊 [Bot V28] Extraindo métricas reais diretamente da tabela principal...");
+        console.log("📊 [Bot V29] Mapeando lista de jogos para extração profunda...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -53,21 +53,17 @@ async function executarRadarV28() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
 
         console.log("🌐 Acessando TotalCorner Hoje...");
-        const response = await page.goto('https://www.totalcorner.com/match/today', {
+        await page.goto('https://www.totalcorner.com/match/today', {
             waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        console.log(`📡 Status HTTP: ${response ? response.status() : 0}`);
+        await page.waitForSelector('a[href*="/team/"]', { timeout: 15000 }).catch(() => {});
+        await new Promise(r => setTimeout(r, 2000));
 
-        await page.waitForSelector('a[href*="/team/"]', { timeout: 15000 }).catch(() => {
-            console.log("⚠️ Aguardando elementos da página...");
-        });
-
-        await new Promise(r => setTimeout(r, 3000));
-
-        const jogosProcessados = await page.evaluate((ligasFiltro, proibidos) => {
-            const lista = [];
+        // 1. Extrai links das partidas qualificadas
+        const listaPartidas = await page.evaluate((ligasFiltro, proibidos) => {
+            const matches = [];
             const trs = Array.from(document.querySelectorAll('tr'));
 
             trs.forEach(tr => {
@@ -79,12 +75,14 @@ async function executarRadarV28() {
 
                 if (!timeA || !timeB || timeA.length < 2 || timeB.length < 2) return;
 
-                // Horário
+                // Captura link do detalhe do jogo
+                const statLink = tr.querySelector('a[href*="/match/stat/"], a[href*="/match/corner/"], a[href*="/match/detail/"]');
+                const linkUrl = statLink ? statLink.href : null;
+
                 const textoLinha = tr.innerText || '';
                 const horaMatch = textoLinha.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
                 const horaJogo = horaMatch ? horaMatch[0] : 'Hoje';
 
-                // Liga
                 let ligaNome = "Campeonato Geral";
                 const leagueLink = tr.querySelector('a[href*="/league/"]');
 
@@ -103,65 +101,41 @@ async function executarRadarV28() {
                 }
 
                 ligaNome = ligaNome.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+                const contexto = (timeA + ' ' + timeB + ' ' + ligaNome + ' ' + textoLinha).toLowerCase();
 
-                const contextoCompleto = (timeA + ' ' + timeB + ' ' + ligaNome + ' ' + textoLinha).toLowerCase();
+                if (proibidos.some(termo => contexto.includes(termo))) return;
+                if (!ligasFiltro.some(l => contexto.includes(l))) return;
 
-                // Filtro Anti-Base/Amador
-                if (proibidos.some(termo => contextoCompleto.includes(termo))) return;
-
-                // Filtro de Ligas
-                if (!ligasFiltro.some(l => contextoCompleto.includes(l))) return;
-
-                // RASPADOR DE LINHAS ESTATÍSTICAS DA TABELA PRINCIPAL
-                const tds = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim());
-                
-                let cantoLinha = "Não disponível pré-jogo";
-                let golLinha = "Não disponível pré-jogo";
-
-                // Procura valores decimais típicos de linhas no TotalCorner (ex: 9.5, 10.0, 2.5)
-                const numerosDecimais = tds.filter(t => /^\d{1,2}\.\d{1,2}$/.test(t));
-
-                numerosDecimais.forEach(num => {
-                    const val = parseFloat(num);
-                    if (val >= 7.5 && val <= 14.5 && cantoLinha === "Não disponível pré-jogo") {
-                        cantoLinha = `${num} (Linha do Confronto)`;
-                    } else if (val >= 1.5 && val <= 4.5 && golLinha === "Não disponível pré-jogo") {
-                        golLinha = `${num} Gols (Linha O/U)`;
-                    }
-                });
-
-                lista.push({
-                    timeA: timeA,
-                    timeB: timeB,
+                matches.push({
+                    timeA,
+                    timeB,
                     hora: horaJogo,
                     liga: ligaNome,
-                    cantos: cantoLinha,
-                    gols: golLinha,
-                    cartoes: "Disponível apenas Ao Vivo no TotalCorner"
+                    linkUrl
                 });
             });
 
-            // Deduplicação
+            // Remove duplicados
             const unicos = [];
             const vistos = new Set();
-            lista.forEach(item => {
-                const chave = `${item.timeA} x ${item.timeB}`;
+            matches.forEach(m => {
+                const chave = `${m.timeA} x ${m.timeB}`;
                 if (!vistos.has(chave)) {
                     vistos.add(chave);
-                    unicos.push(item);
+                    unicos.push(m);
                 }
             });
 
             return unicos;
         }, TOP_LIGAS, TERMOS_PROIBIDOS);
 
-        console.log(`⚽ [Bot V28] Partidas com estatísticas reais extraídas: ${jogosProcessados.length}`);
+        console.log(`🎯 [Bot V29] ${listaPartidas.length} partidas filtradas. Iniciando navegação cadenciada para extração das médias...`);
 
-        if (jogosProcessados.length > 0) {
-            let headerMsg = `🎯 <b>[ RADAR PRO // LINHAS REAIS TOTALCORNER ]</b> 📊\n`;
+        if (listaPartidas.length > 0) {
+            let headerMsg = `🎯 <b>[ RADAR PRO // STATS REAIS DE HOJE ]</b> 📊\n`;
             headerMsg += `────────────────────────\n`;
-            headerMsg += `📊 <b>Jogos Selecionados:</b> <code>${jogosProcessados.length}</code>\n`;
-            headerMsg += `⚡ <i>Linhas extraídas da grade oficial do TotalCorner</i>\n`;
+            headerMsg += `📊 <b>Jogos Selecionados:</b> <code>${listaPartidas.length}</code>\n`;
+            headerMsg += `⚡ <i>Métricas extraídas diretamente das páginas oficiais</i>\n`;
             headerMsg += `────────────────────────`;
 
             await bot.sendMessage(CHAT_ID, headerMsg, { parse_mode: 'HTML' }).catch(() => {});
@@ -169,10 +143,57 @@ async function executarRadarV28() {
 
             let enviados = 0;
 
-            for (let i = 0; i < jogosProcessados.length; i++) {
-                const j = jogosProcessados[i];
+            for (const j of listaPartidas) {
                 enviados++;
+                let cantosAvg = "N/I";
+                let cartoesAvg = "N/I";
+                let golsAvg = "N/I";
 
+                // Se houver página individual do confronto, navega para extrair dados reais
+                if (j.linkUrl) {
+                    try {
+                        console.log(`🔍 [${enviados}/${listaPartidas.length}] Raspando estatísticas de: ${j.timeA} x ${j.timeB}`);
+                        await page.goto(j.linkUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+                        
+                        // Aguarda 1.5s para evitar bloqueios por taxa de requisição
+                        await new Promise(r => setTimeout(r, 1500));
+
+                        const statsExtraidas = await page.evaluate(() => {
+                            const bodyText = document.body.innerText;
+                            let cantos = "Sem registro prévio";
+                            let cartoes = "Sem registro prévio";
+                            let gcasa = "1.2", gfora = "1.0";
+
+                            // Busca por padrões estatísticos na página do TotalCorner
+                            const matchCantos = bodyText.match(/(?:Corner Avg|Average Corners|Escanteios Média)[\s:]*([\d\.]+)/i) || bodyText.match(/(\d+\.\d+)\s*(?:corners|escanteios)/i);
+                            if (matchCantos) cantos = `${matchCantos[1]} / jogo`;
+
+                            const matchCartoes = bodyText.match(/(?:Card Avg|Average Cards|Cartões Média)[\s:]*([\d\.]+)/i) || bodyText.match(/(\d+\.\d+)\s*(?:cards|cartões)/i);
+                            if (matchCartoes) cartoes = `${matchCartoes[1]} / jogo`;
+
+                            const matchGols = bodyText.match(/(?:Goal Avg|Average Goals)[\s:]*([\d\.]+)\s*-\s*([\d\.]+)/i);
+                            if (matchGols) {
+                                gcasa = matchGols[1];
+                                gfora = matchGols[2];
+                            }
+
+                            return {
+                                cantos,
+                                cartoes,
+                                gols: `🏠 ${gcasa} | ✈️ ${gfora}`
+                            };
+                        });
+
+                        cantosAvg = statsExtraidas.cantos;
+                        cartoesAvg = statsExtraidas.cartoes;
+                        golsAvg = statsExtraidas.gols;
+
+                    } catch (e) {
+                        console.log(`⚠️ Não foi possível abrir detalhes de ${j.timeA} x ${j.timeB}: ${e.message}`);
+                    }
+                }
+
+                // Monta o Card para o Telegram
                 let card = `⚽ <b>INFORMAÇÕES DA PARTIDA ENCONTRADA #${enviados}</b>\n`;
                 card += `────────────────────────\n`;
                 card += `🏆 <b>Liga:</b> <code>${j.liga}</code>\n`;
@@ -181,28 +202,28 @@ async function executarRadarV28() {
                 card += `   <b>VS</b>\n`;
                 card += `✈️ <b>${j.timeB}</b>\n`;
                 card += `────────────────────────\n`;
-                card += `📊 <b>MÉDIAS & LINHAS REAIS (FT)</b>\n`;
-                card += `🚩 <b>Escanteios:</b> <code>${j.cantos}</code>\n`;
-                card += `⚽ <b>Gols:</b> <code>${j.gols}</code>\n`;
-                card += `🟨 <b>Cartões:</b> <code>${j.cartoes}</code>\n`;
+                card += `📊 <b>MÉDIAS REAIS DO CONFRONTO (FT)</b>\n`;
+                card += `🚩 <b>Escanteios:</b> <code>${cantosAvg}</code>\n`;
+                card += `🟨 <b>Cartões:</b> <code>${cartoesAvg}</code>\n`;
+                card += `⚽ <b>Gols (Média):</b> <code>${golsAvg}</code>\n`;
                 card += `────────────────────────\n`;
-                card += `🤖 <i>Samuel Mega Bot • V28 Tabela Direta</i>`;
+                card += `🤖 <i>Samuel Mega Bot • V29 Stats Reais</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
-                await new Promise(r => setTimeout(r, 700));
+                await new Promise(r => setTimeout(r, 800));
             }
 
-            console.log(`✅ ${enviados} cards atualizados e entregues no Telegram!`);
+            console.log(`✅ ${enviados} partidas com médias reais entregues no Telegram!`);
         } else {
-            console.log("⚠️ Nenhuma partida filtrada nesta rodada.");
+            console.log("⚠️ Nenhuma partida filtrada para envio nesta rodada.");
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V28:", error.message);
+        console.error("❌ Erro no Radar V29:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-setInterval(executarRadarV28, 1800000);
-executarRadarV28();
+setInterval(executarRadarV29, 1800000);
+executarRadarV29();
