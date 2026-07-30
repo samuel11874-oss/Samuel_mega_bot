@@ -29,46 +29,35 @@ async function buscarJogosAoVivo() {
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
                 '--disable-gpu',
-                '--single-process',
-                '--window-size=1920,1080'
+                '--single-process'
             ]
         });
 
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
-        await page.setViewport({ width: 1920, height: 1080 });
-
-        // Simula cabeçalhos de um navegador real para evitar bloqueios de IP/Cloudflare
-        await page.setExtraHTTPHeaders({
-            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
-        });
+        await page.setViewport({ width: 1366, height: 768 });
 
         console.log("🌐 [Bot US] Acessando us.soccerway.com/matches/live/...");
+        
+        // CORREÇÃO: Usando domcontentloaded para evitar timeout com requisições ao vivo contínuas
         await page.goto('https://us.soccerway.com/matches/live/', {
-            waitUntil: 'networkidle2',
-            timeout: 60000
+            waitUntil: 'domcontentloaded',
+            timeout: 45000
         });
 
-        console.log("⏳ Aguardando renderização e carregamento dos dados (12s)...");
-        await new Promise(r => setTimeout(r, 12000));
-
-        // Diagnóstico: exibe o título da página no log para verificar bloqueio
-        const pageTitle = await page.title();
-        console.log(`📄 [Debug] Título da página capturada: "${pageTitle}"`);
+        console.log("⏳ Aguardando renderização e carregamento dos dados (8s)...");
+        await new Promise(r => setTimeout(r, 8000));
 
         const partidas = await page.evaluate(() => {
             const resultados = [];
-            const blocos = document.querySelectorAll('tr, .match-row, div.match, .matches-table tr, div');
+            const blocos = document.querySelectorAll('tr, div, li');
 
             blocos.forEach(b => {
                 const txt = b.innerText ? b.innerText.trim() : '';
-                if (!txt || txt.length < 5 || txt.length > 500) return;
+                if (!txt || txt.length < 5 || txt.length > 400) return;
 
-                // Ignora barreiras comuns de erro ou aviso
                 if (/copyright|cloudflare|access denied|captcha|sign up|gamble|cookie/i.test(txt)) return;
 
-                // Procura indicadores de tempo de jogo ou placar
                 if (/\d+'|HT|FT/i.test(txt) || /\d+\s*-\s*\d+/.test(txt)) {
                     const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                     
@@ -125,12 +114,12 @@ async function buscarJogosAoVivo() {
                 card += `────────────────────`;
                 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
-                await new Promise(r => setTimeout(r, 500));
+                await new Promise(r => setTimeout(r, 400));
             }
             console.log(`✅ ${enviados} jogos enviados ao Telegram com sucesso.`);
         } else {
-            console.log("⚠️ Nenhuma partida encontrada. Verifique se o Cloudflare bloqueou o IP da Render.");
-            bot.sendMessage(CHAT_ID, "⚠️ *Aviso:* 0 partidas encontradas na varredura atual.", { parse_mode: 'Markdown' }).catch(()=>{});
+            console.log("⚠️ Nenhuma partida encontrada.");
+            bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo encontrado no momento da varredura.*", { parse_mode: 'Markdown' }).catch(()=>{});
         }
 
     } catch (error) {
