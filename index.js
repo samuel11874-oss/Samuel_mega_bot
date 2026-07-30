@@ -41,21 +41,22 @@ async function buscarJogosAoVivo() {
 
         console.log("🌐 [Bot Pro] Acessando us.soccerway.com...");
         await page.goto('https://us.soccerway.com/', {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        await new Promise(r => setTimeout(r, 4000));
+        await new Promise(r => setTimeout(r, 5000));
         
         try {
+            console.log("🔍 Tentando ativar a aba LIVE...");
             await page.evaluate(() => {
                 const links = Array.from(document.querySelectorAll('a, span, div'));
                 const abaLive = links.find(el => el.innerText && el.innerText.trim() === 'LIVE');
                 if (abaLive) abaLive.click();
             });
-            await new Promise(r => setTimeout(r, 6000));
+            await new Promise(r => setTimeout(r, 7000)); // Tempo extra para renderizar as partidas ao vivo
         } catch (e) {
-            console.log("⚠️ Falha ao clicar na aba Live diretamente.");
+            console.log("⚠️ Aviso ao clicar na aba Live:", e.message);
         }
 
         const partidas = await page.evaluate(() => {
@@ -150,16 +151,16 @@ async function buscarJogosAoVivo() {
             historicoPlacares = novoHistorico;
             console.log(`✅ ${enviados} cards enviados com sucesso!`);
         } else {
-            bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo ao vivo encontrado no momento.*", { parse_mode: 'Markdown' }).catch(()=>{});
+            console.log("⚠️ Nenhum jogo ao vivo encontrado nesta varredura.");
         }
 
     } catch (error) {
-        console.error("❌ Erro:", error.message);
-        bot.sendMessage(CHAT_ID, `❌ *Erro no Bot:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
+        console.error("❌ Erro na execução:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
+// Executa a cada 5 minutos (300.000 ms)
 setInterval(buscarJogosAoVivo, 300000);
 buscarJogosAoVivo();
