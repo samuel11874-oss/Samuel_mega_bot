@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Passo 1 Base TotalCorner ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Passo 2 TotalCorner ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function passo1TotalCorner() {
+async function passo2TotalCorner() {
     let browser = null;
     try {
-        console.log("🏁 [Passo 1] Iniciando navegador base para o TotalCorner...");
+        console.log("🏁 [Passo 2] Iniciando navegador com argumentos de segurança para o Render...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -24,7 +24,9 @@ async function passo1TotalCorner() {
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-gpu'
+                '--disable-gpu',
+                '--no-zygote',
+                '--single-process'
             ]
         });
 
@@ -39,15 +41,15 @@ async function passo1TotalCorner() {
         const titulo = await page.title();
         console.log(`📄 Título da página obtido: ${titulo}`);
 
-        await bot.sendMessage(CHAT_ID, `🏁 <b>[Passo 1]</b> Conexão estabelecida com sucesso!\n📄 Título: <code>${titulo}</code>`, { parse_mode: 'HTML' });
+        await bot.sendMessage(CHAT_ID, `🏁 <b>[Passo 2]</b> Navegador aberto com sucesso!\n📄 Título: <code>${titulo}</code>`, { parse_mode: 'HTML' });
 
     } catch (error) {
-        console.error("❌ Erro no Passo 1:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro Passo 1:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro no Passo 2:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro Passo 2:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Executa uma vez para testar a base
-passo1TotalCorner();
+// Executa para validar
+passo2TotalCorner();
