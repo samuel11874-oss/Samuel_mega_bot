@@ -5,7 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Multi-API Anti-Duplicação Definitiva ⚽🔥</h2><p>Unificação e cruzamento perfeitos sem repetições</p>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Multi-API Agendado (06:00 e 12:00) ⚽🔥</h2><p>Funcionando com horários fixos diários</p>'));
 
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
@@ -23,7 +23,7 @@ const FOOTBALL_DATA_KEY = '0a34421534b24e9f9001d3cf5da69c57';
 const FOOTBALL_DATA_HEADERS = { 'X-Auth-Token': FOOTBALL_DATA_KEY };
 
 let jogosEnviados = new Set();
-let ultimaDataExecucao = '';
+let ultimoSlotExecutado = '';
 
 // Retorna a data atual rigorosamente no Horário de Brasília (YYYY-MM-DD)
 function getDataBrasil() {
@@ -37,7 +37,7 @@ function getDataJogoBrasil(utcDateString) {
     return dateObj.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 }
 
-// 🛡️ Normalização avançada para eliminar variações de nomes entre APIs (ex: "Flamengo" vs "CR Flamengo")
+// 🛡️ Normalização avançada para eliminar variações de nomes entre APIs
 function normalizarNomeTime(nome) {
     if (!nome) return '';
     return nome
@@ -108,13 +108,9 @@ function enviarCard(fonte, t1, t2, hora, competencia, mediaReal) {
 
 async function buscarJogosSincronizados() {
     const hojeIso = getDataBrasil();
-    
-    if (ultimaDataExecucao === hojeIso) {
-        return;
-    }
 
     try {
-        console.log(`🔍 [Multi-API] Consultando e unificando jogos para hoje (${hojeIso})...`);
+        console.log(`🔍 [Multi-API] Consultando e unificando jogos agendados para hoje (${hojeIso})...`);
         
         // Chamadas paralelas para as duas APIs
         const promessaApiSports = axios.get(`https://v3.football.api-sports.io/fixtures?date=${hojeIso}`, {
@@ -133,14 +129,11 @@ async function buscarJogosSincronizados() {
 
         const [resApiSports, resFootballData] = await Promise.all([promessaApiSports, promessaFootballData]);
 
-        ultimaDataExecucao = hojeIso;
         let listaMestra = [];
 
         // 1. Coleta dados da API-Sports
         if (resApiSports && resApiSports.data && resApiSports.data.response) {
             const matches = resApiSports.data.response;
-            console.log(`📊 [API-Sports] Total bruto retornado: ${matches.length} partidas.`);
-
             for (const match of matches) {
                 if (getDataJogoBrasil(match.fixture.date) !== hojeIso) continue;
                 const competencia = match.league.name;
@@ -163,8 +156,6 @@ async function buscarJogosSincronizados() {
         // 2. Coleta dados da Football-Data.org
         if (resFootballData && resFootballData.data && resFootballData.data.matches) {
             const matchesFD = resFootballData.data.matches;
-            console.log(`📊 [Football-Data.org] Total bruto retornado: ${matchesFD.length} partidas.`);
-
             for (const match of matchesFD) {
                 if (getDataJogoBrasil(match.utcDate) !== hojeIso) continue;
                 const competencia = match.competition.name;
@@ -184,20 +175,17 @@ async function buscarJogosSincronizados() {
             }
         }
 
-        // 3. Cruzamento e Deduplicação rigorosa antes do envio
+        // 3. Cruzamento e Deduplicação rigorosa
         const jogosUnicosMap = new Map();
 
         for (const jogo of listaMestra) {
             const norm1 = normalizarNomeTime(jogo.t1);
             const norm2 = normalizarNomeTime(jogo.t2);
-            
-            // Chave unificada baseada nos times limpos
             const chave = `${norm1}_${norm2}`;
 
             if (!jogosUnicosMap.has(chave)) {
                 jogosUnicosMap.set(chave, jogo);
             } else {
-                // Se o jogo já estava na outra API, atualizamos a fonte para mostrar que foi cruzado/confirmado
                 const existente = jogosUnicosMap.get(chave);
                 if (existente.fonte !== jogo.fonte) {
                     existente.fonte = 'Multi-API Sincronizada (Confirmado)';
@@ -215,16 +203,44 @@ async function buscarJogosSincronizados() {
 
                 const mediaRealCalculada = (10.6 + (Math.abs(jogo.t1.length - jogo.t2.length) % 2.5)).toFixed(1);
                 enviarCard(jogo.fonte, jogo.t1, jogo.t2, jogo.hora, jogo.competencia, mediaRealCalculada);
-                console.log(`✅ [Enviado Único] ${jogo.t1} x ${jogo.t2} (${jogo.competencia}) | Fonte: ${jogo.fonte}`);
             }
         }
 
-        console.log(`🔍 [Multi-API] Varredura unificada concluída. Total de cards únicos enviados: ${enviadosNestaRodada}`);
+        console.log(`✅ [Agendamento Concluído] Total de cards enviados nesta execução: ${enviadosNestaRodada}`);
 
     } catch (e) {
         console.error("Erro geral na sincronização das APIs:", e.message);
     }
 }
 
-setInterval(buscarJogosSincronizados, 3600000);
+// ⏰ Verificador de Horários (Dispara rigorosamente às 06:00 e às 12:00 no horário de Brasília)
+function verificarHorariosDisparo() {
+    const agora = new Date();
+    const horaStr = agora.toLocaleTimeString('pt-BR', { 
+        timeZone: 'America/Sao_Paulo', 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        hour12: false 
+    });
+    const dataIso = getDataBrasil();
+
+    // Disparo às 06:00 da manhã
+    if (horaStr === "06:00" && ultimoSlotExecutado !== `${dataIso}_06`) {
+        ultimoSlotExecutado = `${dataIso}_06`;
+        jogosEnviados.clear(); // Limpa o cache para enviar a grade atualizada da manhã
+        console.log(`🔔 [Alarme 06:00] Iniciando varredura matinal...`);
+        buscarJogosSincronizados();
+    }
+
+    // Disparo às 12:00 (meio-dia)
+    if (horaStr === "12:00" && ultimoSlotExecutado !== `${dataIso}_12`) {
+        ultimoSlotExecutado = `${dataIso}_12`;
+        jogosEnviados.clear(); // Limpa o cache para enviar a grade atualizada do meio-dia
+        console.log(`🔔 [Alarme 12:00] Iniciando varredura do meio-dia...`);
+        buscarJogosSincronizados();
+    }
+}
+
+// Executa uma vez ao ligar para teste/confirmação imediata e ativa o relógio de verificação a cada 30 segundos
 buscarJogosSincronizados();
+setInterval(verificarHorariosDisparo, 30000);
