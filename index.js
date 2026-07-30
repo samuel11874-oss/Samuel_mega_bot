@@ -9,17 +9,19 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Monitor Ao Vivo ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Ao Vivo ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
+let historicoPlacares = {};
+
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot US] Varrendo blocos de competições e partidas ao vivo...");
+        console.log("🕵️‍♂️ [Bot Pro] Varredura periódica de partidas ao vivo...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -37,24 +39,24 @@ async function buscarJogosAoVivo() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1366, height: 768 });
 
-        console.log("🌐 [Bot US] Acessando us.soccerway.com...");
+        console.log("🌐 [Bot Pro] Acessando us.soccerway.com...");
         await page.goto('https://us.soccerway.com/', {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        await new Promise(r => setTimeout(r, 4000));
+        await new Promise(r => setTimeout(r, 5000));
         
         try {
-            console.log("🔍 Clicando na aba 'LIVE'...");
+            console.log("🔍 Tentando ativar a aba LIVE...");
             await page.evaluate(() => {
                 const links = Array.from(document.querySelectorAll('a, span, div'));
                 const abaLive = links.find(el => el.innerText && el.innerText.trim() === 'LIVE');
                 if (abaLive) abaLive.click();
             });
-            await new Promise(r => setTimeout(r, 6000));
+            await new Promise(r => setTimeout(r, 7000)); // Tempo extra para renderizar as partidas ao vivo
         } catch (e) {
-            console.log("⚠️ Falha ao clicar na aba Live. Continuando...");
+            console.log("⚠️ Aviso ao clicar na aba Live:", e.message);
         }
 
         const partidas = await page.evaluate(() => {
@@ -88,7 +90,9 @@ async function buscarJogosAoVivo() {
                         tempo: tempo,
                         timeA: limpos[0],
                         timeB: limpos[1],
-                        placar: `${numeros[0]} x ${numeros[1]}`
+                        placar: `${numeros[0]} x ${numeros[1]}`,
+                        golsA: parseInt(numeros[0]),
+                        golsB: parseInt(numeros[1])
                     });
                 }
             });
@@ -106,13 +110,27 @@ async function buscarJogosAoVivo() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot US] Partidas AO VIVO capturadas perfeitamente: ${partidas.length}`);
+        console.log(`⚽ [Bot Pro] Partidas AO VIVO capturadas: ${partidas.length}`);
 
         if (partidas.length > 0) {
             let enviados = 0;
+            let novoHistorico = {};
+
             for (let i = 0; i < Math.min(partidas.length, 25); i++) {
                 let p = partidas[i];
                 enviados++;
+
+                let chaveJogo = `${p.timeA} x ${p.timeB}`;
+                let statusGol = "⚡ <code>STATUS: ROLANDO</code>";
+
+                if (historicoPlacares[chaveJogo]) {
+                    let anterior = historicoPlacares[chaveJogo];
+                    if (p.golsA > anterior.golsA || p.golsB > anterior.golsB) {
+                        statusGol = "GOOOOOOL! 🚨🔥 ⚽ <b>SAIU GOL RECENTE!</b>";
+                    }
+                }
+
+                novoHistorico[chaveJogo] = { golsA: p.golsA, golsB: p.golsB };
 
                 let card = `🛸 <code>[ SYSTEM // LIVE_RADAR ]</code> ⚡\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -121,24 +139,28 @@ async function buscarJogosAoVivo() {
                 card += `    🔹 <b>${p.timeA}</b>\n`;
                 card += `    🔸 <b>${p.timeB}</b>\n`;
                 card += `📊  <b>PLACAR</b>  ➔  ⚡ <code> ${p.placar} </code> ⚡\n`;
+                card += `──────────────────────\n`;
+                card += `${statusGol}\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                card += `🤖 <i>Status: Neural Scan Active</i>`;
+                card += `🤖 <i>Radar Ativo - Atualização 5m</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
                 await new Promise(r => setTimeout(r, 600)); 
             }
-            console.log(`✅ ${enviados} partidas enviadas para o Telegram com sucesso!`);
+
+            historicoPlacares = novoHistorico;
+            console.log(`✅ ${enviados} cards enviados com sucesso!`);
         } else {
-            bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo ao vivo encontrado no momento.*", { parse_mode: 'Markdown' }).catch(()=>{});
+            console.log("⚠️ Nenhum jogo ao vivo encontrado nesta varredura.");
         }
 
     } catch (error) {
-        console.error("❌ Erro:", error.message);
-        bot.sendMessage(CHAT_ID, `❌ *Erro no Bot:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
+        console.error("❌ Erro na execução:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-setInterval(buscarJogosAoVivo, 600000);
+// Executa a cada 5 minutos (300.000 ms)
+setInterval(buscarJogosAoVivo, 300000);
 buscarJogosAoVivo();
