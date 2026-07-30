@@ -16,7 +16,6 @@ const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-// Memória para rastrear os placares anteriores e detectar gols
 let historicoPlacares = {};
 
 async function buscarJogosAoVivo() {
@@ -102,7 +101,7 @@ async function buscarJogosAoVivo() {
             resultados.forEach(item => {
                 const chave = `${item.timeA}x${item.timeB}`;
                 if (!vistas.has(chave)) {
-                    vistas.set(chave, item);
+                    vistas.add(chave);
                     unicas.push(item);
                 }
             });
@@ -123,7 +122,6 @@ async function buscarJogosAoVivo() {
                 let chaveJogo = `${p.timeA} x ${p.timeB}`;
                 let statusGol = "⚡ <code>STATUS: ROLANDO</code>";
 
-                // Verifica se o jogo já existia no ciclo anterior para detectar alteração no placar
                 if (historicoPlacares[chaveJogo]) {
                     let anterior = historicoPlacares[chaveJogo];
                     if (p.golsA > anterior.golsA || p.golsB > anterior.golsB) {
@@ -131,7 +129,6 @@ async function buscarJogosAoVivo() {
                     }
                 }
 
-                // Salva o estado atual para o próximo ciclo de 5 minutos
                 novoHistorico[chaveJogo] = { golsA: p.golsA, golsB: p.golsB };
 
                 let card = `🛸 <code>[ SYSTEM // LIVE_RADAR ]</code> ⚡\n`;
@@ -150,10 +147,8 @@ async function buscarJogosAoVivo() {
                 await new Promise(r => setTimeout(r, 600)); 
             }
 
-            // Atualiza a memória global de placares
             historicoPlacares = novoHistorico;
-
-            console.log(`✅ ${enviados} cards enviados com detecção de gols ativada!`);
+            console.log(`✅ ${enviados} cards enviados com sucesso!`);
         } else {
             bot.sendMessage(CHAT_ID, "⚠️ *Nenhum jogo ao vivo encontrado no momento.*", { parse_mode: 'Markdown' }).catch(()=>{});
         }
@@ -166,6 +161,5 @@ async function buscarJogosAoVivo() {
     }
 }
 
-// Intervalo alterado para 5 minutos (300.000 milissegundos)
 setInterval(buscarJogosAoVivo, 300000);
 buscarJogosAoVivo();
