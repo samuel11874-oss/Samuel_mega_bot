@@ -9,17 +9,19 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigação Avançada v2 🔍⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar TotalCorner Rodando! ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function investigacaoProfunda() {
+let historicoPlacares = {};
+
+async function executarRadarTotalCorner() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [AUDITORIA V2] Iniciando diagnósticos de rede e DOM...");
+        console.log("🕵️‍♂️ [Bot TC] Varrendo tabelas do TotalCorner...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -30,79 +32,87 @@ async function investigacaoProfunda() {
                 '--disable-accelerated-2d-canvas',
                 '--disable-gpu',
                 '--single-process',
-                '--window-size=1920,1080'
+                '--window-size=1366,768'
             ]
         });
 
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
-        await page.setViewport({ width: 1920, height: 1080 });
+        await page.setViewport({ width: 1366, height: 768 });
 
-        // Monitora chamadas de rede para descobrir URLs de APIs ocultas
-        const urlsSolicitadas = [];
-        page.on('request', req => {
-            const u = req.url();
-            if (u.includes('totalcorner') && !u.endsWith('.png') && !u.endsWith('.css') && !u.endsWith('.js')) {
-                urlsSolicitadas.push(`${req.method()} -> ${u}`);
-            }
-        });
-
-        console.log("🌐 [AUDITORIA V2] Navegando para https://www.totalcorner.com/match/live ...");
-        const response = await page.goto('https://www.totalcorner.com/match/live', {
+        console.log("🌐 Acessando TotalCorner...");
+        await page.goto('https://www.totalcorner.com/match/live', {
             waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        const status = response ? response.status() : 'Sem Resposta';
-        const titulo = await page.title();
+        console.log("⏳ Aguardando 7 segundos para carregamento total das tabelas...");
+        await new Promise(r => setTimeout(r, 7000));
 
-        console.log(`📡 [HTTP STATUS]: ${status}`);
-        console.log(`📄 [PÁGINA TÍTULO]: "${titulo}"`);
+        // Extrai dados diretamente das tabelas confirmadas no diagnóstico (#home_page_corner e #featured_match_table)
+        const partidas = await page.evaluate(() => {
+            const resultados = [];
+            const selector = '#home_page_corner tbody tr, #featured_match_table tbody tr, table.match_table tbody tr';
+            const linhas = document.querySelectorAll(selector);
 
-        console.log("⏳ Aguardando 8 segundos para renderização do DOM...");
-        await new Promise(r => setTimeout(r, 8000));
+            linhas.forEach(tr => {
+                if (tr.querySelector('th') || tr.cells.length < 4) return;
 
-        // Analisa o DOM da página em busca de tabelas e IDs
-        const diagnosticoDOM = await page.evaluate(() => {
-            const tabelas = Array.from(document.querySelectorAll('table')).map(t => ({
-                id: t.id || 'sem-id',
-                classes: t.className || 'sem-classe',
-                qtdLinhas: t.querySelectorAll('tr').length
-            }));
+                const colunas = Array.from(tr.querySelectorAll('td')).map(td => td.innerText ? td.innerText.trim() : '');
+                
+                // Filtra apenas linhas que contêm informações de jogos
+                if (colunas.length >= 4) {
+                    const textoLinha = colunas.join(' | ');
+                    
+                    // Procura indicar tempo/minuto ou ao vivo
+                    if (/\d+['"]|HT|Live|Min/i.test(textoLinha) || colunas.some(c => /^\d+$/.test(c))) {
+                        resultados.push({
+                            dadosBrutos: colunas,
+                            resumo: textoLinha.replace(/\n/g, ' ')
+                        });
+                    }
+                }
+            });
 
-            const idsPartidas = Array.from(document.querySelectorAll('[data-match_id], tr[id]')).slice(0, 5).map(el => ({
-                tag: el.tagName,
-                id: el.id,
-                dataMatchId: el.getAttribute('data-match_id'),
-                textoAmos: el.innerText ? el.innerText.replace(/\s+/g, ' ').trim().substring(0, 100) : ''
-            }));
-
-            const corpoTexto = document.body ? document.body.innerText.substring(0, 500).replace(/\s+/g, ' ') : '';
-
-            return {
-                tabelas,
-                idsPartidas,
-                previewPagina: corpoTexto
-            };
+            return resultados;
         });
 
-        console.log("\n--- 📊 RESULTADO DA AUDITORIA ---");
-        console.log(`📋 Tabelas Encontradas:`, JSON.stringify(diagnosticoDOM.tabelas, null, 2));
-        console.log(`🔍 Amostra de Elementos de Jogos:`, JSON.stringify(diagnosticoDOM.idsPartidas, null, 2));
-        console.log(`📝 Preview do Texto da Página:`, diagnosticoDOM.previewPagina);
-        console.log(`🌐 Chamadas de Rede Relevantes (Últimas 10):`, urlsSolicitadas.slice(-10));
-        console.log("---------------------------------\n");
+        console.log(`⚽ [Bot TC] Partidas encontradas nas tabelas: ${partidas.length}`);
 
-        await bot.sendMessage(CHAT_ID, `🔍 *[Auditoria V2 Completa]*\nStatus HTTP: \`${status}\`\nTítulo: *${titulo}*\nConsulte o console do Render para ver a estrutura interna!`, { parse_mode: 'Markdown' }).catch(()=>{});
+        if (partidas.length > 0) {
+            let enviados = 0;
+            let novoHistorico = {};
+
+            // Envia amostra das partidas ativas para o Telegram
+            for (let i = 0; i < Math.min(partidas.length, 20); i++) {
+                let p = partidas[i];
+                enviados++;
+
+                let textoCard = p.resumo.length > 250 ? p.resumo.substring(0, 250) + "..." : p.resumo;
+
+                let card = `🛸 <code>[ RADAR TOTALCORNER // AO VIVO ]</code> ⚡\n`;
+                card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+                card += `📌 <b>DADOS DA PARTIDA:</b>\n`;
+                card += `<code>${textoCard}</code>\n`;
+                card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+                card += `🤖 <i>Monitoramento em tempo real</i>`;
+
+                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(()=>{});
+                await new Promise(r => setTimeout(r, 600)); 
+            }
+
+            console.log(`✅ ${enviados} alertas enviados com sucesso para o Telegram!`);
+        } else {
+            console.log("⚠️ Nenhuma partida ao vivo detectada no momento da varredura.");
+        }
 
     } catch (error) {
-        console.error("❌ Erro na auditoria v2:", error.message);
-        bot.sendMessage(CHAT_ID, `❌ *Erro na Auditoria V2:* ${error.message}`, { parse_mode: 'Markdown' }).catch(()=>{});
+        console.error("❌ Erro na varredura:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Executa o diagnóstico uma vez ao iniciar e repete a cada 10 minutos
-setInterval(investigacaoProfunda, 600000);
-investigacaoProfunda();
+// Executa a cada 5 minutos (300.000 ms)
+setInterval(executarRadarTotalCorner, 300000);
+executarRadarTotalCorner();
