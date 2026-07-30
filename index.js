@@ -9,17 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V36 Pré-Live Oficial ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V37 Ao Vivo Real ⚡</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarV36() {
+async function executarRadarV37() {
     let browser = null;
     try {
-        console.log("⚽ [Bot V36] Acessando a tabela oficial de jogos do dia no TotalCorner...");
+        console.log("⚡ [Bot V37 - AO VIVO REAL] Acessando a página de jogos ao vivo...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -35,15 +35,17 @@ async function executarRadarV36() {
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
 
-        console.log("🌐 Acessando https://www.totalcorner.com/match/today ...");
-        await page.goto('https://www.totalcorner.com/match/today', {
+        console.log("🌐 Acessando https://www.totalcorner.com/match/live ...");
+        await page.goto('https://www.totalcorner.com/match/live', {
             waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        await new Promise(r => setTimeout(r, 5000));
+        // O pulo do gato: A página ao vivo injeta os dados via JS/AJAX. Aguardamos 8 segundos para garantir o preenchimento da tabela.
+        console.log("⏳ Aguardando carregamento dinâmico dos dados ao vivo...");
+        await new Promise(r => setTimeout(r, 8000));
 
-        const jogosDoDia = await page.evaluate(() => {
+        const jogosAoVivo = await page.evaluate(() => {
             const lista = [];
             const trs = Array.from(document.querySelectorAll('tr'));
 
@@ -58,12 +60,26 @@ async function executarRadarV36() {
 
                 const textoLinha = tr.innerText || '';
 
-                // Extrai Horário (ex: 14:00)
-                const horaMatch = textoLinha.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
-                const horario = horaMatch ? horaMatch[0] : 'Hoje';
+                // Minuto / Tempo de Jogo Ao Vivo
+                let tempoJogo = "Ao Vivo";
+                const matchMinuto = textoLinha.match(/\b([0-9]{1,2})['′]/);
+                if (matchMinuto) {
+                    tempoJogo = `${matchMinuto[1]}' min`;
+                } else if (textoLinha.includes('HT') || textoLinha.includes('Half') || textoLinha.includes('Intervalo')) {
+                    tempoJogo = "Intervalo (HT)";
+                } else {
+                    const tds = Array.from(tr.querySelectorAll('td'));
+                    for (const td of tds) {
+                        const txt = td.innerText.trim();
+                        if (/^\d{1,2}'$/.test(txt) || txt === 'HT' || txt === '2H' || txt === '1H') {
+                            tempoJogo = txt;
+                            break;
+                        }
+                    }
+                }
 
-                // Extrai Liga procurando o link da liga ou subindo no HTML
-                let ligaNome = "Partidas do Dia";
+                // Liga
+                let ligaNome = "Ao Vivo";
                 const leagueLink = tr.querySelector('a[href*="/league/"]');
                 if (leagueLink && leagueLink.innerText.trim()) {
                     ligaNome = leagueLink.innerText.trim();
@@ -80,27 +96,36 @@ async function executarRadarV36() {
                 }
                 ligaNome = ligaNome.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
 
-                // Extrai Linha de Canto e Média se houver nas colunas (td)
-                let linhaCanto = "N/I";
-                let mediaCanto = "N/I";
-                
+                // Placar Ao Vivo
+                let placar = "0 - 0";
+                const matchScore = textoLinha.match(/\b(\d+)\s*[-:]\s*(\d+)\b/);
+                if (matchScore) {
+                    placar = `${matchScore[1]} - ${matchScore[2]}`;
+                }
+
+                // Escanteios Ao Vivo
+                let escanteios = "0 - 0";
                 const tds = Array.from(tr.querySelectorAll('td'));
-                tds.forEach(td => {
+                for (const td of tds) {
                     const txt = td.innerText.trim();
-                    // Procura padrão de linha de escanteio (ex: 8.5, 9.5, 10.5)
-                    if (/^(?:[7-9]|1[0-2])\.[05]$/.test(txt)) {
-                        if (linhaCanto === "N/I") linhaCanto = txt;
-                        else if (mediaCanto === "N/I") mediaCanto = txt;
+                    const matchCantos = txt.match(/^(\d+)\s*[-:]\s*(\d+)$/);
+                    if (matchCantos) {
+                        const cA = parseInt(matchCantos[1]);
+                        const cB = parseInt(matchCantos[2]);
+                        if (cA + cB <= 35) {
+                            escanteios = `${cA} - ${cB} (Total: ${cA + cB})`;
+                            break;
+                        }
                     }
-                });
+                }
 
                 lista.push({
                     timeA: timeA,
                     timeB: timeB,
-                    horario: horario,
+                    tempo: tempoJogo,
                     liga: ligaNome,
-                    linhaCanto: linhaCanto,
-                    mediaCanto: mediaCanto
+                    placar: placar,
+                    escanteios: escanteios
                 });
             });
 
@@ -118,52 +143,51 @@ async function executarRadarV36() {
             return unicos;
         });
 
-        console.log(`✅ [Bot V36] Total de confrontos extraídos com sucesso: ${jogosDoDia.length}`);
+        console.log(`⚡ [Bot V37] Total de jogos AO VIVO extraídos: ${jogosAoVivo.length}`);
 
-        if (jogosDoDia.length > 0) {
-            let headerMsg = `⚽ <b>[ RADAR V36 // CONFRONTOS DO DIA ]</b> 🎯\n`;
+        if (jogosAoVivo.length > 0) {
+            let headerMsg = `⚡ <b>[ RADAR AO VIVO V37 // EM TEMPO REAL ]</b> ⚽\n`;
             headerMsg += `────────────────────────\n`;
-            headerMsg += `📊 <b>Total de Jogos Carregados:</b> <code>${jogosDoDia.length}</code>\n`;
+            headerMsg += `🔥 <b>Jogos Ao Vivo Encontrados:</b> <code>${jogosAoVivo.length}</code>\n`;
             headerMsg += `────────────────────────`;
 
             await bot.sendMessage(CHAT_ID, headerMsg, { parse_mode: 'HTML' }).catch(() => {});
             await new Promise(r => setTimeout(r, 1000));
 
-            // Envia os primeiros 15 jogos para o Telegram
-            const limite = Math.min(jogosDoDia.length, 15);
+            const limite = Math.min(jogosAoVivo.length, 15);
             for (let i = 0; i < limite; i++) {
-                const j = jogosDoDia[i];
+                const j = jogosAoVivo[i];
 
-                let card = `⚽ <b>JOGO #${i + 1} de ${jogosDoDia.length}</b>\n`;
+                let card = `⚡ <b>JOGO AO VIVO #${i + 1} de ${jogosAoVivo.length}</b>\n`;
                 card += `────────────────────────\n`;
                 card += `🏆 <b>Liga:</b> <code>${j.liga}</code>\n`;
-                card += `⏰ <b>Horário:</b> <code>${j.horario}</code>\n\n`;
+                card += `⏱️ <b>Tempo:</b> <code>${j.tempo}</code>\n\n`;
                 card += `🏠 <b>${j.timeA}</b>\n`;
                 card += `   <b>VS</b>\n`;
                 card += `✈️ <b>${j.timeB}</b>\n`;
                 card += `────────────────────────\n`;
-                card += `🚩 <b>Linha de Canto:</b> <code>${j.linhaCanto}</code>\n`;
-                card += `📊 <b>Média Estimada:</b> <code>${j.mediaCanto}</code>\n`;
+                card += `⚽ <b>Placar:</b> <code>${j.placar}</code>\n`;
+                card += `🚩 <b>Escanteios:</b> <code>${j.escanteios}</code>\n`;
                 card += `────────────────────────\n`;
-                card += `🤖 <i>Samuel Mega Bot • V36 Pré-Live</i>`;
+                card += `🤖 <i>Samuel Mega Bot • V37 Ao Vivo Real</i>`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
                 await new Promise(r => setTimeout(r, 600));
             }
 
-            console.log(`🚀 ${limite} cards enviados para o seu Telegram com sucesso!`);
+            console.log(`✅ ${limite} cards ao vivo enviados com sucesso para o Telegram!`);
         } else {
-            await bot.sendMessage(CHAT_ID, `⚠️ <b>[V36]</b> Nenhum jogo encontrado na tabela do dia.`, { parse_mode: 'HTML' }).catch(() => {});
+            await bot.sendMessage(CHAT_ID, `⚠️ <b>[V37]</b> Nenhum jogo ao vivo rolando no momento da varredura.`, { parse_mode: 'HTML' }).catch(() => {});
         }
 
     } catch (error) {
-        console.error("❌ Erro no Radar V36:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V36:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro no Radar V37:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V37:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Roda a cada 30 minutos
-setInterval(executarRadarV36, 1800000);
-executarRadarV36();
+// Roda a cada 3 minutos para manter atualizado
+setInterval(executarRadarV37, 180000);
+executarRadarV37();
