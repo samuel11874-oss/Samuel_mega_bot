@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Passo 2 TotalCorner ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Passo 3 TotalCorner ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function passo2TotalCorner() {
+async function passo3TotalCorner() {
     let browser = null;
     try {
-        console.log("🏁 [Passo 2] Iniciando navegador com argumentos de segurança para o Render...");
+        console.log("🏁 [Passo 3] Iniciando varredura de linhas na página...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -38,18 +38,44 @@ async function passo2TotalCorner() {
             timeout: 60000
         });
 
-        const titulo = await page.title();
-        console.log(`📄 Título da página obtido: ${titulo}`);
+        console.log("⏳ Aguardando os elementos da tabela carregarem...");
+        await page.waitForSelector('tr', { timeout: 20000 }).catch(() => {});
+        await new Promise(r => setTimeout(r, 4000));
 
-        await bot.sendMessage(CHAT_ID, `🏁 <b>[Passo 2]</b> Navegador aberto com sucesso!\n📄 Título: <code>${titulo}</code>`, { parse_mode: 'HTML' });
+        // Extrai todas as linhas de texto encontradas nas tabelas
+        const linhasEncontradas = await page.evaluate(() => {
+            const lista = [];
+            const trs = document.querySelectorAll('tr');
+            trs.forEach((tr, index) => {
+                const texto = tr.innerText.replace(/\s+/g, ' ').trim();
+                if (texto.length > 5) {
+                    lista.push(`[${index}] ${texto}`);
+                }
+            });
+            return lista;
+        });
+
+        console.log(`📊 Total de linhas capturadas: ${linhasEncontradas.length}`);
+
+        let mensagem = `🏁 <b>[Passo 3]</b> Linhas capturadas: <code>${linhasEncontradas.length}</code>\n\n`;
+        if (linhasEncontradas.length > 0) {
+            // Mostra uma amostra das primeiras linhas no Telegram
+            for (let i = 0; i < Math.min(5, linhasEncontradas.length); i++) {
+                mensagem += `🔹 <code>${linhasEncontradas[i].substring(0, 100)}</code>\n`;
+            }
+        } else {
+            mensagem += `❌ Nenhuma linha encontrada na tabela.`;
+        }
+
+        await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'HTML' });
 
     } catch (error) {
-        console.error("❌ Erro no Passo 2:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro Passo 2:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro no Passo 3:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro Passo 3:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
 // Executa para validar
-passo2TotalCorner();
+passo3TotalCorner();
