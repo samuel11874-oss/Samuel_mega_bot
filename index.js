@@ -9,19 +9,17 @@ const TelegramBot = require('node-telegram-bot-api');
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Monitor Ao Vivo Mobile ⚽🔥</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigação Ao Vivo ⚽🔥</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-let jogosEnviadosSet = new Set();
-
 async function buscarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ [Bot Ao Vivo Mobile] Acessando Soccerway no modo mobile...");
+        console.log("🕵️‍♂️ [Investigação Ao Vivo] Iniciando navegador mobile...");
         
         browser = await puppeteer.launch({
             headless: true,
@@ -37,79 +35,75 @@ async function buscarJogosAoVivo() {
 
         const page = await browser.newPage();
         
-        // Configura user-agent e viewport de celular para forçar o layout mobile correto
+        // Força o ambiente mobile idêntico ao seu celular
         await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36');
         await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
 
         const urlLive = 'https://us.soccerway.com/matches/live/';
-        console.log(`🌐 [Bot Ao Vivo Mobile] URL: ${urlLive}`);
+        console.log(`🌐 Acessando URL direta: ${urlLive}`);
 
         await page.goto(urlLive, {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando renderização dos jogos ao vivo...");
-        await new Promise(r => setTimeout(r, 8000));
+        console.log("⏳ Aguardando carregamento dos dados da página...");
+        await new Promise(r => setTimeout(r, 9000));
 
+        // Executa a extração investigativa focada na estrutura real do Soccerway Mobile
         const partidas = await page.evaluate(() => {
             const resultados = [];
-            let ligaAtual = 'AO VIVO';
+            let ligaAtual = 'COMPETIÇÃO AO VIVO';
 
-            // Seleciona todos os blocos de linhas/itens da versão mobile
-            const blocos = document.querySelectorAll('tr, div, li');
+            const elementos = document.querySelectorAll('tr, div');
 
-            blocos.forEach(el => {
+            elementos.forEach(el => {
                 const txt = el.innerText ? el.innerText.trim() : '';
-                if (!txt || txt.length < 5 || txt.length > 300) return;
+                if (!txt || txt.length < 5) return;
 
-                // Detecta se é cabeçalho de liga/competição na versão mobile
-                if (el.className.includes('competition') || el.className.includes('group') || el.className.includes('header') || (el.querySelector('img') && txt.length < 50 && !txt.includes("'"))) {
-                    if (txt.length < 60) {
+                // Detecta se é o nome da liga/país
+                if (el.className.includes('competition') || el.className.includes('group') || el.className.includes('header') || (el.querySelector('img') && txt.length < 50 && !/\d+'/.test(txt))) {
+                    if (txt.length < 60 && !txt.includes('-')) {
                         ligaAtual = txt.replace(/\n/g, ' - ');
                     }
                     return;
                 }
 
-                // Identifica se a linha possui tempo de jogo (ex: 79', HT, FT) ou placar (ex: 4 - 2)
-                const temTempo = /\d+'|HT|FT/i.test(txt);
+                // Procura por linhas que contenham minuto (ex: 79', 74') ou placar (ex: 4 - 2, 0 - 0)
+                const temMinuto = /\d+'/.test(txt) || /HT|FT/i.test(txt);
                 const temPlacar = /\d+\s*-\s*\d+/.test(txt);
 
-                if (temTempo || temPlacar) {
+                if (temMinuto || temPlacar) {
                     const linhas = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-
+                    
                     let tempo = 'AO VIVO';
                     let placar = '0 x 0';
-                    const nomesTimes = [];
+                    const times = [];
 
                     linhas.forEach(l => {
                         if (/^\d+'$|^HT$|^FT$/i.test(l)) {
                             tempo = l;
                         } else if (/^\d+\s*-\s*\d+$/.test(l)) {
                             placar = l;
-                        } else if (l.length > 2 && !/^\d+$/.test(l) && !/usa|brazil|argentina|mexico/i.test(l)) {
-                            nomesTimes.push(l);
+                        } else if (l.length > 2 && !/^\d+$/.test(l) && !/usa|brazil|argentina|mexico|colombia|chile/i.test(l)) {
+                            times.push(l);
                         }
                     });
 
-                    if (nomesTimes.length >= 2) {
-                        let timeA = nomesTimes[0];
-                        let timeB = nomesTimes[1];
-
-                        if (timeA && timeB && timeA !== timeB) {
-                            resultados.push({
-                                liga: ligaAtual,
-                                tempo: tempo,
-                                timeA: timeA,
-                                timeB: timeB,
-                                placar: placar
-                            });
-                        }
+                    if (times.length >= 2) {
+                        resultados.push({
+                            liga: ligaAtual,
+                            tempo: tempo,
+                            timeA: times[0],
+                            timeB: times[1],
+                            placar: placar,
+                            bruto: txt
+                        });
                     }
                 }
             });
 
-            // Remove duplicatas
+            // Remove duplicatas exatas baseadas nos times
             const unicas = [];
             const vistas = new Set();
             resultados.forEach(m => {
@@ -123,17 +117,14 @@ async function buscarJogosAoVivo() {
             return unicas;
         });
 
-        console.log(`⚽ [Bot Ao Vivo Mobile] Partidas ativas encontradas: ${partidas.length}`);
+        console.log(`⚽ [Investigação] Partidas encontradas: ${partidas.length}`);
+        console.log("📝 Dados capturados:", JSON.stringify(partidas, null, 2));
 
         if (partidas.length > 0) {
-            let novosEnviados = 0;
-
             for (let i = 0; i < partidas.length; i++) {
                 let p = partidas[i];
-                novosEnviados++;
-
-                let card = `⚡ *Partida Ao Vivo [${novosEnviados}]*\n`;
-                card += `🏆 *Competição:* \`${p.liga}\`\n`;
+                let card = `🔥 *Jogo Ao Vivo [${i + 1}]*\n`;
+                card += `🏆 *Liga:* \`${p.liga}\`\n`;
                 card += `────────────────────\n`;
                 card += `⏱ *Tempo:* \`${p.tempo}\`\n`;
                 card += `⚽ **${p.timeA}** x **${p.timeB}**\n`;
@@ -141,17 +132,15 @@ async function buscarJogosAoVivo() {
                 card += `────────────────────`;
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'Markdown' }).catch(()=>{});
-                await new Promise(r => setTimeout(r, 600));
+                await new Promise(r => setTimeout(r, 700));
             }
-
-            console.log(`✅ [Bot Ao Vivo Mobile] ${novosEnviados} partidas enviadas para o Telegram.`);
-
+            console.log(`✅ [Investigação] Todos os ${partidas.length} jogos enviados ao Telegram com sucesso!`);
         } else {
-            console.log("⚠️ Nenhuma partida ao vivo encontrada na varredura mobile.");
+            console.log("⚠️ A investigação não encontrou partidas. Verifique os logs acima.");
         }
 
     } catch (error) {
-        console.error("❌ Erro crítico no monitor ao vivo mobile:", error.message);
+        console.error("❌ Erro na investigação:", error.message);
     } finally {
         if (browser) await browser.close();
     }
