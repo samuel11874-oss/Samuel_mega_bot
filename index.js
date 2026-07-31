@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Placar e Ligas ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Formato Limpo Final ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,10 +23,10 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerEEnviarComPlacar() {
+async function varrerEEnviarLimpoFinal() {
     let browser = null;
     try {
-        console.log("⚡ [Radar com Placar] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar Limpo Final] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -83,41 +83,50 @@ async function varrerEEnviarComPlacar() {
             if (jogosEnviadosCache.has(chaveUnica)) continue;
             jogosEnviadosCache.add(chaveUnica);
 
-            // Extração do Tempo
+            // 1. Extração correta do Tempo
             let matchTempo = blocoTexto.match(/(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT)/i);
             let tempoJogo = matchTempo ? traduzirTempo(matchTempo[0]) : "Ao Vivo";
 
-            // Extração da Liga
+            // 2. Extração limpa e real da Liga (separa antes dos dois pontos ou pega a linha inicial)
             let liga = "Futebol Ao Vivo";
-            let linhas = blocoTexto.split('\n');
-            if (linhas.length > 0 && linhas[0].length > 3 && !/\d/.test(linhas[0])) {
-                liga = linhas[0].trim();
+            if (blocoTexto.includes(':')) {
+                let partes = blocoTexto.split(':');
+                if (partes[0].length > 2 && partes[0].length < 40) {
+                    liga = partes[0].trim();
+                }
             }
 
-            // Tentativa de extração inteligente do Placar (procura por dois números isolados que representam os gols)
+            // 3. Extração limpa do Placar
             let matchPlacar = blocoTexto.match(/\b([0-9])\b\s*[-–—]\s*\b([0-9])\b/);
             let placarJogo = matchPlacar ? `${matchPlacar[1]} x ${matchPlacar[2]}` : "0 x 0";
 
-            // Isola os times limpando o lixo, odds e o próprio placar capturado
-            let timesConfronto = blocoTexto
+            // 4. Limpeza cirúrgica para isolar apenas os dois times (ex: Real Madrid x Barcelona)
+            let textoLimpo = blocoTexto
                 .replace(liga, '')
+                .replace(/[:]/g, '')
                 .replace(/(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT)/g, '')
                 .replace(/\d+%\s*\d+\s*\d+/g, '')
                 .replace(/\b[0-9]\b\s*[-–—]\s*\b[0-9]\b/g, '')
                 .replace(/\b\d+\b/g, '')
+                .replace(/[%]/g, '')
                 .replace(/[-–—]+/g, 'x')
                 .replace(/\s+/g, ' ')
                 .trim();
 
-            if (!timesConfronto || timesConfronto.length < 3) {
-                timesConfronto = blocoTexto;
-            }
+            // Tenta organizar os times dividindo pelo 'x' ou limpando repetições indesejadas
+            let partesTimes = textoLimpo.split(' x ');
+            let timeA = partesTimes[0] ? partesTimes[0].trim() : "";
+            let timeB = partesTimes[1] ? partesTimes[1].trim() : "";
 
-            // Montagem do card estilizado com Troféu, Relógio, Espadas e o Placar em destaque
+            // Se limpou demais ou ficou vazio, usa uma alternativa limpa
+            let confrontoFinal = (timeA && timeB) ? `${timeA} x ${timeB}` : textoLimpo;
+            if (!confrontoFinal || confrontoFinal.length < 3) continue;
+
+            // Montagem final do card perfeito
             let cardTelegram = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
             cardTelegram += `🏆 <b>Liga:</b> ${liga}\n`;
             cardTelegram += `⏱ <b>Tempo:</b> ${tempoJogo}\n`;
-            cardTelegram += `⚔️ <b>Confronto:</b> <code>${timesConfronto}</code>\n`;
+            cardTelegram += `⚔️ <b>Confronto:</b> <code>${confrontoFinal}</code>\n`;
             cardTelegram += `⚽ <b>Placar:</b> <b>${placarJogo}</b>`;
 
             await bot.sendMessage(CHAT_ID, cardTelegram, { parse_mode: 'HTML' }).catch(() => {});
@@ -125,7 +134,7 @@ async function varrerEEnviarComPlacar() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards com placar enviados.`);
+        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards limpos enviados.`);
 
     } catch (erro) {
         console.error("❌ Erro na varredura:", erro.message);
@@ -134,5 +143,5 @@ async function varrerEEnviarComPlacar() {
     }
 }
 
-varrerEEnviarComPlacar();
-setInterval(varrerEEnviarComPlacar, 180000);
+varrerEEnviarLimpoFinal();
+setInterval(varrerEEnviarLimpoFinal, 180000);
