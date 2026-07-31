@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot de Escanteios - SokkerPRO ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Cards Organizados ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -18,7 +18,7 @@ const jogosEnviados = new Set();
 async function monitorarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("⚡ Iniciando varredura no SokkerPRO...");
+        console.log("⚡ Iniciando varredura organizada no SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -46,21 +46,25 @@ async function monitorarJogosAoVivo() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
+        // Extração cirúrgica para quebrar a página em partidas individuais limpas
         const partidas = await page.evaluate(() => {
             const lista = [];
-            const blocos = document.querySelectorAll('div, tr');
+            // Busca elementos menores que representam linhas ou cards individuais de jogos na versão mobile
+            const elementos = document.querySelectorAll('div');
 
-            blocos.forEach(el => {
+            elementos.forEach(el => {
                 const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
 
-                if ((texto.includes(' - ') || texto.includes(':')) && texto.length > 10 && texto.length < 350) {
+                // Valida se o bloco possui estrutura de um único jogo (contém confronto e status ao vivo)
+                if ((texto.includes(' - ') || texto.includes(':')) && texto.length > 15 && texto.length < 200) {
                     const textoLower = texto.toLowerCase();
                     const aoVivo = /\b(ht|ft|\d{1,2}\s*['′])\b/i.test(textoLower);
                     const sub = /sub\s*-?(19|20|21)|u\s*-?(19|20|21)/i.test(textoLower);
                     const fem = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(textoLower);
 
-                    if (aoVivo && !sub && !fem) {
-                        const chave = texto.substring(0, 35);
+                    // Garante que é um card unitário de jogo ao vivo válido
+                    if (aoVivo && !sub && !fem && !texto.includes('TODOS') && !texto.includes('AO VIVO')) {
+                        const chave = texto.substring(0, 30);
                         if (!lista.some(p => p.chave === chave)) {
                             lista.push({ chave, texto });
                         }
@@ -73,35 +77,25 @@ async function monitorarJogosAoVivo() {
 
         const novasPartidas = partidas.filter(p => !jogosEnviados.has(p.chave));
 
-        console.log(`📊 Encontrados: ${partidas.length} | Novos para envio: ${novasPartidas.length}`);
+        console.log(`📊 Jogos unitários encontrados: ${partidas.length} | Novos para envio: ${novasPartidas.length}`);
 
         if (novasPartidas.length > 0) {
-            let mensagem = `⚽ <b>RADAR AO VIVO - SOLETA</b>\n`;
-            mensagem += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-
             let contador = 1;
             for (const partida of novasPartidas) {
                 jogosEnviados.add(partida.chave);
 
-                let card = `🔴 <b>Partida #${contador}</b>\n`;
-                card += `<code>${partida.texto}</code>\n`;
-                card += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-                
-                if ((mensagem.length + card.length) > 3800) {
-                    await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'HTML' }).catch(() => {});
-                    await new Promise(r => setTimeout(r, 1000));
-                    mensagem = `⚽ <b>CONTINUAÇÃO</b>\n━━━━━━━━━━━━━━━━━━━━━━\n\n` + card;
-                } else {
-                    mensagem += card;
-                }
+                // Cada partida é enviada em seu próprio card isolado, limpo e moderno
+                let card = `⚽ <b>RADAR SOKKERPRO</b>\n`;
+                card += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+                card += `🔴 <b>Status / Minuto:</b> ${partida.texto}\n`;
+                card += `━━━━━━━━━━━━━━━━━━━━━━`;
+
+                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
+                await new Promise(r => setTimeout(r, 1200)); // Intervalo curto para evitar flood no Telegram
                 contador++;
             }
 
-            if (mensagem.trim().length > 0) {
-                await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'HTML' }).catch(() => {});
-            }
-
-            console.log("✅ Alerta enviado com sucesso ao Telegram!");
+            console.log("✅ Cards individuais enviados com sucesso ao Telegram!");
         }
 
     } catch (erro) {
