@@ -6,20 +6,20 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - V66 Oficial ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V67 Ao Vivo ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-// Memória global para evitar repetir jogos já enviados enquanto estiverem ativos
+// Memória para garantir que NUNCA vamos repetir um jogo já enviado
 const jogosJaEnviados = new Set();
 
-async function executarRadarV66() {
+async function executarRadarV67() {
     let browser = null;
     try {
-        console.log("⚡ [Radar V66] Varrendo apenas jogos legítimos em andamento...");
+        console.log("⚡ [Radar V67] Iniciando varredura de jogos ao vivo...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -35,12 +35,13 @@ async function executarRadarV66() {
 
         const page = await browser.newPage();
         
-        console.log("🌐 Acessando TotalCorner...");
+        console.log("🌐 Acessando https://www.totalcorner.com/pt/match/live ...");
         await page.goto('https://www.totalcorner.com/pt/match/live', {
             waitUntil: 'networkidle0',
             timeout: 60000
         });
 
+        console.log("⏳ Aguardando carregamento e rolando a página...");
         await new Promise(r => setTimeout(r, 6000));
 
         for (let i = 0; i < 4; i++) {
@@ -48,54 +49,45 @@ async function executarRadarV66() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
+        // Extração direta de todas as linhas de partidas ativas na página live
         const partidasAoVivo = await page.evaluate(() => {
-            const validasSet = new Set();
-            const blocos = document.querySelectorAll('tr, div.match-row');
+            const unicasSet = new Set();
+            const linhas = document.querySelectorAll('tr, div.match-row');
 
-            blocos.forEach(el => {
-                const textoRaw = el.innerText || '';
-                const texto = textoRaw.replace(/\s+/g, ' ').trim();
-                const textoLower = texto.toLowerCase();
+            linhas.forEach(el => {
+                const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
 
-                if (texto.length > 15 && (texto.includes('vs') || texto.includes(' - '))) {
-                    const htmlInner = el.innerHTML.toLowerCase();
+                // Verifica se é uma linha de confronto válida
+                if ((texto.includes('vs') || texto.includes(' - ')) && texto.length > 15 && texto.length < 600) {
+                    const textoLower = texto.toLowerCase();
 
-                    // Critério rigoroso: O TotalCorner insere classes de andamento ou marcações de tempo real
-                    const temAndamentoReal = htmlInner.includes('match_status_') || 
-                                              htmlInner.includes('class="time') || 
-                                              htmlInner.includes('cronometro') ||
-                                              /\d{1,2}\s*['′]|ht|1ºt|2ºt/i.test(textoLower);
+                    // Filtros para barrar Sub-19/20 e Feminino
+                    const ehSub19ou20 = /sub\s*-?(19|20|21)|u\s*-?(19|20|21)/i.test(textoLower);
+                    const ehFeminino = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(textoLower);
 
-                    // Bloqueia explicitamente se contiver o padrão de data futura na linha (ex: 07/31 16:00)
-                    const temDataFutura = /\d{2}\/\d{2}\s\d{2}:\d{2}/.test(texto);
-
-                    // Filtros de base e feminino
-                    const ehSub = /sub\s*-?(19|20|21|23)|u\s*-?(19|20|21|23)/i.test(textoLower);
-                    const ehFem = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(textoLower);
-
-                    if (temAndamentoReal && !temDataFutura && !ehSub && !ehFem) {
-                        validasSet.add(texto);
+                    if (!ehSub19ou20 && !ehFeminino) {
+                        unicasSet.add(texto);
                     }
                 }
             });
 
-            return Array.from(validasSet);
+            return Array.from(unicasSet);
         });
 
-        // Filtra para remover o que já foi enviado anteriormente
+        // Filtra para pegar apenas os jogos que AINDA NÃO foram enviados
         const novasPartidas = partidasAoVivo.filter(partida => !jogosJaEnviados.has(partida));
 
-        console.log(`📊 Jogos encontrados agora: ${partidasAoVivo.length} | Novos para envio: ${novasPartidas.length}`);
+        console.log(`📊 Jogos encontrados: ${partidasAoVivo.length} | Novos para envio: ${novasPartidas.length}`);
 
         if (novasPartidas.length > 0) {
-            let mensagem = `🔴 <b>[RADAR TOTALCORNER - NOVOS AO VIVO]</b>\n`;
-            mensagem += `🔥 Partidas inéditas detectadas: <code>${novasPartidas.length}</code>\n\n`;
+            let mensagem = `🔴 <b>[RADAR TOTALCORNER - AO VIVO]</b>\n`;
+            mensagem += `🔥 Novas partidas detectadas: <code>${novasPartidas.length}</code>\n\n`;
 
             let blocoAtual = mensagem;
             let contador = 1;
 
             for (const partida of novasPartidas) {
-                // Adiciona na memória de enviados para nunca mais repetir
+                // Adiciona na memória para nunca mais repetir este jogo
                 jogosJaEnviados.add(partida);
 
                 let linhaJogo = `⏱ <b>#${contador} [AO VIVO]</b>\n<code>${partida}</code>\n\n`;
@@ -113,17 +105,19 @@ async function executarRadarV66() {
             if (blocoAtual.trim().length > 0) {
                 await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
             }
-            console.log("✅ Novos jogos enviados ao Telegram com sucesso!");
+
+            console.log("✅ Relatório de novos jogos enviado com sucesso ao Telegram!");
         } else {
-            console.log("ℹ️ Nenhum jogo novo encontrado nesta varredura (todos já foram enviados).");
+            console.log("ℹ️ Nenhum jogo novo encontrado nesta varredura.");
         }
 
     } catch (error) {
-        console.error("❌ Erro V66:", error.message);
+        console.error("❌ Erro V67:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V67:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarV66();
-setInterval(executarRadarV66, 180000);
+executarRadarV67();
+setInterval(executarRadarV67, 180000);
