@@ -1,12 +1,10 @@
-const path = require('path');
-process.env.PUPPETEER_CACHE_DIR = path.join(__dirname, '.cache');
-
 const express = require('express');
-const puppeteer = require('puppeteer');
+const axios = require('axios');
+const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Seletor DOM ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Ultra Rápido ⚽🚩</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -22,127 +20,103 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerPorDOM() {
-    let browser = null;
+async function varrerRapidinho() {
     try {
-        console.log("⚡ [Scanner DOM] Conectando ao SokkerPRO...");
+        console.log("⚡ [Scanner Rápido] Buscando dados do SokkerPRO...");
 
-        browser = await puppeteer.launch({
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--no-zygote',
-                '--single-process'
-            ]
+        const response = await axios.get('https://m.sokkerpro.com/', {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+                'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
+            },
+            timeout: 15000
         });
 
-        const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
+        const $ = cheerio.load(response.data);
+        let textos = [];
 
-        await page.goto('https://m.sokkerpro.com/', {
-            waitUntil: 'networkidle2',
-            timeout: 120000
+        // Extrai todo o texto visível da página de forma estruturada
+        $('body').find('*').each((_, element) => {
+            let childText = $(element).clone().children().remove().end().text().trim();
+            if (childText && childText.length > 0 && childText !== '-' && childText !== 'x') {
+                textos.push(childText);
+            }
         });
 
-        console.log("⏳ Aguardando carregamento dos elementos...");
-        await new Promise(r => setTimeout(r, 12000)); 
+        const isTime = (s) => /^\d{1,3}'/i.test(s) || /^(HT|FT|Intervalo)$/i.test(s);
+        let resultados = [];
+        let i = 0;
 
-        for (let i = 0; i < 6; i++) {
-            await page.evaluate(() => window.scrollBy(0, 800));
-            await new Promise(r => setTimeout(r, 1500));
+        while (i < textos.length) {
+            if (isTime(textos[i])) {
+                let matchData = {
+                    tempo: textos[i],
+                    league: (i > 0 && !textos[i-1].includes('%') && textos[i-1].length < 40) ? textos[i-1] : "Futebol Ao Vivo",
+                    textos: []
+                };
+                
+                for (let j = 1; j <= 20; j++) {
+                    if (i + j >= textos.length) break;
+                    if (isTime(textos[i + j])) break; 
+                    matchData.textos.push(textos[i + j]);
+                }
+                
+                resultados.push(matchData);
+                i += matchData.textos.length + 1;
+            } else {
+                i++;
+            }
         }
 
-        const partidasExtraidas = await page.evaluate(() => {
-            let listaJogos = [];
+        let processados = [];
+        for (let data of resultados) {
+            let items = data.textos;
+            let idxPorcentagem = items.findIndex(item => item.includes('%'));
             
-            // Varre o DOM buscando blocos que costumam conter as partidas
-            // Como sites mobile usam divs genéricas, vamos procurar elementos que contêm relógios de tempo (')
-            const allElements = document.querySelectorAll('div, span, p, a');
-            
-            allElements.forEach(el => {
-                let text = el.innerText ? el.innerText.trim() : '';
-                // Identifica se o elemento é o relógio de uma partida em Andamento ou Intervalo
-                if (/^\d{1,3}'$/.test(text) || text === 'HT' || text === 'Intervalo') {
-                    // Sobe na árvore de elementos para tentar encontrar o container principal da partida
-                    let container = el.closest('div');
-                    if (container && container.innerText.length > 20 && container.innerText.length < 500) {
-                        let blocoTexto = container.innerText;
-                        
-                        // Extração interna do bloco
-                        let linhas = blocoTexto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                        
-                        let tempo = text;
-                        let liga = "Futebol Ao Vivo";
-                        let times = [];
-                        let numeros = [];
-                        
-                        linhas.forEach(l => {
-                            if (/^\d{1,3}'$/.test(l) || l === 'HT' || l === 'Intervalo') return;
-                            if (l.includes('%')) return; // descarta posse
-                            if (l.includes('ODDS') || l.includes('PRE')) return;
-                            
-                            // Se for número puro com ponto decimal, é odd
-                            if (l.includes('.')) return;
-                            
-                            if (/^\d+$/.test(l)) {
-                                numeros.push(l);
-                            } else if (l.length > 2 && !l.includes('BOLIVIA') && !l.includes('BRAZIL') && !l.includes('ARGENTINA')) {
-                                times.push(l);
-                            }
-                        });
-                        
-                        if (times >= 2 || (times.length >= 2 && numeros.length >= 2)) {
-                            // Pega os dois primeiros times limpos
-                            let timeCasa = times[0];
-                            let timeFora = times[1];
-                            
-                            // Placar e Escanteios baseados nos números capturados no container
-                            let golsCasa = numeros.length > 0 ? numeros[0] : "0";
-                            let golsFora = numeros.length > 1 ? numeros.length > 3 ? numeros[1] : numeros[1] : "0";
-                            
-                            // Se o site joga os escanteios logo após os gols
-                            let escCasa = numeros.length > 2 ? numeros[2] : "0";
-                            let escFora = numeros.length > 3 ? numeros[3] : "0";
-                            
-                            let confrontoStr = `${timeCasa} x ${timeFora}`;
-                            
-                            // Evita duplicatas no mesmo bloco
-                            if (!listaJogos.some(j => j.confronto === confrontoStr)) {
-                                listaJogos.push({
-                                    liga: liga,
-                                    tempo: tempo,
-                                    confronto: confrontoStr,
-                                    placar: `${golsCasa} x ${golsFora}`,
-                                    escanteios: `${escCasa} x ${escFora}`
-                                });
-                            }
-                        }
+            if (idxPorcentagem > 0) {
+                let timeCasa = items[idxPorcentagem - 1];
+                let timeFora = items[idxPorcentagem + 1];
+                
+                if (!timeCasa || !timeFora) continue;
+                
+                let numerosApos = [];
+                for (let k = idxPorcentagem + 2; k < items.length; k++) {
+                    let val = items[k];
+                    if (val.includes('.')) break;
+                    if (/^\d+$/.test(val)) {
+                        numerosApos.push(val);
                     }
                 }
-            });
-            
-            return listaJogos;
-        });
+                
+                let golsCasa = numerosApos.length > 0 ? numerosApos[0] : "0";
+                let golsFora = numerosApos.length > 1 ? numerosApos[1] : "0";
+                let escCasa = numerosApos.length > 2 ? numerosApos[2] : "0";
+                let escFora = numerosApos.length > 3 ? numerosApos[3] : "0";
 
-        console.log(`📊 Partidas estruturadas via DOM: ${partidasExtraidas.length}`);
+                processados.push({
+                    liga: data.league,
+                    tempo: data.tempo,
+                    confronto: `${timeCasa} x ${timeFora}`,
+                    placar: `${golsCasa} x ${golsFora}`,
+                    escanteios: `${escCasa} x ${escFora}`
+                });
+            }
+        }
+
+        console.log(`📊 Partidas estruturadas (Axios): ${processados.length}`);
         let enviadosNoCiclo = 0;
 
-        for (let item of partidasExtraidas) {
+        for (let item of processados) {
             let chaveJogo = item.confronto.toLowerCase().replace(/\s+/g, '');
 
             if (memoriaPlacarJogos.has(chaveJogo)) {
                 let placarAnterior = memoriaPlacarJogos.get(chaveJogo);
-                if (placarAnterior === item.placar) {
-                    continue; 
-                }
+                if (placarAnterior === item.placar) continue; 
             }
             memoriaPlacarJogos.set(chaveJogo, item.placar);
 
             let cardTelegram = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
-            if (item.liga && item.liga !== "Futebol Ao Vivo") {
+            if (item.liga && item.liga !== "Futebol Ao Vivo" && item.liga.length > 2) {
                 cardTelegram += `🏆 <b>Liga:</b> ${item.liga}\n`;
             }
             cardTelegram += `⏱ <b>Tempo:</b> ${traduzirTempo(item.tempo)}\n`;
@@ -152,17 +126,15 @@ async function varrerPorDOM() {
 
             await bot.sendMessage(CHAT_ID, cardTelegram, { parse_mode: 'HTML' }).catch(() => {});
             enviadosNoCiclo++;
-            await new Promise(r => setTimeout(r, 2000));
+            await new Promise(r => setTimeout(r, 1500));
         }
 
         console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards enviados.`);
 
     } catch (erro) {
-        console.error("❌ Erro na varredura DOM:", erro.message);
-    } finally {
-        if (browser) await browser.close();
+        console.error("❌ Erro na varredura rápida:", erro.message);
     }
 }
 
-varrerPorDOM();
-setInterval(varrerPorDOM, 180000);
+varrerRapidinho();
+setInterval(varrerRapidinho, 60000); // Roda a cada 1 minuto bem rapidinho
