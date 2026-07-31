@@ -6,19 +6,19 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Estatísticas Completas ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Fast Radar ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-const jogosProcessados = new Set();
+const jogosEnviados = new Set();
 
-async function radarCompletoSokkerPRO() {
+async function executarRadarRapido() {
     let browser = null;
     try {
-        console.log("⚡ [Radar] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar] Iniciando navegador otimizado...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -28,111 +28,99 @@ async function radarCompletoSokkerPRO() {
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
                 '--no-zygote',
-                '--single-process'
+                '--single-process',
+                '--disable-extensions',
+                '--disable-accelerated-2d-canvas'
             ]
         });
 
         const page = await browser.newPage();
         
+        // Define um user-agent real para evitar bloqueios de conexão
+        await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36');
+
+        console.log("🌐 Conectando leve ao SokkerPRO...");
+        // Usa domcontentloaded para não travar esperando scripts lentos de terceiros
         await page.goto('https://m.sokkerpro.com/', {
-            waitUntil: 'networkidle0',
-            timeout: 60000
+            waitUntil: 'domcontentloaded',
+            timeout: 30000
         });
 
-        console.log("⏳ Aguardando carregamento da lista de jogos...");
-        await new Promise(r => setTimeout(r, 6000));
+        console.log("⏳ Aguardando os dados ao vivo carregarem...");
+        await new Promise(r => setTimeout(r, 5000));
 
-        // Rrola a página para garantir que os jogos ao vivo apareçam
-        for (let i = 0; i < 5; i++) {
-            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-            await new Promise(r => setTimeout(r, 1500));
-        }
+        // Rola levemente para baixo para puxar os cards
+        await page.evaluate(() => window.scrollBy(0, 800));
+        await new Promise(r => setTimeout(r, 2000));
 
-        // Extrai os links diretos das partidas ao vivo na página principal
-        const linksPartidas = await page.evaluate(() => {
-            const links = [];
-            // Procura por âncoras ou elementos clicáveis que contenham 'fixture'
-            const elementos = document.querySelectorAll('a, div[onclick], tr');
-            
-            elementos.forEach(el => {
-                const href = el.getAttribute('href') || '';
-                const onclick = el.getAttribute('onclick') || '';
-                const texto = el.innerText || '';
+        // Extrai os blocos de jogos limpos direto da tela principal
+        const partidas = await page.evaluate(() => {
+            const lista = [];
+            const blocos = document.querySelectorAll('div, tr');
 
-                // Identifica se é um jogo ao vivo (contém minutos ou placar)
-                if (/\b(\d{1,2}\s*['′]|HT|FT)\b/i.test(texto)) {
-                    if (href.includes('fixture=')) {
-                        const urlCompleta = href.startsWith('http') ? href : 'https://m.sokkerpro.com/' + href;
-                        if (!links.includes(urlCompleta)) links.push(urlCompleta);
+            blocos.forEach(el => {
+                const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
+
+                // Valida se o bloco parece um jogo com placar/minuto
+                if ((texto.includes(' - ') || texto.includes(':')) && texto.length > 12 && texto.length < 300) {
+                    const lower = texto.toLowerCase();
+                    const temTempo = /\b(ht|ft|\d{1,2}\s*['′])\b/i.test(lower);
+                    const ehSub = /sub\s*-?(19|20|21)|u\s*-?(19|20|21)/i.test(lower);
+                    const ehFem = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(lower);
+
+                    if (temTempo && !ehSub && !ehFem) {
+                        const chave = texto.substring(0, 30);
+                        if (!lista.some(p => p.chave === chave)) {
+                            lista.push({ chave, texto });
+                        }
                     }
                 }
             });
 
-            // Fallback: se não achar links por <a>, pega todos os links da página que tenham fixture
-            if (links.length === 0) {
-                document.querySelectorAll('a').forEach(a => {
-                    const h = a.getAttribute('href') || '';
-                    if (h.includes('fixture=')) {
-                        links.push(h.startsWith('http') ? h : 'https://m.sokkerpro.com/' + h);
-                    }
-                });
-            }
-
-            return [...new Set(links)]; // Remove duplicados
+            return lista;
         });
 
-        console.log(`📊 Links de partidas ao vivo encontrados: ${linksPartidas.length}`);
+        console.log(`📊 Partidas ao vivo capturadas com sucesso: ${partidas.length}`);
 
-        // Varre cada link de partida individualmente para extrair as estatísticas completas
-        for (const link of linksPartidas) {
-            if (jogosProcessados.has(link)) continue; // Evita reprocessar o mesmo jogo toda hora
+        const novas = partidas.filter(p => !jogosEnviados.has(p.chave));
 
-            try {
-                const paginaJogo = await browser.newPage();
-                await paginaJogo.goto(link, { waitUntil: 'networkidle0', timeout: 30000 });
-                await new Promise(r => setTimeout(r, 3000));
+        if (novas.length > 0) {
+            let msg = `⚽ <b>RADAR SOKKERPRO - AO VIVO</b>\n`;
+            msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-                // Extrai as estatísticas detalhadas de dentro da página da partida
-                const dadosPartida = await paginaJogo.evaluate(() => {
-                    const textoGeral = document.body.innerText || '';
-                    
-                    // Extrai blocos de texto úteis para montar o card igual ao seu print
-                    const linhas = textoGeral.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                    
-                    return {
-                        conteudoBruto: linhas.slice(0, 45).join('\n') // Pega o topo com placar, liga e estatísticas principais
-                    };
-                });
+            let count = 1;
+            for (const p of novas) {
+                jogosEnviados.add(p.chave);
 
-                await paginaJogo.close();
+                let card = `🔴 <b>Jogo #${count}</b>\n`;
+                card += `<code>${p.texto}</code>\n`;
+                card += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-                if (dadosPartida.conteudoBruto.length > 30) {
-                    jogosProcessados.add(link);
-
-                    // Monta o card limpo e organizado estilo o seu print
-                    let cardTelegram = `🏟 <b>RADAR DE ESTATÍSTICAS - SOKKERPRO</b>\n`;
-                    cardTelegram += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                    cardTelegram += `<code>${dadosPartida.conteudoBruto}</code>\n`;
-                    cardTelegram += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                    cardTelegram += `🔗 <a href="${link}">Ver no SokkerPRO</a>`;
-
-                    await bot.sendMessage(CHAT_ID, cardTelegram, { parse_mode: 'HTML', disable_web_page_preview: true }).catch(() => {});
-                    await new Promise(r => setTimeout(r, 2000));
+                if ((msg.length + card.length) > 3800) {
+                    await bot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML' }).catch(() => {});
+                    await new Promise(r => setTimeout(r, 1000));
+                    msg = `⚽ <b>CONTINUAÇÃO</b>\n━━━━━━━━━━━━━━━━━━━━━━\n\n` + card;
+                } else {
+                    msg += card;
                 }
-
-            } catch (errJogo) {
-                console.log(`⚠️ Erro ao ler partida específica: ${errJogo.message}`);
+                count++;
             }
+
+            if (msg.trim().length > 0) {
+                await bot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML' }).catch(() => {});
+            }
+
+            console.log("✅ Alertas enviados para o Telegram!");
+        } else {
+            console.log("ℹ️ Nenhum jogo novo nesta checagem rápida.");
         }
 
-        console.log("✅ Ciclo de varredura de estatísticas finalizado!");
-
     } catch (erro) {
-        console.error("❌ Erro geral no radar:", erro.message);
+        console.error("❌ Erro na varredura rápida:", erro.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-radarCompletoSokkerPRO();
-setInterval(radarCompletoSokkerPRO, 300000); // Roda a cada 5 minutos para processar os jogos com calma
+executarRadarRapido();
+setInterval(executarRadarRapido, 180000); // Roda a cada 3 minutos sem travamentos
