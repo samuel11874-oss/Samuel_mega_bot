@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - V64 Ao Vivo ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigação V65 ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarV64() {
+async function executarInvestigacaoV65() {
     let browser = null;
     try {
-        console.log("⚡ [Radar V64] Aplicando Filtro Sniper para isolar apenas jogos em andamento...");
+        console.log("⚡ [Investigação V65] Lendo o código HTML profundo para achar os 23 jogos perdidos...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -45,49 +45,81 @@ async function executarRadarV64() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        // Script de extração trabalhando por exclusão
-        const partidasAoVivo = await page.evaluate(() => {
-            const unicasSet = new Set();
-            const blocos = document.querySelectorAll('tr, div.match-row, div.match-item');
+        // Script de extração com Raio-X aprimorado
+        const dados = await page.evaluate(() => {
+            const logsInvestigacao = [];
+            const aoVivoSet = new Set();
+            const blocos = document.querySelectorAll('tr');
+
+            let count = 0;
 
             blocos.forEach(el => {
                 const textoRaw = el.innerText || '';
                 const texto = textoRaw.replace(/\s+/g, ' ').trim();
+                const textoLower = texto.toLowerCase();
 
-                // Verifica se é uma linha válida de jogo
-                if ((texto.includes('vs') || texto.includes(' - ')) && texto.length > 15) {
-                    const textoLower = texto.toLowerCase();
+                // Verifica se parece ser uma linha de jogo
+                if (texto.length > 15 && (texto.includes('vs') || texto.includes(' - '))) {
+                    
+                    // 1. Lendo as entranhas do HTML (TotalCorner usa classes específicas para tempo ao vivo)
+                    const htmlInner = el.innerHTML.toLowerCase();
+                    const temTagHtmlAoVivo = htmlInner.includes('match_status_minute') || 
+                                             htmlInner.includes('match_status_ht') || 
+                                             htmlInner.includes('color:red') || 
+                                             htmlInner.includes('color: red') ||
+                                             htmlInner.includes('match_time');
 
-                    // 1. O FILTRO SNIPER: Se tem o formato "Mês/Dia Hora:Minuto" (ex: 07/31 08:30), o jogo NÃO COMEÇOU.
-                    // Quando a partida fica ao vivo no desktop, essa data sai da linha.
-                    const ehAgendado = /\d{2}\/\d{2}\s\d{2}:\d{2}/.test(texto);
+                    // 2. Filtro de texto corrigido (Exige a palavra exata 'min' ou 'mín', não aceita feMINino)
+                    const temMin = /\b(min|mín)\b/i.test(textoLower);
+                    const temCronometro = /(\d{1,3})\s*['′]|ht|1ºt|2ºt|intervalo|live/i.test(textoLower);
 
-                    // 2. Filtros de base e feminino
+                    const ehAoVivo = (temTagHtmlAoVivo || temMin || temCronometro);
+                    
+                    // 3. Filtros de bloqueio
                     const ehSub = /sub\s*-?(19|20|21|23)|u\s*-?(19|20|21|23)/i.test(textoLower);
                     const ehFem = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(textoLower);
 
-                    // A mágica acontece aqui: Se NÃO é agendado (ou seja, a bola já está rolando) e NÃO é base/feminino, nós guardamos!
-                    if (!ehAgendado && !ehSub && !ehFem) {
-                        unicasSet.add(texto);
+                    // Salva as 25 primeiras linhas para lermos no log do Render
+                    if (count < 25) {
+                        logsInvestigacao.push(
+                            `[JOGO ${count + 1}] "${texto.substring(0, 60)}..." | HTML_AO_VIVO: ${temTagHtmlAoVivo} | TEXTO_TEMPO: ${temMin || temCronometro} | RESULTADO: ${ehAoVivo && !ehSub && !ehFem ? 'APROVADO' : 'BARRADO'}`
+                        );
+                    }
+                    count++;
+
+                    // Se passou nas verificações, vai pra lista final
+                    if (ehAoVivo && !ehSub && !ehFem) {
+                        aoVivoSet.add(texto);
                     }
                 }
             });
 
-            return Array.from(unicasSet);
+            return {
+                jogosAoVivo: Array.from(aoVivoSet),
+                logs: logsInvestigacao
+            };
         });
 
-        console.log(`📊 Partidas validadas como 100% AO VIVO: ${partidasAoVivo.length}`);
+        // ==========================================
+        // IMPRIMINDO O RAIO-X NO RENDER
+        // ==========================================
+        console.log("\n=========================================");
+        console.log("🕵️ RAIO-X V65 (LENDO O CÓDIGO FONTE)");
+        console.log("=========================================");
+        dados.logs.forEach(log => console.log(log));
+        console.log("=========================================\n");
 
-        if (partidasAoVivo.length > 0) {
-            let mensagem = `🔴 <b>[RADAR TOTALCORNER - AO VIVO]</b>\n`;
-            mensagem += `🔥 Total de jogos rolando agora: <code>${partidasAoVivo.length}</code>\n\n`;
+        console.log(`📊 Jogos capturados pela V65: ${dados.jogosAoVivo.length}`);
+
+        if (dados.jogosAoVivo.length > 0) {
+            let mensagem = `🔴 <b>[RADAR TOTALCORNER - V65]</b>\n`;
+            mensagem += `🔥 Partidas rodando agora: <code>${dados.jogosAoVivo.length}</code>\n\n`;
 
             let blocoAtual = mensagem;
             let contador = 1;
 
-            for (const partida of partidasAoVivo) {
-                let linhaJogo = `⏱ <b>#${contador} [AO VIVO]</b>\n<code>${partida}</code>\n\n`;
-                
+            for (const partida of dados.jogosAoVivo) {
+                let linhaJogo = `⏱ <b>#${contador}</b>\n<code>${partida}</code>\n\n`;
                 if ((blocoAtual.length + linhaJogo.length) > 3800) {
                     await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
                     await new Promise(r => setTimeout(r, 1000));
@@ -101,18 +133,17 @@ async function executarRadarV64() {
             if (blocoAtual.trim().length > 0) {
                 await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
             }
-            console.log("✅ Radar enviado ao Telegram com sucesso!");
+            console.log("✅ Lista enviada ao Telegram!");
         } else {
-            console.log("ℹ️ Nenhum jogo ao vivo encontrado nesta varredura.");
+            console.log("ℹ️ Nenhum jogo ao vivo encontrado.");
         }
 
     } catch (error) {
-        console.error("❌ Erro V64:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ Erro V64: ${error.message}`, { parse_mode: 'HTML' });
+        console.error("❌ Erro V65:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarV64();
-setInterval(executarRadarV64, 180000);
+executarInvestigacaoV65();
+setInterval(executarInvestigacaoV65, 180000);
