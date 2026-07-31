@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Áustria Limpo & Perfeito ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Áustria Corrigido ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -19,7 +19,6 @@ function traduzirTempo(texto) {
     let t = texto.toUpperCase();
     if (t.includes('HT') || t.includes('INTERVALO')) return 'Intervalo';
     if (t.includes('FT') || t.includes('FIM')) return 'Fim de Jogo';
-    // Substitui abreviações em inglês por português
     t = t.replace('MIN', 'min').replace('+', ' + ');
     return t.trim();
 }
@@ -57,27 +56,23 @@ async function varrerEEnviarAustriaLimpa() {
             await new Promise(r => setTimeout(r, 1500));
         }
 
-        // Extração cirúrgica focada em linhas individuais de partidas
         const partidasExtraidas = await page.evaluate(() => {
             const resultados = [];
-            // Procura por elementos que contenham estrutura de partidas ao vivo
             const elementos = document.querySelectorAll('div, span, p, a');
 
             elementos.forEach(el => {
                 const texto = el.innerText ? el.innerText.trim() : '';
-                // Identifica se a linha parece uma partida (contém traço de confronto e marcador de tempo ou placar)
                 if (
                     texto.length > 10 && 
                     texto.length < 150 && 
                     (texto.includes(' - ') || texto.includes(' x ')) && 
-                    (/\d{1,3}'/.test(texto) || texto.includes('HT') || text.includes('FT')) &&
-                    /austria/i.test(document.body.innerText) // Garante contexto geral ou local
+                    (/\d{1,3}'/.test(texto) || texto.includes('HT') || texto.includes('FT')) &&
+                    /austria/i.test(document.body.innerText)
                 ) {
                     resultados.push(texto);
                 }
             });
 
-            // Remove duplicados exatos
             return [...new Set(resultados)];
         });
 
@@ -85,22 +80,17 @@ async function varrerEEnviarAustriaLimpa() {
         let enviadosNoCiclo = 0;
 
         for (let linhaTexto of partidasExtraidas) {
-            // Filtro rigoroso para pegar somente o que for da Áustria
             if (!/austria|öfb|bundesliga|regionalliga|landesliga|cup/i.test(linhaTexto)) {
                 continue;
             }
 
-            // Cria uma chave única baseada no texto do jogo para não repetir
             let chaveUnica = linhaTexto.substring(0, 40);
             if (jogosEnviadosCache.has(chaveUnica)) continue;
             jogosEnviadosCache.add(chaveUnica);
 
-            // Limpeza e formatação inteligente das informações
-            // Tenta extrair o minuto
             let matchTempo = linhaTexto.match(/(\d{1,3}'(?:\s*\+\s*\d+)?)/);
             let tempoJogo = matchTempo ? traduzirTempo(matchTempo[1]) : "Ao Vivo";
 
-            // Tenta identificar o nome da liga (geralmente no começo da string)
             let liga = "Áustria (Futebol Ao Vivo)";
             if (linhaTexto.includes(':')) {
                 let partesLiga = linhaTexto.split(':');
@@ -108,19 +98,17 @@ async function varrerEEnviarAustriaLimpa() {
                 linhaTexto = partesLiga.slice(1).join(':').trim();
             }
 
-            // Limpa odds, números excessivos e lixo do placar/estatísticas da string dos times
             let timesConfronto = linhaTexto
-                .replace(/\d{1,3}'/, '') // remove o minuto se sobrou
-                .replace(/\d+%\s*\d+\s*\d+/, '') // remove porcentagens e números soltos
-                .replace(/\b\d+\b\s*\b\d+\b/g, '') // remove placares isolados duplicados
+                .replace(/\d{1,3}'/, '')
+                .replace(/\d+%\s*\d+\s*\d+/, '')
+                .replace(/\b\d+\b\s*\b\d+\b/g, '')
                 .replace(/\s+/g, ' ')
                 .trim();
 
             if (!timesConfronto || timesConfronto.length < 3) {
-                timesConfronto = linhaTexto; // Fallback se limpar demais
+                timesConfronto = linhaTexto;
             }
 
-            // Montagem do card extremamente limpo, organizado e com emojis alinhados
             let cardTelegram = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
             cardTelegram += `🏆 <b>Liga:</b> ${liga}\n`;
             cardTelegram += `⏱ <b>Tempo:</b> ${tempoJogo}\n`;
