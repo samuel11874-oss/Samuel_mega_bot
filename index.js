@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V57 Scroll Completo ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Consolidado ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarV57() {
+async function executarRadarConsolidado() {
     let browser = null;
     try {
-        console.log("⚡ [Radar V57] Iniciando varredura com rolagem profunda...");
+        console.log("⚡ [Radar Consolidado] Coletando jogos únicos sem repetição...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -38,59 +38,72 @@ async function executarRadarV57() {
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando carregamento inicial...");
+        console.log("⏳ Aguardando carregamento e rolando a página...");
         await new Promise(r => setTimeout(r, 6000));
 
-        // Rola a página várias vezes para forçar o carregamento de todos os jogos ocultos (lazy load)
-        for (let i = 0; i < 5; i++) {
+        // Rolagem para garantir o carregamento completo de todos os jogos ativos
+        for (let i = 0; i < 4; i++) {
             await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        // Extrai todas as linhas e blocos de partidas únicos encontrados
-        const partidasMapeadas = await page.evaluate(() => {
-            const lista = [];
-            const elementos = document.querySelectorAll('tr, .match-row, .match-item');
+        // Extração garantindo itens únicos (sem duplicidade)
+        const partidasUnicas = await page.evaluate(() => {
+            const unicasSet = new Set();
+            const trs = document.querySelectorAll('tr');
 
-            elementos.forEach((el) => {
-                const texto = el.innerText.replace(/\s+/g, ' ').trim();
-                if ((texto.includes('vs') || texto.includes(' - ')) && texto.length > 10) {
-                    if (!lista.includes(texto)) {
-                        lista.push(texto);
-                    }
+            trs.forEach((tr, index) => {
+                const texto = tr.innerText.replace(/\s+/g, ' ').trim();
+                // Ignora o cabeçalho e pega linhas válidas de confronto
+                if (index > 0 && (texto.includes('vs') || texto.includes(' - ')) && texto.length > 10) {
+                    unicasSet.add(texto);
                 }
             });
 
-            return lista;
+            return Array.from(unicasSet);
         });
 
-        console.log(`📊 Total de partidas únicas mapeadas com scroll: ${partidasMapeadas.length}`);
+        console.log(`📊 Total de partidas únicas encontradas: ${partidasUnicas.length}`);
 
-        if (partidasMapeadas.length > 0) {
-            let msg = `🔥 <b>[RADAR TOTALCORNER - COMPLETO]</b>\n`;
-            msg += `⚽ Jogos únicos encontrados: <code>${partidasMapeadas.length}</code>\n\n`;
-            
-            await bot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML' }).catch(() => {});
-            await new Promise(r => setTimeout(r, 1000));
+        if (partidasUnicas.length > 0) {
+            let mensagem = `🔴 <b>[RADAR TOTALCORNER - AO VIVO]</b>\n`;
+            mensagem += `🔥 Total de jogos únicos: <code>${partidasUnicas.length}</code>\n\n`;
 
-            for (let i = 0; i < Math.min(partidasMapeadas.length, 10); i++) {
-                let card = `⚽ <b>JOGO #${i+1}</b>\n`;
-                card += `📄 <code>${partidasMapeadas[i]}</code>`;
+            let blocoAtual = mensagem;
+            let contador = 1;
+
+            for (const partida of partidasUnicas) {
+                let linhaJogo = `<b>#${contador}</b>: <code>${partida}</code>\n\n`;
                 
-                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
-                await new Promise(r => setTimeout(r, 500));
+                // Se o bloco aproximar do limite do Telegram (~3800 caracteres), envia e inicia o próximo
+                if ((blocoAtual.length + linhaJogo.length) > 3800) {
+                    await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
+                    await new Promise(r => setTimeout(r, 1000));
+                    blocoAtual = `🔴 <b>[RADAR TOTALCORNER - CONTINUAÇÃO]</b>\n\n` + linhaJogo;
+                } else {
+                    blocoAtual += linhaJogo;
+                }
+                contador++;
             }
+
+            // Envia o bloco final restante
+            if (blocoAtual.trim().length > 0) {
+                await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
+            }
+
+            console.log("✅ Todos os jogos enviados de forma limpa e sem repetição!");
         } else {
             console.log("ℹ️ Nenhuma partida encontrada.");
+            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhuma partida encontrada nesta varredura.`, { parse_mode: 'HTML' });
         }
 
     } catch (error) {
-        console.error("❌ Erro V57:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V57:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro no Radar:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro Radar:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarV57();
-setInterval(executarRadarV57, 180000);
+executarRadarConsolidado();
+setInterval(executarRadarConsolidado, 180000);
