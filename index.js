@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Áustria Corrigido ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Áustria Definitivo ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,10 +23,10 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerEEnviarAustriaLimpa() {
+async function varrerEEnviarAustriaDefinitivo() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Áustria Limpo] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar Áustria Definitivo] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -58,16 +58,16 @@ async function varrerEEnviarAustriaLimpa() {
 
         const partidasExtraidas = await page.evaluate(() => {
             const resultados = [];
-            const elementos = document.querySelectorAll('div, span, p, a');
+            const blocos = document.querySelectorAll('div');
 
-            elementos.forEach(el => {
-                const texto = el.innerText ? el.innerText.trim() : '';
+            blocos.forEach(el => {
+                const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
+                // Procura blocos que contenham estrutura de jogo ao vivo
                 if (
-                    texto.length > 10 && 
-                    texto.length < 150 && 
+                    texto.length > 15 && 
+                    texto.length < 300 && 
                     (texto.includes(' - ') || texto.includes(' x ')) && 
-                    (/\d{1,3}'/.test(texto) || texto.includes('HT') || texto.includes('FT')) &&
-                    /austria/i.test(document.body.innerText)
+                    (/\d{1,3}'/.test(texto) || texto.includes('HT') || texto.includes('FT'))
                 ) {
                     resultados.push(texto);
                 }
@@ -79,36 +79,42 @@ async function varrerEEnviarAustriaLimpa() {
         console.log(`📊 Partidas brutas encontradas: ${partidasExtraidas.length}`);
         let enviadosNoCiclo = 0;
 
-        for (let linhaTexto of partidasExtraidas) {
-            if (!/austria|öfb|bundesliga|regionalliga|landesliga|cup/i.test(linhaTexto)) {
+        for (let blocoTexto of partidasExtraidas) {
+            // Filtro específico para Áustria
+            if (!/austria|öfb|bundesliga|regionalliga|landesliga|cup/i.test(blocoTexto)) {
                 continue;
             }
 
-            let chaveUnica = linhaTexto.substring(0, 40);
+            let chaveUnica = blocoTexto.substring(0, 35);
             if (jogosEnviadosCache.has(chaveUnica)) continue;
             jogosEnviadosCache.add(chaveUnica);
 
-            let matchTempo = linhaTexto.match(/(\d{1,3}'(?:\s*\+\s*\d+)?)/);
-            let tempoJogo = matchTempo ? traduzirTempo(matchTempo[1]) : "Ao Vivo";
+            // Extração do Tempo
+            let matchTempo = blocoTexto.match(/(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT)/i);
+            let tempoJogo = matchTempo ? traduzirTempo(matchTempo[0]) : "Ao Vivo";
 
+            // Extração da Liga
             let liga = "Áustria (Futebol Ao Vivo)";
-            if (linhaTexto.includes(':')) {
-                let partesLiga = linhaTexto.split(':');
-                liga = partesLiga[0].trim();
-                linhaTexto = partesLiga.slice(1).join(':').trim();
+            let linhas = blocoTexto.split('\n');
+            if (linhas.length > 0 && /austria|öfb|bundesliga|regionalliga|landesliga|cup/i.test(linhas[0])) {
+                liga = linhas[0].trim();
             }
 
-            let timesConfronto = linhaTexto
-                .replace(/\d{1,3}'/, '')
-                .replace(/\d+%\s*\d+\s*\d+/, '')
-                .replace(/\b\d+\b\s*\b\d+\b/g, '')
+            // Isola os times limpando o excesso de lixo e odds
+            let timesConfronto = blocoTexto
+                .replace(liga, '')
+                .replace(/(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT)/g, '')
+                .replace(/\d+%\s*\d+\s*\d+/g, '')
+                .replace(/\b\d+\b/g, '')
+                .replace(/[-–—]+/g, 'x')
                 .replace(/\s+/g, ' ')
                 .trim();
 
             if (!timesConfronto || timesConfronto.length < 3) {
-                timesConfronto = linhaTexto;
+                timesConfronto = blocoTexto;
             }
 
+            // Card final limpo, organizado e no formato exato solicitado
             let cardTelegram = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
             cardTelegram += `🏆 <b>Liga:</b> ${liga}\n`;
             cardTelegram += `⏱ <b>Tempo:</b> ${tempoJogo}\n`;
@@ -128,5 +134,5 @@ async function varrerEEnviarAustriaLimpa() {
     }
 }
 
-varrerEEnviarAustriaLimpa();
-setInterval(varrerEEnviarAustriaLimpa, 180000);
+varrerEEnviarAustriaDefinitivo();
+setInterval(varrerEEnviarAustriaDefinitivo, 180000);
