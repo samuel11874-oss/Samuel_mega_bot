@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Formato Limpo Final ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Padrão Ouro Final ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,10 +23,10 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerEEnviarLimpoFinal() {
+async function varrerEEnviarPadraoOuro() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Limpo Final] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar Padrão Ouro] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -87,8 +87,8 @@ async function varrerEEnviarLimpoFinal() {
             let matchTempo = blocoTexto.match(/(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT)/i);
             let tempoJogo = matchTempo ? traduzirTempo(matchTempo[0]) : "Ao Vivo";
 
-            // 2. Extração limpa e real da Liga (separa antes dos dois pontos ou pega a linha inicial)
-            let liga = "Futebol Ao Vivo";
+            // 2. Extração limpa da Liga (Isola o nome do campeonato de forma legível)
+            let liga = "Campeonato Ao Vivo";
             if (blocoTexto.includes(':')) {
                 let partes = blocoTexto.split(':');
                 if (partes[0].length > 2 && partes[0].length < 40) {
@@ -96,11 +96,11 @@ async function varrerEEnviarLimpoFinal() {
                 }
             }
 
-            // 3. Extração limpa do Placar
+            // 3. Extração limpa do Placar exato
             let matchPlacar = blocoTexto.match(/\b([0-9])\b\s*[-–—]\s*\b([0-9])\b/);
             let placarJogo = matchPlacar ? `${matchPlacar[1]} x ${matchPlacar[2]}` : "0 x 0";
 
-            // 4. Limpeza cirúrgica para isolar apenas os dois times (ex: Real Madrid x Barcelona)
+            // 4. Limpeza rigorosa para isolar apenas os nomes dos times (Time A x Time B)
             let textoLimpo = blocoTexto
                 .replace(liga, '')
                 .replace(/[:]/g, '')
@@ -113,16 +113,14 @@ async function varrerEEnviarLimpoFinal() {
                 .replace(/\s+/g, ' ')
                 .trim();
 
-            // Tenta organizar os times dividindo pelo 'x' ou limpando repetições indesejadas
             let partesTimes = textoLimpo.split(' x ');
             let timeA = partesTimes[0] ? partesTimes[0].trim() : "";
             let timeB = partesTimes[1] ? partesTimes[1].trim() : "";
 
-            // Se limpou demais ou ficou vazio, usa uma alternativa limpa
             let confrontoFinal = (timeA && timeB) ? `${timeA} x ${timeB}` : textoLimpo;
             if (!confrontoFinal || confrontoFinal.length < 3) continue;
 
-            // Montagem final do card perfeito
+            // Montagem final do card limpo, elegante e estruturado
             let cardTelegram = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
             cardTelegram += `🏆 <b>Liga:</b> ${liga}\n`;
             cardTelegram += `⏱ <b>Tempo:</b> ${tempoJogo}\n`;
@@ -134,7 +132,7 @@ async function varrerEEnviarLimpoFinal() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards limpos enviados.`);
+        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards enviados.`);
 
     } catch (erro) {
         console.error("❌ Erro na varredura:", erro.message);
@@ -143,5 +141,5 @@ async function varrerEEnviarLimpoFinal() {
     }
 }
 
-varrerEEnviarLimpoFinal();
-setInterval(varrerEEnviarLimpoFinal, 180000);
+varrerEEnviarPadraoOuro();
+setInterval(varrerEEnviarPadraoOuro, 180000);
