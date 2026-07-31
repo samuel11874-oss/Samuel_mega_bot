@@ -1,76 +1,145 @@
-M
-My Workspace
+const path = require('path');
+process.env.PUPPETEER_CACHE_DIR = path.join(__dirname, '.cache');
 
+const express = require('express');
+const puppeteer = require('puppeteer');
+const TelegramBot = require('node-telegram-bot-api');
 
-Samuel_mega_bot
+const app = express();
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Áustria PT-BR ⚽</h2>'));
+app.listen(process.env.PORT || 3000);
 
-Web Service
-Samuel_mega_bot
-Node
-Free
-Upgrade your instance
+const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
+const CHAT_ID = '8285908313';
+const bot = new TelegramBot(TOKEN, { polling: false });
 
-Connect
+const jogosEnviadosCache = new Set();
 
-Manual Deploy
-Service ID:
-srv-d9bes6j7uimc73ab7060
+function ehFutebolAustria(texto) {
+    const termoAustria = /austria|austríaca|öfb|bundesliga austria|2. liga|regionalliga ost|regionalliga mitte|regionalliga west/i;
+    return termoAustria.test(texto);
+}
 
-samuel11874-oss / Samuel_mega_bot
-main
-https://samuel-mega-bot.onrender.com
+// Função para traduzir termos temporais para o português do Brasil
+function traduzirTempo(textoTempo) {
+    let t = textoTempo.toUpperCase();
+    if (t.includes('HT') || t.includes('INTERVALO')) return 'Intervalo';
+    if (t.includes('FT') || t.includes('FIM')) return 'Fim de Jogo';
+    return t.replace('MIN', '').trim();
+}
 
-Your free instance will spin down with inactivity, which can delay requests by 50 seconds or more.
-Upgrade now
-July 31, 2026 at 3:43 PM
-live
-97e21fb
-Update index.js
+async function varrerEEnviarAustriaPT() {
+    let browser = null;
+    try {
+        console.log("⚡ [Radar Áustria PT-BR] Conectando ao SokkerPRO...");
 
-All logs
-Search
-Search logs
+        browser = await puppeteer.launch({
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--no-zygote',
+                '--single-process'
+            ]
+        });
 
-Jul 31, 3:42 PM - 3:45 PM
-GMT-3
+        const page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
 
+        await page.goto('https://m.sokkerpro.com/', {
+            waitUntil: 'domcontentloaded',
+            timeout: 120000
+        });
 
+        console.log("⏳ Aguardando os dados ao vivo carregarem...");
+        await new Promise(r => setTimeout(r, 6000));
 
-==> Cloning from https://github.com/samuel11874-oss/Samuel_mega_bot
-==> Checking out commit 97e21fb9cacee07648e6ce2050d03b0cc6881283 in branch main
-==> Using Node.js version 24.14.1 (default)
-==> Docs on specifying a Node.js version: https://render.com/docs/node-version
-==> Running build command 'PUPPETEER_CACHE_DIR=/opt/render/project/src/.cache npm install && PUPPETEER_CACHE_DIR=/opt/render/project/src/.cache npx puppeteer browsers install chrome'...
-added 388 packages, and audited 389 packages in 15s
-92 packages are looking for funding
-  run `npm fund` for details
-16 vulnerabilities (7 moderate, 7 high, 2 critical)
-To address issues that do not require attention, run:
-  npm audit fix
-To address all issues (including breaking changes), run:
-  npm audit fix --force
-Run `npm audit` for details.
-chrome@127.0.6533.88 /opt/render/project/src/.cache/chrome/linux-127.0.6533.88/chrome-linux64/chrome
-==> Uploading build...
-==> Uploaded in 6.7s. Compression took 1.1s
-==> Build successful 🎉
-==> Deploying...
-==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance
-==> Running 'node index.js'
-⚡ [Radar Áustria] Conectando ao SokkerPRO...
-⏳ Aguardando os dados ao vivo carregarem...
-==> Your service is live 🎉
-==> 
-==> ///////////////////////////////////////////////////////////
-==> 
-==> Available at your primary URL https://samuel-mega-bot.onrender.com
-==> 
-==> ///////////////////////////////////////////////////////////
-📊 Partidas detectadas no total: 19
-✅ Ciclo concluído. 6 jogos da Áustria enviados.
-Need better ways to work with logs? Try theRender CLI, Render MCP Server, or set up a log stream integration 
+        for (let i = 0; i < 5; i++) {
+            await page.evaluate(() => window.scrollBy(0, 800));
+            await new Promise(r => setTimeout(r, 1500));
+        }
 
-0 services selected:
+        const partidasExtraidas = await page.evaluate(() => {
+            const lista = [];
+            const blocos = document.querySelectorAll('div');
 
-Move
+            blocos.forEach(el => {
+                const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
+                
+                if (texto.includes(' - ') && (texto.includes("'") || texto.includes('HT') || texto.includes('FT'))) {
+                    const linhasDetalhadas = texto.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+                    
+                    lista.push({
+                        chaveUnica: texto.substring(0, 60),
+                        textoBruto: texto,
+                        linhas: linhasDetalhadas
+                    });
+                }
+            });
 
+            const unicos = [];
+            const vistos = new Set();
+            for (const item of lista) {
+                if (!vistos.has(item.chaveUnica)) {
+                    vistos.add(item.chaveUnica);
+                    unicos.push(item);
+                }
+            }
+            return unicos;
+        });
+
+        console.log(`📊 Partidas detectadas no total: ${partidasExtraidas.length}`);
+        let enviadosNoCiclo = 0;
+
+        for (const jogo of partidasExtraidas) {
+            let linhas = jogo.linhas;
+            let liga = linhas.length > 0 ? linhas[0] : "Futebol Ao Vivo";
+
+            const conteudoCompleto = `${liga} ${jogo.textoBruto}`;
+            if (!ehFutebolAustria(conteudoCompleto)) {
+                continue;
+            }
+
+            if (jogosEnviadosCache.has(jogo.chaveUnica)) continue;
+            jogosEnviadosCache.add(jogo.chaveUnica);
+
+            let tempoBruto = "Ao Vivo";
+            for (const l of linhas) {
+                if (l.includes("'") || l.includes("HT") || l.includes("FT") || /^\d{1,3}\s*['′]/.test(l)) {
+                    tempoBruto = l;
+                    break;
+                }
+            }
+            let tempoJogo = traduzirTempo(tempoBruto);
+
+            let partesTexto = jogo.textoBruto.split(' - ');
+            let confrontoLimpo = jogo.textoBruto;
+            if (partesTexto.length >= 2) {
+                confrontoLimpo = partesTexto.join(' x ');
+            }
+            confrontoLimpo = confrontoLimpo.replace(/^\d{1,3}'\s*/, '').trim();
+
+            // Card limpo contendo exatamente as 4 informações solicitadas em português do Brasil
+            let cardTelegram = `🟢 **SokkerPRO Ao Vivo**\n`;
+            cardTelegram += `🏆 **Liga:** ${liga}\n`;
+            cardTelegram += `⏱ **Tempo:** ${tempoJogo}\n`;
+            cardTelegram += `⚔️ **Times:** <code>${confrontoLimpo}</code>`;
+
+            await bot.sendMessage(CHAT_ID, cardTelegram, { parse_mode: 'HTML' }).catch(() => {});
+            enviadosNoCiclo++;
+            await new Promise(r => setTimeout(r, 2000));
+        }
+
+        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} jogos enviados em PT-BR.`);
+
+    } catch (erro) {
+        console.error("❌ Erro na varredura:", erro.message);
+    } finally {
+        if (browser) await browser.close();
+    }
+}
+
+varrerEEnviarAustriaPT();
+setInterval(varrerEEnviarAustriaPT, 180000);
