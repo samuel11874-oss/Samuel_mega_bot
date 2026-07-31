@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Padrão Ouro Final ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Extração Estruturada ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,10 +23,10 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerEEnviarPadraoOuro() {
+async function varrerEEnviarEstruturado() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Padrão Ouro] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar Estruturado] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -56,71 +56,100 @@ async function varrerEEnviarPadraoOuro() {
             await new Promise(r => setTimeout(r, 1500));
         }
 
+        // Extração estruturada direto dos elementos do DOM do SokkerPRO
         const partidasExtraidas = await page.evaluate(() => {
-            const resultados = [];
-            const blocos = document.querySelectorAll('div');
-
-            blocos.forEach(el => {
+            const listaJogos = [];
+            
+            // Procura por blocos que representam linhas de partidas ou cartões no site móvel
+            const elementos = document.querySelectorAll('div');
+            
+            elementos.forEach(el => {
                 const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
+                
+                // Filtra apenas blocos que contêm indicadores de tempo ao vivo e confronto
                 if (
-                    texto.length > 15 && 
-                    texto.length < 300 && 
-                    (texto.includes(' - ') || texto.includes(' x ')) && 
-                    (/\d{1,3}'/.test(texto) || texto.includes('HT') || texto.includes('FT'))
+                    texto.length > 20 && 
+                    texto.length < 250 && 
+                    (/\d{1,3}'/.test(texto) || texto.includes('HT') || texto.includes('FT')) &&
+                    (texto.includes('-') || texto.includes('x'))
                 ) {
-                    resultados.push(texto);
+                    listaJogos.push(texto);
                 }
             });
 
-            return [...new Set(resultados)];
+            return [...new Set(listaJogos)];
         });
 
-        console.log(`📊 Partidas brutas encontradas: ${partidasExtraidas.length}`);
+        console.log(`📊 Partidas estruturadas encontradas: ${partidasExtraidas.length}`);
         let enviadosNoCiclo = 0;
 
         for (let blocoTexto of partidasExtraidas) {
-            let chaveUnica = blocoTexto.substring(0, 35);
+            let chaveUnica = blocoTexto.substring(0, 30);
             if (jogosEnviadosCache.has(chaveUnica)) continue;
             jogosEnviadosCache.add(chaveUnica);
 
-            // 1. Extração correta do Tempo
+            // 1. Extração do Tempo
             let matchTempo = blocoTexto.match(/(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT)/i);
             let tempoJogo = matchTempo ? traduzirTempo(matchTempo[0]) : "Ao Vivo";
 
-            // 2. Extração limpa da Liga (Isola o nome do campeonato de forma legível)
-            let liga = "Campeonato Ao Vivo";
-            if (blocoTexto.includes(':')) {
-                let partes = blocoTexto.split(':');
-                if (partes[0].length > 2 && partes[0].length < 40) {
-                    liga = partes[0].trim();
+            // 2. Extração limpa da Liga (procura padrões conhecidos ou pega o topo do bloco)
+            let linhas = blocoTexto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            let liga = "Futebol Ao Vivo";
+            
+            for (let linha of linhas) {
+                if (
+                    linha.length > 3 && 
+                    !/\d{1,3}'/.test(linha) && 
+                    !/\d+\s*x\s*\d+/.test(linha) && 
+                    !/^\d+$/.test(linha) &&
+                    !/%/.test(linha)
+                ) {
+                    liga = linha;
+                    break;
                 }
             }
 
-            // 3. Extração limpa do Placar exato
-            let matchPlacar = blocoTexto.match(/\b([0-9])\b\s*[-–—]\s*\b([0-9])\b/);
-            let placarJogo = matchPlacar ? `${matchPlacar[1]} x ${matchPlacar[2]}` : "0 x 0";
+            // Limpa sujeiras comuns que venham a colar no nome da liga
+            liga = liga.replace(/(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT)/gi, '').trim();
+            if (!liga || liga.length < 3) liga = "Futebol Ao Vivo";
 
-            // 4. Limpeza rigorosa para isolar apenas os nomes dos times (Time A x Time B)
-            let textoLimpo = blocoTexto
-                .replace(liga, '')
-                .replace(/[:]/g, '')
-                .replace(/(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT)/g, '')
-                .replace(/\d+%\s*\d+\s*\d+/g, '')
-                .replace(/\b[0-9]\b\s*[-–—]\s*\b[0-9]\b/g, '')
-                .replace(/\b\d+\b/g, '')
-                .replace(/[%]/g, '')
-                .replace(/[-–—]+/g, 'x')
-                .replace(/\s+/g, ' ')
-                .trim();
+            // 3. Extração real do Placar (Procura por dígitos isolados de placar tipo "1 - 0", "2 x 1" ou placares grudados)
+            let matchPlacar = blocoTexto.match(/\b([0-9])\s*[-–—xX]\s*([0-9])\b/);
+            let placarJogo = matchPlacar ? `${matchPlacar[1]} x ${matchPlacar[2]}` : null;
 
-            let partesTimes = textoLimpo.split(' x ');
-            let timeA = partesTimes[0] ? partesTimes[0].trim() : "";
-            let timeB = partesTimes[1] ? partesTimes[1].trim() : "";
+            // Se não achou no formato padrão, tenta varrer números isolados sequenciais no texto
+            if (!placarJogo) {
+                let numerosIsolados = blocoTexto.match(/\b\d\b/g);
+                if (numerosIsolados && numerosIsolados.length >= 2) {
+                    // Geralmente os primeiros números após o tempo/odds são os gols
+                    placarJogo = `${numerosIsolados[0]} x ${numerosIsolados[1]}`;
+                } else {
+                    placarJogo = "0 x 0";
+                }
+            }
 
-            let confrontoFinal = (timeA && timeB) ? `${timeA} x ${timeB}` : textoLimpo;
-            if (!confrontoFinal || confrontoFinal.length < 3) continue;
+            // 4. Limpeza rigorosa dos Times (Remove a liga, o tempo, odds em %, o placar e caracteres residuais)
+            let limpo = blocoTexto;
+            limpo = limpo.replace(liga, '');
+            if (matchTempo) limpo = limpo.replace(matchTempo[0], '');
+            limpo = limpo.replace(/\d+%/g, ''); // Remove percentuais de estatística
+            limpo = limpo.replace(/\b([0-9])\s*[-–—xX]\s*([0-9])\b/g, ''); // Remove o placar da string dos times
+            
+            // Remove números soltos de odds ou pontuações residuais
+            let pedacos = limpo.split(/[-–—]|vs/i).map(p => p.replace(/[\d%]/g, '').trim()).filter(p => p.length > 2);
 
-            // Montagem final do card limpo, elegante e estruturado
+            let confrontoFinal = "";
+            if (pedacos.length >= 2) {
+                confrontoFinal = `${pedacos[0]} x ${pedacos[1]}`;
+            } else {
+                // Fallback de limpeza caso o split falhe
+                confrontoFinal = limpo.replace(/\s+/g, ' ').trim();
+                confrontoFinal = confrontoFinal.replace(/^[x\s-]+|[x\s-]+$/g, '');
+            }
+
+            if (!confrontoFinal || confrontoFinal.length < 5 || confrontoFinal.includes('x x')) continue;
+
+            // Montagem do card final padronizado
             let cardTelegram = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
             cardTelegram += `🏆 <b>Liga:</b> ${liga}\n`;
             cardTelegram += `⏱ <b>Tempo:</b> ${tempoJogo}\n`;
@@ -132,7 +161,7 @@ async function varrerEEnviarPadraoOuro() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards enviados.`);
+        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards estruturados enviados.`);
 
     } catch (erro) {
         console.error("❌ Erro na varredura:", erro.message);
@@ -141,5 +170,5 @@ async function varrerEEnviarPadraoOuro() {
     }
 }
 
-varrerEEnviarPadraoOuro();
-setInterval(varrerEEnviarPadraoOuro, 180000);
+varrerEEnviarEstruturado();
+setInterval(varrerEEnviarEstruturado, 180000);
