@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Filtrado ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Estrito Ao Vivo ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarFiltrado() {
+async function executarRadarEstritoAoVivo() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Filtrado] Coletando jogos e aplicando filtros de categoria...");
+        console.log("⚡ [Radar Estrito] Buscando apenas jogos com minuto (Mín) ativo...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -41,26 +41,30 @@ async function executarRadarFiltrado() {
         console.log("⏳ Aguardando carregamento e rolando a página...");
         await new Promise(r => setTimeout(r, 6000));
 
-        // Rolagem para garantir o carregamento completo de todos os jogos ativos
+        // Rolagem para carregar todos os blocos ativos
         for (let i = 0; i < 4; i++) {
             await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        // Extração com exclusão de Sub-19, Sub-20 e Jogos Femininos (W)
-        const partidasUnicas = await page.evaluate(() => {
+        // Extração com exigência OBRIGATÓRIA do campo "Mín" ou formato de minuto (ex: 48')
+        const partidasAoVivoReais = await page.evaluate(() => {
             const unicasSet = new Set();
-            const trs = document.querySelectorAll('tr');
+            const elementos = document.querySelectorAll('tr, div');
 
-            trs.forEach((tr, index) => {
-                const texto = tr.innerText.replace(/\s+/g, ' ').trim();
-                
-                if (index > 0 && (texto.includes('vs') || texto.includes(' - ')) && texto.length > 10) {
+            elementos.forEach(el => {
+                const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
+
+                // Critério rigoroso: Deve ter confronto E obrigatoriamente conter a indicação de minuto ("Mín" ou número com ')
+                const temConfronto = texto.includes('vs') || texto.includes(' - ');
+                const temMinutoAoVivo = texto.includes('Mín') || /\d+'/.test(texto);
+
+                if (temConfronto && temMinutoAoVivo && texto.length > 15 && texto.length < 600) {
                     const textoLower = texto.toLowerCase();
 
-                    // Filtros para remover Sub-19, Sub-20 e Feminino (W)
+                    // Filtros para excluir Sub-19, Sub-20 e Feminino
                     const ehSub19ou20 = /sub\s*-?(19|20)|u\s*-?(19|20)/i.test(textoLower);
-                    const ehFeminino = /\(w\)|\bwomen\b|feminino/i.test(textoLower);
+                    const ehFeminino = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(textoLower);
 
                     if (!ehSub19ou20 && !ehFeminino) {
                         unicasSet.add(texto);
@@ -71,22 +75,26 @@ async function executarRadarFiltrado() {
             return Array.from(unicasSet);
         });
 
-        console.log(`📊 Total de partidas válidas após filtros: ${partidasUnicas.length}`);
+        console.log(`📊 Jogos realmente ao vivo encontrados: ${partidasAoVivoReais.length}`);
 
-        if (partidasUnicas.length > 0) {
-            let mensagem = `🔴 <b>[RADAR TOTALCORNER - AO VIVO]</b>\n`;
-            mensagem += `🔥 Jogos filtrados: <code>${partidasUnicas.length}</code>\n\n`;
+        if (partidasAoVivoReais.length > 0) {
+            let mensagem = `🔴 <b>[RADAR TOTALCORNER - AO VIVO REAL]</b>\n`;
+            mensagem += `🔥 Jogos rolando no cronômetro: <code>${partidasAoVivoReais.length}</code>\n\n`;
 
             let blocoAtual = mensagem;
             let contador = 1;
 
-            for (const partida of partidasUnicas) {
-                let linhaJogo = `<b>#${contador}</b>: <code>${partida}</code>\n\n`;
+            for (const partida of partidasAoVivoReais) {
+                // Extrai o minuto exato para o destaque do card
+                const matchMinuto = partida.match(/(\d+['′])/);
+                const tempoInfo = matchMinuto ? `⏱ <b>[${matchMinuto[0]}]</b>` : `⏱ <b>[AO VIVO]</b>`;
+
+                let linhaJogo = `${tempoInfo} <b>#${contador}</b>\n<code>${partida}</code>\n\n`;
                 
                 if ((blocoAtual.length + linhaJogo.length) > 3800) {
                     await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
                     await new Promise(r => setTimeout(r, 1000));
-                    blocoAtual = `🔴 <b>[RADAR TOTALCORNER - CONTINUAÇÃO]</b>\n\n` + linhaJogo;
+                    blocoAtual = `🔴 <b>[RADAR - CONTINUAÇÃO]</b>\n\n` + linhaJogo;
                 } else {
                     blocoAtual += linhaJogo;
                 }
@@ -97,10 +105,10 @@ async function executarRadarFiltrado() {
                 await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
             }
 
-            console.log("✅ Jogos filtrados e enviados com sucesso!");
+            console.log("✅ Relatório de jogos ao vivo reais enviado com sucesso!");
         } else {
-            console.log("ℹ️ Nenhuma partida encontrada após os filtros.");
-            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhuma partida encontrada após aplicar os filtros.`, { parse_mode: 'HTML' });
+            console.log("ℹ️ Nenhum jogo ao vivo com minuto ativo no momento.");
+            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhum jogo ao vivo com cronômetro ativo encontrado no momento.`, { parse_mode: 'HTML' });
         }
 
     } catch (error) {
@@ -111,5 +119,5 @@ async function executarRadarFiltrado() {
     }
 }
 
-executarRadarFiltrado();
-setInterval(executarRadarFiltrado, 180000);
+executarRadarEstritoAoVivo();
+setInterval(executarRadarEstritoAoVivo, 180000);
