@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Escanteios Reais ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Escanteios Definitivo ⚽🚩</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,10 +23,10 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerEEnviarEscanteiosReais() {
+async function varrerEEnviarEscanteios() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Escanteios Reais] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar Definitivo] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -48,8 +48,8 @@ async function varrerEEnviarEscanteiosReais() {
             timeout: 120000
         });
 
-        console.log("⏳ Aguardando carregamento total dos dados e scripts dinâmicos...");
-        await new Promise(r => setTimeout(r, 9000)); // Tempo maior para sumir o "Loading data..."
+        console.log("⏳ Aguardando renderização completa dos dados...");
+        await new Promise(r => setTimeout(r, 10000));
 
         for (let i = 0; i < 6; i++) {
             await page.evaluate(() => window.scrollBy(0, 800));
@@ -63,20 +63,20 @@ async function varrerEEnviarEscanteiosReais() {
             blocos.forEach(el => {
                 const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
 
-                // Filtro hiper-rigoroso para barrar propagandas e estados de carregamento (Loading)
+                // Filtro blindado contra lixo, loadings e anúncios
                 if (
                     texto.length > 30 &&
-                    texto.length < 400 &&
+                    texto.length < 450 &&
                     (/\d{1,3}'/.test(texto) || texto.includes('HT') || texto.includes('FT')) &&
                     (texto.includes('x') || texto.includes('-')) &&
-                    !texto.includes('Loading data') &&
-                    !texto.includes('ODDSLIVE') &&
-                    !texto.includes('ODDSPRE') &&
+                    !texto.includes('Loading') &&
+                    !texto.includes('loading') &&
+                    !texto.includes('ODDS') &&
+                    !texto.includes('GAMEPLAY') &&
                     !texto.includes('Subscribe') &&
                     !texto.includes('RESPONSIBILITY') &&
                     !texto.includes('AVERAGESLAST') &&
-                    !texto.includes('CHANNELS') &&
-                    !texto.includes('GAMEPLAY')
+                    !texto.includes('CHANNELS')
                 ) {
                     let linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                     let ligaEncontrada = "";
@@ -89,7 +89,8 @@ async function varrerEEnviarEscanteiosReais() {
                              lUp.includes('ENGLAND') || lUp.includes('MEXICO') || lUp.includes('LEAGUE') || 
                              lUp.includes('PRIMERA') || lUp.includes('CHAMPIONSHIP') || lUp.includes('PREMIERSHIP') || 
                              lUp.includes('OBERLIGA') || lUp.includes('REGIONALLIGA') || lUp.includes('CUP') || 
-                             lUp.includes('WOMEN') || lUp.includes('PRO') || lUp.includes('JUNIOR')) &&
+                             lUp.includes('WOMEN') || lUp.includes('PRO') || lUp.includes('JUNIOR') ||
+                             lUp.includes('DIVISION') || lUp.includes('MLS')) &&
                             !lUp.includes("'") && !lUp.includes("X") && lUp.length < 45
                         ) {
                             ligaEncontrada = linha;
@@ -107,7 +108,7 @@ async function varrerEEnviarEscanteiosReais() {
             return resultados;
         });
 
-        console.log(`📊 Partidas limpas e válidas encontradas: ${partidasExtraidas.length}`);
+        console.log(`📊 Partidas filtradas encontradas: ${partidasExtraidas.length}`);
         let enviadosNoCiclo = 0;
 
         for (let item of partidasExtraidas) {
@@ -123,20 +124,20 @@ async function varrerEEnviarEscanteiosReais() {
                 placarJogo = `${matchPlacar[1]} x ${matchPlacar[2]}`;
             }
 
-            // Extração refinada de Escanteios buscando padrões numéricos isolados próximos a termos de canto ou estatística
+            // Varredura cirúrgica de escanteios baseada na estrutura numérica padrão do SokkerPRO
             let escanteiosJogo = "0 x 0";
-            let matchEscantes = bloco.match(/(?:cantos?|corners?)\D*([0-9]{1,2})\D*([0-9]{1,2})/i);
-            if (matchEscantes) {
-                escanteiosJogo = `${matchEscantes[1]} x ${matchEscantes[2]}`;
+            let matchesNumericos = bloco.match(/\b([0-1]?[0-9])\s*[-–—]\s*([0-1]?[0-9])\b/g);
+            if (matchesNumericos && matchesNumericos.length >= 2) {
+                // O segundo par de números no bloco costuma representar os cantos
+                let partesCantos = matchesNumericos[1].split(/[-–—]/);
+                if (partesCantos.length === 2) {
+                    escanteiosJogo = `${partesCantos[0].trim()} x ${partesCantos[1].trim()}`;
+                }
             } else {
-                // Tenta varrer pares de números que representem os cantos no padrão do layout mobile do SokkerPRO
-                let digitosLinhados = bloco.match(/\b([0-1]?[0-9])\s*[–—-]\s*([0-1]?[0-9])\b/g);
-                if (digitosLinhados && digitosLinhados.length > 1) {
-                    // O segundo par geralmente representa os cantos após o placar
-                    let partesCantos = digitosLinhados[1].split(/[-–—]/);
-                    if (partesCantos.length === 2) {
-                        escanteiosJogo = `${partesCantos[0].trim()} x ${partesCantos[1].trim()}`;
-                    }
+                // Segunda tentativa via rótulo de texto explicito se houver
+                let matchRotulo = bloco.match(/(?:cantos?|corners?)\D*([0-9]{1,2})\D*([0-9]{1,2})/i);
+                if (matchRotulo) {
+                    escanteiosJogo = `${matchRotulo[1]} x ${matchRotulo[2]}`;
                 }
             }
 
@@ -196,5 +197,5 @@ async function varrerEEnviarEscanteiosReais() {
     }
 }
 
-varrerEEnviarEscanteiosReais();
-setInterval(varrerEEnviarEscanteiosReais, 180000);
+varrerEEnviarEscanteios();
+setInterval(varrerEEnviarEscanteios, 180000);
