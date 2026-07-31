@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Consolidado ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Cards Organizados ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarConsolidado() {
+async function executarRadarCards() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Consolidado] Coletando jogos únicos sem repetição...");
+        console.log("⚡ [Radar Cards] Coletando e formatando partidas...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -41,69 +41,86 @@ async function executarRadarConsolidado() {
         console.log("⏳ Aguardando carregamento e rolando a página...");
         await new Promise(r => setTimeout(r, 6000));
 
-        // Rolagem para garantir o carregamento completo de todos os jogos ativos
         for (let i = 0; i < 4; i++) {
             await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        // Extração garantindo itens únicos (sem duplicidade)
-        const partidasUnicas = await page.evaluate(() => {
-            const unicasSet = new Set();
+        const dadosPartidas = await page.evaluate(() => {
+            const aoVivoSet = new Set();
+            const outrosSet = new Set();
             const trs = document.querySelectorAll('tr');
 
             trs.forEach((tr, index) => {
                 const texto = tr.innerText.replace(/\s+/g, ' ').trim();
-                // Ignora o cabeçalho e pega linhas válidas de confronto
+                
                 if (index > 0 && (texto.includes('vs') || texto.includes(' - ')) && texto.length > 10) {
-                    unicasSet.add(texto);
+                    // Detecta se tem minuto ou indicador de andamento (ex: 15', 45', HT, 90', 2ºT)
+                    const matchTempo = texto.match(/(\d+'|HT|1ºT|2ºT|Intervalo)/i);
+
+                    if (matchTempo) {
+                        aoVivoSet.add(texto);
+                    } else {
+                        outrosSet.add(texto);
+                    }
                 }
             });
 
-            return Array.from(unicasSet);
+            return {
+                aoVivo: Array.from(aoVivoSet),
+                outros: Array.from(outrosSet)
+            };
         });
 
-        console.log(`📊 Total de partidas únicas encontradas: ${partidasUnicas.length}`);
+        console.log(`🔴 Ao Vivo detectados: ${dadosPartidas.aoVivo.length}`);
+        console.log(`📅 Outros jogos: ${dadosPartidas.outros.length}`);
 
-        if (partidasUnicas.length > 0) {
-            let mensagem = `🔴 <b>[RADAR TOTALCORNER - AO VIVO]</b>\n`;
-            mensagem += `🔥 Total de jogos únicos: <code>${partidasUnicas.length}</code>\n\n`;
+        let mensagem = `⚽ <b>RADAR TOTALCORNER - AO VIVO</b> ⚽\n\n`;
 
-            let blocoAtual = mensagem;
-            let contador = 1;
+        if (dadosPartidas.aoVivo.length > 0) {
+            mensagem += `🔴 <b>EM ANDAMENTO (${dadosPartidas.aoVivo.length}):</b>\n\n`;
+            let c = 1;
+            for (const jogo of dadosPartidas.aoVivo) {
+                // Tenta extrair o tempo para destacar de forma limpa no card
+                const match = jogo.match(/(\d+'|HT|1ºT|2ºT|Intervalo)/i);
+                const tempoInfo = match ? `⏱ [${match[0]}]` : `⏱ [AO VIVO]`;
 
-            for (const partida of partidasUnicas) {
-                let linhaJogo = `<b>#${contador}</b>: <code>${partida}</code>\n\n`;
-                
-                // Se o bloco aproximar do limite do Telegram (~3800 caracteres), envia e inicia o próximo
-                if ((blocoAtual.length + linhaJogo.length) > 3800) {
-                    await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
-                    await new Promise(r => setTimeout(r, 1000));
-                    blocoAtual = `🔴 <b>[RADAR TOTALCORNER - CONTINUAÇÃO]</b>\n\n` + linhaJogo;
-                } else {
-                    blocoAtual += linhaJogo;
-                }
-                contador++;
+                mensagem += `🟢 <b>#${c} ${tempoInfo}</b>\n`;
+                mensagem += `<code>${jogo}</code>\n\n`;
+                c++;
             }
-
-            // Envia o bloco final restante
-            if (blocoAtual.trim().length > 0) {
-                await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
-            }
-
-            console.log("✅ Todos os jogos enviados de forma limpa e sem repetição!");
         } else {
-            console.log("ℹ️ Nenhuma partida encontrada.");
-            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhuma partida encontrada nesta varredura.`, { parse_mode: 'HTML' });
+            mensagem += `⚠️ <i>Nenhum jogo com tempo real no momento.</i>\n\n`;
         }
 
+        if (dadosPartidas.outros.length > 0) {
+            mensagem += `━━━━━━━━━━━━━━━━━━━━━\n`;
+            mensagem += `📋 <b>OUTROS JOGOS NA LISTA (${dadosPartidas.outros.length}):</b>\n\n`;
+            let c = 1;
+            for (const jogo of dadosPartidas.outros) {
+                mensagem += `⏳ <b>#${c}</b> <code>${jogo}</code>\n\n`;
+                c++;
+            }
+        }
+
+        // Envio seguro dividido por blocos se necessário
+        if (mensagem.length > 3900) {
+            await bot.sendMessage(CHAT_ID, mensagem.substring(0, 3800), { parse_mode: 'HTML' }).catch(() => {});
+            await new Promise(r => setTimeout(r, 1000));
+            await bot.sendMessage(CHAT_ID, `<b>[Continuação do Radar]</b>\n\n` + mensagem.substring(3800), { parse_mode: 'HTML' }).catch(() => {});
+        } else {
+            await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'HTML' }).catch(() => {});
+        }
+
+        console.log("✅ Cards organizados enviados com sucesso!");
+
     } catch (error) {
-        console.error("❌ Erro no Radar:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro Radar:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarConsolidado();
-setInterval(executarRadarConsolidado, 180000);
+executarRadarCards();
+setInterval(executarRadarCards, 180000);
