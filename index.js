@@ -6,20 +6,19 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Alerta de Gols Pro ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Alertas Individuais ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-// Memória de placares para rastrear os gols com precisão
 const placaresMemoria = new Map();
 
-async function monitorarGolsPro() {
+async function monitorarGolsIndividual() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Pro] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar Individual] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -44,13 +43,13 @@ async function monitorarGolsPro() {
         console.log("⏳ Carregando os jogos ao vivo...");
         await new Promise(r => setTimeout(r, 7000));
 
-        // Roda a página para garantir que todos os 48+ jogos carreguem
+        // Rola a página para carregar todos os jogos
         for (let i = 0; i < 6; i++) {
             await page.evaluate(() => window.scrollBy(0, 800));
             await new Promise(r => setTimeout(r, 1500));
         }
 
-        // Extração organizada dos dados da tela
+        // Extração dos dados limpos
         const partidasDetectadas = await page.evaluate(() => {
             const lista = [];
             const blocos = document.querySelectorAll('div');
@@ -64,15 +63,16 @@ async function monitorarGolsPro() {
                     for (let i = 0; i < linhas.length - 1; i++) {
                         if (/^\d{1,2}$/.test(linhas[i]) && /^\d{1,2}$/.test(linhas[i+1])) {
                             const placar = `${linhas[i]} x ${linhas[i+1]}`;
-                            const partes = texto.split(/[\d\s]+x[\d\s]+/);
                             
-                            if (partes.length >= 2) {
-                                lista.push({
-                                    chave: texto.substring(0, 50),
-                                    textoBruto: texto,
-                                    placarAtual: placar
-                                });
-                            }
+                            // Tenta extrair linhas para separar Liga, Times e Tempo
+                            const partesLinhas = texto.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+                            
+                            lista.push({
+                                chave: texto.substring(0, 50),
+                                textoBruto: texto,
+                                placarAtual: placar,
+                                linhasDetalhadas: partesLinhas
+                            });
                             break;
                         }
                     }
@@ -91,44 +91,57 @@ async function monitorarGolsPro() {
             return unicos;
         });
 
-        console.log(`📊 Partidas analisadas: ${partidasDetectadas.length}`);
+        console.log(`📊 Partidas processadas: ${partidasDetectadas.length}`);
 
         for (const partida of partidasDetectadas) {
             // Filtra categorias indesejadas (sub e feminino)
             if (/sub-?\d{2}|\(w\)|women|feminino/i.test(partida.chave)) continue;
 
             if (!placaresMemoria.has(partida.chave)) {
-                // Cadastra na memória silenciosamente para começar a rastrear os gols
                 placaresMemoria.set(partida.chave, partida.placarAtual);
             } else {
                 const placarAntigo = placaresMemoria.get(partida.chave);
 
                 if (placarAntigo !== partida.placarAtual) {
-                    // 🚨 GOL DETECTADO! O placar mudou!
+                    // 🚨 GOL DETECTADO! Vamos estruturar o card individual perfeito.
                     placaresMemoria.set(partida.chave, partida.placarAtual);
 
-                    let cardFormatado = `⚽🔥 **GOOOOOOOL DETECTADO!** 🔥⚽\n`;
-                    cardFormatado += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                    cardFormatado += `🏟 **Jogo / Confronto:**\n<code>${partida.textoBruto}</code>\n\n`;
-                    cardFormatado += `⚽ **Novo Resultado:** <code>${partida.placarAtual}</code> (Anterior: ${placarAntigo})\n`;
-                    cardFormatado += `━━━━━━━━━━━━━━━━━━━━━━`;
+                    // Tenta organizar as informações de forma limpa baseada no texto bruto
+                    let linhas = partida.linhasDetalhadas;
+                    let liga = linhas.length > 0 ? linhas[0] : "Futebol Ao Vivo";
+                    let tempo = "Ao Vivo";
+                    
+                    // Procura o tempo (minuto, HT, FT)
+                    for (const l of linhas) {
+                        if (l.includes("'") || l.includes("HT") || l.includes("FT") || /^\d{1,3}\s*['′]/.test(l)) {
+                            tempo = l;
+                            break;
+                        }
+                    }
 
-                    console.log(`⚽ GOL! ${partida.placarAtual} em ${partida.chave}`);
-                    await bot.sendMessage(CHAT_ID, cardFormatado, { parse_mode: 'HTML' }).catch(() => {});
+                    let cardIndividual = `⚽🔥 **GOOOOL! - SOKKERPRO AO VIVO** 🔥⚽\n`;
+                    cardIndividual += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+                    cardIndividual += `🏆 **Liga / Competição:** ${liga}\n`;
+                    cardIndividual += `⏱ **Tempo de Jogo:** ${tempo}\n`;
+                    cardIndividual += `⚔️ **Confronto:** <code>${partida.textoBruto}</code>\n`;
+                    cardIndividual += `📊 **Novo Placar:** <code>${partida.placarAtual}</code>\n`;
+                    cardIndividual += `━━━━━━━━━━━━━━━━━━━━━━`;
+
+                    console.log(`⚽ GOL INDIVIDUAL ENVIADO: ${partida.placarAtual}`);
+                    await bot.sendMessage(CHAT_ID, cardIndividual, { parse_mode: 'HTML' }).catch(() => {});
                     await new Promise(r => setTimeout(r, 1500));
                 }
             }
         }
 
-        console.log("✅ Varredura de gols finalizada com sucesso.");
+        console.log("✅ Ciclo concluído.");
 
     } catch (erro) {
-        console.error("❌ Erro no monitoramento:", erro.message);
+        console.error("❌ Erro:", erro.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-// Roda imediatamente e repete a cada 2 minutos para pegar os gols instantaneamente
-monitorarGolsPro();
-setInterval(monitorarGolsPro, 120000);
+monitorarGolsIndividual();
+setInterval(monitorarGolsIndividual, 120000);
