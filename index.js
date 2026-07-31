@@ -6,17 +6,20 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigação V65 ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - V66 Oficial ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarInvestigacaoV65() {
+// Memória global para evitar repetir jogos já enviados enquanto estiverem ativos
+const jogosJaEnviados = new Set();
+
+async function executarRadarV66() {
     let browser = null;
     try {
-        console.log("⚡ [Investigação V65] Lendo o código HTML profundo para achar os 23 jogos perdidos...");
+        console.log("⚡ [Radar V66] Varrendo apenas jogos legítimos em andamento...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -45,81 +48,58 @@ async function executarInvestigacaoV65() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        // Script de extração com Raio-X aprimorado
-        const dados = await page.evaluate(() => {
-            const logsInvestigacao = [];
-            const aoVivoSet = new Set();
-            const blocos = document.querySelectorAll('tr');
-
-            let count = 0;
+        const partidasAoVivo = await page.evaluate(() => {
+            const validasSet = new Set();
+            const blocos = document.querySelectorAll('tr, div.match-row');
 
             blocos.forEach(el => {
                 const textoRaw = el.innerText || '';
                 const texto = textoRaw.replace(/\s+/g, ' ').trim();
                 const textoLower = texto.toLowerCase();
 
-                // Verifica se parece ser uma linha de jogo
                 if (texto.length > 15 && (texto.includes('vs') || texto.includes(' - '))) {
-                    
-                    // 1. Lendo as entranhas do HTML (TotalCorner usa classes específicas para tempo ao vivo)
                     const htmlInner = el.innerHTML.toLowerCase();
-                    const temTagHtmlAoVivo = htmlInner.includes('match_status_minute') || 
-                                             htmlInner.includes('match_status_ht') || 
-                                             htmlInner.includes('color:red') || 
-                                             htmlInner.includes('color: red') ||
-                                             htmlInner.includes('match_time');
 
-                    // 2. Filtro de texto corrigido (Exige a palavra exata 'min' ou 'mín', não aceita feMINino)
-                    const temMin = /\b(min|mín)\b/i.test(textoLower);
-                    const temCronometro = /(\d{1,3})\s*['′]|ht|1ºt|2ºt|intervalo|live/i.test(textoLower);
+                    // Critério rigoroso: O TotalCorner insere classes de andamento ou marcações de tempo real
+                    const temAndamentoReal = htmlInner.includes('match_status_') || 
+                                              htmlInner.includes('class="time') || 
+                                              htmlInner.includes('cronometro') ||
+                                              /\d{1,2}\s*['′]|ht|1ºt|2ºt/i.test(textoLower);
 
-                    const ehAoVivo = (temTagHtmlAoVivo || temMin || temCronometro);
-                    
-                    // 3. Filtros de bloqueio
+                    // Bloqueia explicitamente se contiver o padrão de data futura na linha (ex: 07/31 16:00)
+                    const temDataFutura = /\d{2}\/\d{2}\s\d{2}:\d{2}/.test(texto);
+
+                    // Filtros de base e feminino
                     const ehSub = /sub\s*-?(19|20|21|23)|u\s*-?(19|20|21|23)/i.test(textoLower);
                     const ehFem = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(textoLower);
 
-                    // Salva as 25 primeiras linhas para lermos no log do Render
-                    if (count < 25) {
-                        logsInvestigacao.push(
-                            `[JOGO ${count + 1}] "${texto.substring(0, 60)}..." | HTML_AO_VIVO: ${temTagHtmlAoVivo} | TEXTO_TEMPO: ${temMin || temCronometro} | RESULTADO: ${ehAoVivo && !ehSub && !ehFem ? 'APROVADO' : 'BARRADO'}`
-                        );
-                    }
-                    count++;
-
-                    // Se passou nas verificações, vai pra lista final
-                    if (ehAoVivo && !ehSub && !ehFem) {
-                        aoVivoSet.add(texto);
+                    if (temAndamentoReal && !temDataFutura && !ehSub && !ehFem) {
+                        validasSet.add(texto);
                     }
                 }
             });
 
-            return {
-                jogosAoVivo: Array.from(aoVivoSet),
-                logs: logsInvestigacao
-            };
+            return Array.from(validasSet);
         });
 
-        // ==========================================
-        // IMPRIMINDO O RAIO-X NO RENDER
-        // ==========================================
-        console.log("\n=========================================");
-        console.log("🕵️ RAIO-X V65 (LENDO O CÓDIGO FONTE)");
-        console.log("=========================================");
-        dados.logs.forEach(log => console.log(log));
-        console.log("=========================================\n");
+        // Filtra para remover o que já foi enviado anteriormente
+        const novasPartidas = partidasAoVivo.filter(partida => !jogosJaEnviados.has(partida));
 
-        console.log(`📊 Jogos capturados pela V65: ${dados.jogosAoVivo.length}`);
+        console.log(`📊 Jogos encontrados agora: ${partidasAoVivo.length} | Novos para envio: ${novasPartidas.length}`);
 
-        if (dados.jogosAoVivo.length > 0) {
-            let mensagem = `🔴 <b>[RADAR TOTALCORNER - V65]</b>\n`;
-            mensagem += `🔥 Partidas rodando agora: <code>${dados.jogosAoVivo.length}</code>\n\n`;
+        if (novasPartidas.length > 0) {
+            let mensagem = `🔴 <b>[RADAR TOTALCORNER - NOVOS AO VIVO]</b>\n`;
+            mensagem += `🔥 Partidas inéditas detectadas: <code>${novasPartidas.length}</code>\n\n`;
 
             let blocoAtual = mensagem;
             let contador = 1;
 
-            for (const partida of dados.jogosAoVivo) {
-                let linhaJogo = `⏱ <b>#${contador}</b>\n<code>${partida}</code>\n\n`;
+            for (const partida of novasPartidas) {
+                // Adiciona na memória de enviados para nunca mais repetir
+                jogosJaEnviados.add(partida);
+
+                let linhaJogo = `⏱ <b>#${contador} [AO VIVO]</b>\n<code>${partida}</code>\n\n`;
+                
                 if ((blocoAtual.length + linhaJogo.length) > 3800) {
                     await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
                     await new Promise(r => setTimeout(r, 1000));
@@ -133,17 +113,17 @@ async function executarInvestigacaoV65() {
             if (blocoAtual.trim().length > 0) {
                 await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
             }
-            console.log("✅ Lista enviada ao Telegram!");
+            console.log("✅ Novos jogos enviados ao Telegram com sucesso!");
         } else {
-            console.log("ℹ️ Nenhum jogo ao vivo encontrado.");
+            console.log("ℹ️ Nenhum jogo novo encontrado nesta varredura (todos já foram enviados).");
         }
 
     } catch (error) {
-        console.error("❌ Erro V65:", error.message);
+        console.error("❌ Erro V66:", error.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarInvestigacaoV65();
-setInterval(executarInvestigacaoV65, 180000);
+executarRadarV66();
+setInterval(executarRadarV66, 180000);
