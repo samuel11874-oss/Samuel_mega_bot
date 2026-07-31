@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Consolidado ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar Filtrado ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarConsolidado() {
+async function executarRadarFiltrado() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Consolidado] Coletando jogos únicos sem repetição...");
+        console.log("⚡ [Radar Filtrado] Coletando jogos e aplicando filtros de categoria...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -47,27 +47,35 @@ async function executarRadarConsolidado() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        // Extração garantindo itens únicos (sem duplicidade)
+        // Extração com exclusão de Sub-19, Sub-20 e Jogos Femininos (W)
         const partidasUnicas = await page.evaluate(() => {
             const unicasSet = new Set();
             const trs = document.querySelectorAll('tr');
 
             trs.forEach((tr, index) => {
                 const texto = tr.innerText.replace(/\s+/g, ' ').trim();
-                // Ignora o cabeçalho e pega linhas válidas de confronto
+                
                 if (index > 0 && (texto.includes('vs') || texto.includes(' - ')) && texto.length > 10) {
-                    unicasSet.add(texto);
+                    const textoLower = texto.toLowerCase();
+
+                    // Filtros para remover Sub-19, Sub-20 e Feminino (W)
+                    const ehSub19ou20 = /sub\s*-?(19|20)|u\s*-?(19|20)/i.test(textoLower);
+                    const ehFeminino = /\(w\)|\bwomen\b|feminino/i.test(textoLower);
+
+                    if (!ehSub19ou20 && !ehFeminino) {
+                        unicasSet.add(texto);
+                    }
                 }
             });
 
             return Array.from(unicasSet);
         });
 
-        console.log(`📊 Total de partidas únicas encontradas: ${partidasUnicas.length}`);
+        console.log(`📊 Total de partidas válidas após filtros: ${partidasUnicas.length}`);
 
         if (partidasUnicas.length > 0) {
             let mensagem = `🔴 <b>[RADAR TOTALCORNER - AO VIVO]</b>\n`;
-            mensagem += `🔥 Total de jogos únicos: <code>${partidasUnicas.length}</code>\n\n`;
+            mensagem += `🔥 Jogos filtrados: <code>${partidasUnicas.length}</code>\n\n`;
 
             let blocoAtual = mensagem;
             let contador = 1;
@@ -75,7 +83,6 @@ async function executarRadarConsolidado() {
             for (const partida of partidasUnicas) {
                 let linhaJogo = `<b>#${contador}</b>: <code>${partida}</code>\n\n`;
                 
-                // Se o bloco aproximar do limite do Telegram (~3800 caracteres), envia e inicia o próximo
                 if ((blocoAtual.length + linhaJogo.length) > 3800) {
                     await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
                     await new Promise(r => setTimeout(r, 1000));
@@ -86,15 +93,14 @@ async function executarRadarConsolidado() {
                 contador++;
             }
 
-            // Envia o bloco final restante
             if (blocoAtual.trim().length > 0) {
                 await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
             }
 
-            console.log("✅ Todos os jogos enviados de forma limpa e sem repetição!");
+            console.log("✅ Jogos filtrados e enviados com sucesso!");
         } else {
-            console.log("ℹ️ Nenhuma partida encontrada.");
-            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhuma partida encontrada nesta varredura.`, { parse_mode: 'HTML' });
+            console.log("ℹ️ Nenhuma partida encontrada após os filtros.");
+            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhuma partida encontrada após aplicar os filtros.`, { parse_mode: 'HTML' });
         }
 
     } catch (error) {
@@ -105,5 +111,5 @@ async function executarRadarConsolidado() {
     }
 }
 
-executarRadarConsolidado();
-setInterval(executarRadarConsolidado, 180000);
+executarRadarFiltrado();
+setInterval(executarRadarFiltrado, 180000);
