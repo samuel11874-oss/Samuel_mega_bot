@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Teste de Envio ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Principais Ligas ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -15,30 +15,23 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 
 const placaresMemoria = new Map();
 
-// Função de teste para validar o envio direto ao Telegram
-async function testarConexaoTelegram() {
-    try {
-        console.log("🧪 Enviando mensagem de teste para o Telegram...");
-        let cardTeste = `⚽🤖 **BOT SOKKERPRO - TESTE DE CONEXÃO** 🤖⚽\n`;
-        cardTeste += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-        cardTeste += `🏟 **SokkerPRO Ao Vivo:** Sistema Online\n`;
-        cardTeste += `🏆 **Competição:** Teste de Integração\n`;
-        cardTeste += `⏱ **Tempo de Jogo:** 45' (1º Tempo)\n`;
-        cardTeste += `⚔️ **Confronto:** Time A 0 x 0 Time B\n`;
-        cardTeste += `📊 **Status:** Aguardando gols em tempo real...\n`;
-        cardTeste += `━━━━━━━━━━━━━━━━━━━━━━`;
+// Lista de termos que identificam divisões inferiores ou categorias de base para exclusão
+const termosExcluidos = /sub-?\d{2}|sub\d|u\d{2}|u\d{1}|junior|youth|feminino|women|\(w\)|amador|regional|bta|reserva|friendly|amistoso/i;
 
-        await bot.sendMessage(CHAT_ID, cardTeste, { parse_mode: 'HTML' });
-        console.log("✅ Mensagem de teste enviada com sucesso para o chat!");
-    } catch (e) {
-        console.error("❌ Erro ao enviar mensagem de teste:", e.message);
-    }
+// Função para validar se a liga pertence à elite ou segunda divisão principal
+function ehLigaPrincipal(textoLiga) {
+    if (termosExcluidos.test(textoLiga)) return false;
+
+    // Identifica divisões principais e secundárias comuns (Série A, B, Premier, La Liga, 1. Division, 2. Bundesliga, etc.)
+    const padroesPrincipais = /primera|premier|serie a|serie b|bundesliga|ligue 1|ligue 2|eredivisie|primeira|championship|segunda|división|division|pro league|super lig|superleague/i;
+    
+    return padroesPrincipais.test(textoLiga);
 }
 
-async function monitorarGolsIndividual() {
+async function monitorarPrincipaisLigas() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Individual] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar Ligas Principais] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -106,10 +99,16 @@ async function monitorarGolsIndividual() {
             return unicos;
         });
 
-        console.log(`📊 Partidas processadas: ${partidasDetectadas.length}`);
+        console.log(`📊 Total de partidas lidas: ${partidasDetectadas.length}`);
 
         for (const partida of partidasDetectadas) {
-            if (/sub-?\d{2}|\(w\)|women|feminino/i.test(partida.chave)) continue;
+            let linhas = partida.linhasDetalhadas;
+            let liga = linhas.length > 0 ? linhas[0] : "Futebol Ao Vivo";
+
+            // Aplica o filtro restrito para primeira e segunda divisões globais
+            if (!ehLigaPrincipal(liga) && !ehLigaPrincipal(partida.chave)) {
+                continue; // Pula ligas que não são da elite/segunda divisão principal
+            }
 
             if (!placaresMemoria.has(partida.chave)) {
                 placaresMemoria.set(partida.chave, partida.placarAtual);
@@ -119,10 +118,7 @@ async function monitorarGolsIndividual() {
                 if (placarAntigo !== partida.placarAtual) {
                     placaresMemoria.set(partida.chave, partida.placarAtual);
 
-                    let linhas = partida.linhasDetalhadas;
-                    let liga = linhas.length > 0 ? linhas[0] : "Futebol Ao Vivo";
                     let tempo = "Ao Vivo";
-                    
                     for (const l of linhas) {
                         if (l.includes("'") || l.includes("HT") || l.includes("FT") || /^\d{1,3}\s*['′]/.test(l)) {
                             tempo = l;
@@ -139,14 +135,14 @@ async function monitorarGolsIndividual() {
                     cardIndividual += `📊 **Novo Placar:** <code>${partida.placarAtual}</code>\n`;
                     cardIndividual += `━━━━━━━━━━━━━━━━━━━━━━`;
 
-                    console.log(`⚽ GOL INDIVIDUAL ENVIADO: ${partida.placarAtual}`);
+                    console.log(`⚽ GOL EM LIGA PRINCIPAL DETECTADO: ${partida.placarAtual} (${liga})`);
                     await bot.sendMessage(CHAT_ID, cardIndividual, { parse_mode: 'HTML' }).catch(() => {});
                     await new Promise(r => setTimeout(r, 1500));
                 }
             }
         }
 
-        console.log("✅ Ciclo concluído.");
+        console.log("✅ Ciclo de varredura das principais ligas concluído.");
 
     } catch (erro) {
         console.error("❌ Erro:", erro.message);
@@ -155,9 +151,5 @@ async function monitorarGolsIndividual() {
     }
 }
 
-// Executa o teste de conexão logo na inicialização
-testarConexaoTelegram();
-
-// Inicia o monitoramento contínuo
-monitorarGolsIndividual();
-setInterval(monitorarGolsIndividual, 120000);
+monitorarPrincipaisLigas();
+setInterval(monitorarPrincipaisLigas, 120000);
