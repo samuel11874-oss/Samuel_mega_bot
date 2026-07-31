@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Principais Ligas ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Ligas Principais & Ao Vivo ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -15,23 +15,19 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 
 const placaresMemoria = new Map();
 
-// Lista de termos que identificam divisões inferiores ou categorias de base para exclusão
+// Filtro de exclusão para divisões inferiores e categorias de base
 const termosExcluidos = /sub-?\d{2}|sub\d|u\d{2}|u\d{1}|junior|youth|feminino|women|\(w\)|amador|regional|bta|reserva|friendly|amistoso/i;
 
-// Função para validar se a liga pertence à elite ou segunda divisão principal
 function ehLigaPrincipal(textoLiga) {
     if (termosExcluidos.test(textoLiga)) return false;
-
-    // Identifica divisões principais e secundárias comuns (Série A, B, Premier, La Liga, 1. Division, 2. Bundesliga, etc.)
     const padroesPrincipais = /primera|premier|serie a|serie b|bundesliga|ligue 1|ligue 2|eredivisie|primeira|championship|segunda|división|division|pro league|super lig|superleague/i;
-    
     return padroesPrincipais.test(textoLiga);
 }
 
-async function monitorarPrincipaisLigas() {
+async function varrerEEnviarJogosAoVivo() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Ligas Principais] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar Ao Vivo] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -99,50 +95,65 @@ async function monitorarPrincipaisLigas() {
             return unicos;
         });
 
-        console.log(`📊 Total de partidas lidas: ${partidasDetectadas.length}`);
+        console.log(`📊 Partidas detectadas no total: ${partidasDetectadas.length}`);
+
+        let contadorEnviados = 0;
 
         for (const partida of partidasDetectadas) {
             let linhas = partida.linhasDetalhadas;
             let liga = linhas.length > 0 ? linhas[0] : "Futebol Ao Vivo";
 
-            // Aplica o filtro restrito para primeira e segunda divisões globais
+            // Aplica o filtro de ligas principais (primeira e segunda divisão)
             if (!ehLigaPrincipal(liga) && !ehLigaPrincipal(partida.chave)) {
-                continue; // Pula ligas que não são da elite/segunda divisão principal
+                continue; 
             }
 
+            // Identifica o tempo de jogo
+            let tempo = "Ao Vivo";
+            for (const l of linhas) {
+                if (l.includes("'") || l.includes("HT") || l.includes("FT") || /^\d{1,3}\s*['′]/.test(l)) {
+                    tempo = l;
+                    break;
+                }
+            }
+
+            // Se ainda não está na memória, registra e envia o card ao vivo
             if (!placaresMemoria.has(partida.chave)) {
                 placaresMemoria.set(partida.chave, partida.placarAtual);
+
+                let cardIndividual = `⚽🟢 **SOKKERPRO AO VIVO** 🟢⚽\n`;
+                cardIndividual += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+                cardIndividual += `🏆 **Competição:** ${liga}\n`;
+                cardIndividual += `⏱ **Tempo de Jogo:** ${tempo}\n`;
+                cardIndividual += `⚔️ **Confronto:** <code>${partida.textoBruto}</code>\n`;
+                cardIndividual += `📊 **Placar Atual:** <code>${partida.placarAtual}</code>\n`;
+                cardIndividual += `━━━━━━━━━━━━━━━━━━━━━━`;
+
+                await bot.sendMessage(CHAT_ID, cardIndividual, { parse_mode: 'HTML' }).catch(() => {});
+                contadorEnviados++;
+                await new Promise(r => setTimeout(r, 1500)); // Intervalo curto entre cards para não floodar o Telegram
             } else {
+                // Se já está na memória, verifica se o placar mudou (GOL!)
                 const placarAntigo = placaresMemoria.get(partida.chave);
 
                 if (placarAntigo !== partida.placarAtual) {
                     placaresMemoria.set(partida.chave, partida.placarAtual);
 
-                    let tempo = "Ao Vivo";
-                    for (const l of linhas) {
-                        if (l.includes("'") || l.includes("HT") || l.includes("FT") || /^\d{1,3}\s*['′]/.test(l)) {
-                            tempo = l;
-                            break;
-                        }
-                    }
+                    let cardGol = `⚽🔥 **GOOOOL! - SOKKERPRO AO VIVO** 🔥⚽\n`;
+                    cardGol += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+                    cardGol += `🏆 **Competição:** ${liga}\n`;
+                    cardGol += `⏱ **Tempo de Jogo:** ${tempo}\n`;
+                    cardGol += `⚔️ **Confronto:** <code>${partida.textoBruto}</code>\n`;
+                    cardGol += `📊 **Novo Placar:** <code>${partida.placarAtual}</code>\n`;
+                    cardGol += `━━━━━━━━━━━━━━━━━━━━━━`;
 
-                    let cardIndividual = `⚽🔥 **GOOOOL! - SOKKERPRO AO VIVO** 🔥⚽\n`;
-                    cardIndividual += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-                    cardIndividual += `🏟 **SokkerPRO Ao Vivo**\n`;
-                    cardIndividual += `🏆 **Competição:** ${liga}\n`;
-                    cardIndividual += `⏱ **Tempo de Jogo:** ${tempo}\n`;
-                    cardIndividual += `⚔️ **Confronto:** <code>${partida.textoBruto}</code>\n`;
-                    cardIndividual += `📊 **Novo Placar:** <code>${partida.placarAtual}</code>\n`;
-                    cardIndividual += `━━━━━━━━━━━━━━━━━━━━━━`;
-
-                    console.log(`⚽ GOL EM LIGA PRINCIPAL DETECTADO: ${partida.placarAtual} (${liga})`);
-                    await bot.sendMessage(CHAT_ID, cardIndividual, { parse_mode: 'HTML' }).catch(() => {});
+                    await bot.sendMessage(CHAT_ID, cardGol, { parse_mode: 'HTML' }).catch(() => {});
                     await new Promise(r => setTimeout(r, 1500));
                 }
             }
         }
 
-        console.log("✅ Ciclo de varredura das principais ligas concluído.");
+        console.log(`✅ Varredura concluída. ${contadorEnviados} novos jogos das principais ligas enviados.`);
 
     } catch (erro) {
         console.error("❌ Erro:", erro.message);
@@ -151,5 +162,8 @@ async function monitorarPrincipaisLigas() {
     }
 }
 
-monitorarPrincipaisLigas();
-setInterval(monitorarPrincipaisLigas, 120000);
+// Roda a varredura imediatamente ao iniciar (para trazer os jogos que estão rolando agora)
+varrerEEnviarJogosAoVivo();
+
+// Repete a checagem a cada 2 minutos para pegar novos jogos e gols em andamento
+setInterval(varrerEEnviarJogosAoVivo, 120000);
