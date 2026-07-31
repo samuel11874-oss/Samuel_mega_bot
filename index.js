@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V59 Ao Vivo ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V60 Estrito Ao Vivo ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarV59() {
+async function executarRadarV60() {
     let browser = null;
     try {
-        console.log("⚡ [Radar V59] Iniciando varredura otimizada de jogos ao vivo...");
+        console.log("⚡ [Radar V60] Buscando estritamente jogos em andamento com minuto ativo...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -46,26 +46,28 @@ async function executarRadarV59() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        // Extração estruturada para pegar partidas ativas e filtrar categorias indesejadas
-        const partidasMapeadas = await page.evaluate(() => {
+        // Extração focada estritamente em jogos ao vivo (exigindo minuto real ou marcador de tempo de jogo)
+        const partidasAoVivoReais = await page.evaluate(() => {
             const unicasSet = new Set();
-            const linhas = document.querySelectorAll('tr, .match-row, div');
+            const blocos = document.querySelectorAll('.match-row, tr, div');
 
-            linhas.forEach(el => {
+            blocos.forEach(el => {
                 const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
 
-                // Verifica se o bloco contém um confronto válido
-                if ((texto.includes('vs') || texto.includes(' - ')) && texto.length > 15 && texto.length < 500) {
+                // Deve conter um confronto válido
+                if ((texto.includes('vs') || texto.includes(' - ')) && texto.length > 15 && texto.length < 600) {
                     const textoLower = texto.toLowerCase();
 
-                    // Ignora explicitamente pré-jogos que mostram "Hora" se não tiver andamento
-                    const temHoraFutura = /hora\s*\d{2}:\d{2}/i.test(textoLower);
-                    
-                    // Filtros para remover Sub-19, Sub-20 e Feminino
+                    // Critério estrito para ser AO VIVO: deve conter marcador de minuto (ex: 48', 12') ou HT/Intervalo/1ºT/2ºT
+                    // E NÃO deve conter o rótulo de "Hora" de jogo futuro
+                    const temMinutoAtivo = /(\d{1,3})\s*['′]|ht|1ºt|2ºt|intervalo/i.test(texto);
+                    const ehFuturo = /hora\s*\d{2}:\d{2}/i.test(textoLower);
+
+                    // Filtros de categoria: Sem Sub-19, Sub-20 e Feminino
                     const ehSub19ou20 = /sub\s*-?(19|20)|u\s*-?(19|20)/i.test(textoLower);
                     const ehFeminino = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(textoLower);
 
-                    if (!ehSub19ou20 && !ehFeminino && !temHoraFutura) {
+                    if (temMinutoAtivo && !ehFuturo && !ehSub19ou20 && !ehFeminino) {
                         unicasSet.add(texto);
                     }
                 }
@@ -74,17 +76,21 @@ async function executarRadarV59() {
             return Array.from(unicasSet);
         });
 
-        console.log(`📊 Partidas válidas encontradas: ${partidasMapeadas.length}`);
+        console.log(`📊 Jogos estritamente ao vivo encontrados: ${partidasAoVivoReais.length}`);
 
-        if (partidasMapeadas.length > 0) {
-            let mensagem = `🔴 <b>[RADAR TOTALCORNER - AO VIVO]</b>\n`;
-            mensagem += `🔥 Total de jogos filtrados: <code>${partidasMapeadas.length}</code>\n\n`;
+        if (partidasAoVivoReais.length > 0) {
+            let mensagem = `🔴 <b>[RADAR TOTALCORNER - AO VIVO REAL]</b>\n`;
+            mensagem += `🔥 Jogos com cronômetro ativo: <code>${partidasAoVivoReais.length}</code>\n\n`;
 
             let blocoAtual = mensagem;
             let contador = 1;
 
-            for (const partida of partidasMapeadas) {
-                let linhaJogo = `<b>#${contador}</b>: <code>${partida}</code>\n\n`;
+            for (const partida of partidasAoVivoReais) {
+                // Extrai o minuto exato para destacar no card
+                const matchMinuto = partida.match(/(\d{1,3}\s*['′])/);
+                const tempoInfo = matchMinuto ? `⏱ <b>[${matchMinuto[0].trim()}]</b>` : `⏱ <b>[AO VIVO]</b>`;
+
+                let linhaJogo = `${tempoInfo} <b>#${contador}</b>\n<code>${partida}</code>\n\n`;
                 
                 if ((blocoAtual.length + linhaJogo.length) > 3800) {
                     await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
@@ -100,19 +106,19 @@ async function executarRadarV59() {
                 await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
             }
 
-            console.log("✅ Relatório enviado com sucesso!");
+            console.log("✅ Relatório de jogos estritamente ao vivo enviado com sucesso!");
         } else {
-            console.log("ℹ️ Nenhuma partida encontrada.");
-            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhuma partida encontrada nesta varredura.`, { parse_mode: 'HTML' });
+            console.log("ℹ️ Nenhum jogo ao vivo com minuto ativo no momento.");
+            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhum jogo ao vivo com cronômetro ativo encontrado no momento.`, { parse_mode: 'HTML' });
         }
 
     } catch (error) {
-        console.error("❌ Erro V59:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V59:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro V60:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V60:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarV59();
-setInterval(executarRadarV59, 180000);
+executarRadarV60();
+setInterval(executarRadarV60, 180000);
