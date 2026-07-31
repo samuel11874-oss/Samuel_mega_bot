@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Definitivo ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Seletor DOM ⚽🚩</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -22,10 +22,10 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerDefinitivo() {
+async function varrerPorDOM() {
     let browser = null;
     try {
-        console.log("⚡ [Scanner Definitivo] Conectando ao SokkerPRO...");
+        console.log("⚡ [Scanner DOM] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -47,7 +47,7 @@ async function varrerDefinitivo() {
             timeout: 120000
         });
 
-        console.log("⏳ Aguardando renderização total...");
+        console.log("⏳ Aguardando carregamento dos elementos...");
         await new Promise(r => setTimeout(r, 12000)); 
 
         for (let i = 0; i < 6; i++) {
@@ -56,87 +56,78 @@ async function varrerDefinitivo() {
         }
 
         const partidasExtraidas = await page.evaluate(() => {
-            const isTime = (s) => /^\d{1,3}'/i.test(s) || /^(HT|FT|Intervalo)$/i.test(s);
+            let listaJogos = [];
             
-            const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-            let texts = [];
-            let n;
-            while (n = walk.nextNode()) {
-                let val = n.nodeValue.replace(/\s+/g, ' ').trim();
-                if (val.length > 0 && val !== '-' && val !== 'x' && val !== 'X' && !val.includes('Loading')) {
-                    texts.push(val);
-                }
-            }
-
-            let resultados = [];
-            let i = 0;
+            // Varre o DOM buscando blocos que costumam conter as partidas
+            // Como sites mobile usam divs genéricas, vamos procurar elementos que contêm relógios de tempo (')
+            const allElements = document.querySelectorAll('div, span, p, a');
             
-            while (i < texts.length) {
-                if (isTime(texts[i])) {
-                    let matchData = {
-                        tempo: texts[i],
-                        league: (i > 0 && isNaN(texts[i-1]) && !texts[i-1].includes('%')) ? texts[i-1] : "Futebol Ao Vivo",
-                        textos: []
-                    };
-                    
-                    for (let j = 1; j <= 25; j++) {
-                        if (i + j >= texts.length) break;
-                        if (isTime(texts[i + j])) break; 
-                        matchData.textos.push(texts[i + j]);
-                    }
-                    
-                    resultados.push(matchData);
-                    i += matchData.textos.length + 1;
-                } else {
-                    i++;
-                }
-            }
-            
-            let processados = [];
-            
-            for (let data of resultados) {
-                let items = data.textos;
-                
-                // Procuramos o índice onde aparece a porcentagem da posse de bola
-                let idxPorcentagem = items.findIndex(item => item.includes('%'));
-                
-                if (idxPorcentagem > 0) {
-                    let timeCasa = items[idxPorcentagem - 1];
-                    let timeFora = items[idxPorcentagem + 1];
-                    
-                    if (!timeCasa || !timeFora) continue;
-                    
-                    // Coleta os números inteiros que vêm logo após o time de fora (Gols e possivelmente Escanteios)
-                    let numerosApos = [];
-                    for (let k = idxPorcentagem + 2; k < items.length; k++) {
-                        let val = items[k];
-                        // Se encontrar odds com ponto decimal (ex: 2.10), paramos de coletar dados da partida
-                        if (val.includes('.')) break;
-                        if (/^\d+$/.test(val)) {
-                            numerosApos.push(val);
+            allElements.forEach(el => {
+                let text = el.innerText ? el.innerText.trim() : '';
+                // Identifica se o elemento é o relógio de uma partida em Andamento ou Intervalo
+                if (/^\d{1,3}'$/.test(text) || text === 'HT' || text === 'Intervalo') {
+                    // Sobe na árvore de elementos para tentar encontrar o container principal da partida
+                    let container = el.closest('div');
+                    if (container && container.innerText.length > 20 && container.innerText.length < 500) {
+                        let blocoTexto = container.innerText;
+                        
+                        // Extração interna do bloco
+                        let linhas = blocoTexto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                        
+                        let tempo = text;
+                        let liga = "Futebol Ao Vivo";
+                        let times = [];
+                        let numeros = [];
+                        
+                        linhas.forEach(l => {
+                            if (/^\d{1,3}'$/.test(l) || l === 'HT' || l === 'Intervalo') return;
+                            if (l.includes('%')) return; // descarta posse
+                            if (l.includes('ODDS') || l.includes('PRE')) return;
+                            
+                            // Se for número puro com ponto decimal, é odd
+                            if (l.includes('.')) return;
+                            
+                            if (/^\d+$/.test(l)) {
+                                numeros.push(l);
+                            } else if (l.length > 2 && !l.includes('BOLIVIA') && !l.includes('BRAZIL') && !l.includes('ARGENTINA')) {
+                                times.push(l);
+                            }
+                        });
+                        
+                        if (times >= 2 || (times.length >= 2 && numeros.length >= 2)) {
+                            // Pega os dois primeiros times limpos
+                            let timeCasa = times[0];
+                            let timeFora = times[1];
+                            
+                            // Placar e Escanteios baseados nos números capturados no container
+                            let golsCasa = numeros.length > 0 ? numeros[0] : "0";
+                            let golsFora = numeros.length > 1 ? numeros.length > 3 ? numeros[1] : numeros[1] : "0";
+                            
+                            // Se o site joga os escanteios logo após os gols
+                            let escCasa = numeros.length > 2 ? numeros[2] : "0";
+                            let escFora = numeros.length > 3 ? numeros[3] : "0";
+                            
+                            let confrontoStr = `${timeCasa} x ${timeFora}`;
+                            
+                            // Evita duplicatas no mesmo bloco
+                            if (!listaJogos.some(j => j.confronto === confrontoStr)) {
+                                listaJogos.push({
+                                    liga: liga,
+                                    tempo: tempo,
+                                    confronto: confrontoStr,
+                                    placar: `${golsCasa} x ${golsFora}`,
+                                    escanteios: `${escCasa} x ${escFora}`
+                                });
+                            }
                         }
                     }
-                    
-                    let golsCasa = numerosApos.length > 0 ? numerosApos[0] : "0";
-                    let golsFora = numerosApos.length > 1 ? numerosApos[1] : "0";
-                    
-                    // Se houver mais números inteiros na sequência antes das odds, eles representam os escanteios
-                    let escCasa = numerosApos.length > 2 ? numerosApos[2] : "0";
-                    let escFora = numerosApos.length > 3 ? numerosApos[3] : "0";
-
-                    processados.push({
-                        liga: data.league,
-                        tempo: data.tempo,
-                        confronto: `${timeCasa} x ${timeFora}`,
-                        placar: `${golsCasa} x ${golsFora}`,
-                        escanteios: `${escCasa} x ${escFora}`
-                    });
                 }
-            }
-            return processados;
+            });
+            
+            return listaJogos;
         });
 
-        console.log(`📊 Partidas estruturadas com sucesso: ${partidasExtraidas.length}`);
+        console.log(`📊 Partidas estruturadas via DOM: ${partidasExtraidas.length}`);
         let enviadosNoCiclo = 0;
 
         for (let item of partidasExtraidas) {
@@ -151,7 +142,7 @@ async function varrerDefinitivo() {
             memoriaPlacarJogos.set(chaveJogo, item.placar);
 
             let cardTelegram = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
-            if (item.liga && item.liga !== "Futebol Ao Vivo" && item.liga.length > 2) {
+            if (item.liga && item.liga !== "Futebol Ao Vivo") {
                 cardTelegram += `🏆 <b>Liga:</b> ${item.liga}\n`;
             }
             cardTelegram += `⏱ <b>Tempo:</b> ${traduzirTempo(item.tempo)}\n`;
@@ -167,11 +158,11 @@ async function varrerDefinitivo() {
         console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards enviados.`);
 
     } catch (erro) {
-        console.error("❌ Erro na varredura:", erro.message);
+        console.error("❌ Erro na varredura DOM:", erro.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-varrerDefinitivo();
-setInterval(varrerDefinitivo, 180000);
+varrerPorDOM();
+setInterval(varrerPorDOM, 180000);
