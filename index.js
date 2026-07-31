@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Áustria Definitivo ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Melhores Ligas Global ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,10 +23,10 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerEEnviarAustriaDefinitivo() {
+async function varrerEEnviarGlobalPerfeito() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Áustria Definitivo] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar Global Perfeito] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -62,7 +62,6 @@ async function varrerEEnviarAustriaDefinitivo() {
 
             blocos.forEach(el => {
                 const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
-                // Procura blocos que contenham estrutura de jogo ao vivo
                 if (
                     texto.length > 15 && 
                     texto.length < 300 && 
@@ -80,27 +79,22 @@ async function varrerEEnviarAustriaDefinitivo() {
         let enviadosNoCiclo = 0;
 
         for (let blocoTexto of partidasExtraidas) {
-            // Filtro específico para Áustria
-            if (!/austria|öfb|bundesliga|regionalliga|landesliga|cup/i.test(blocoTexto)) {
-                continue;
-            }
-
             let chaveUnica = blocoTexto.substring(0, 35);
             if (jogosEnviadosCache.has(chaveUnica)) continue;
             jogosEnviadosCache.add(chaveUnica);
 
-            // Extração do Tempo
+            // Extração limpa do Tempo
             let matchTempo = blocoTexto.match(/(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT)/i);
             let tempoJogo = matchTempo ? traduzirTempo(matchTempo[0]) : "Ao Vivo";
 
-            // Extração da Liga
-            let liga = "Áustria (Futebol Ao Vivo)";
+            // Extração limpa da Liga (pegando a primeira linha ou cabeçalho do bloco)
+            let liga = "Futebol Ao Vivo";
             let linhas = blocoTexto.split('\n');
-            if (linhas.length > 0 && /austria|öfb|bundesliga|regionalliga|landesliga|cup/i.test(linhas[0])) {
+            if (linhas.length > 0 && linhas[0].length > 3 && !/\d/.test(linhas[0])) {
                 liga = linhas[0].trim();
             }
 
-            // Isola os times limpando o excesso de lixo e odds
+            // Isola os times limpando o lixo, odds e repetições
             let timesConfronto = blocoTexto
                 .replace(liga, '')
                 .replace(/(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT)/g, '')
@@ -114,18 +108,18 @@ async function varrerEEnviarAustriaDefinitivo() {
                 timesConfronto = blocoTexto;
             }
 
-            // Card final limpo, organizado e no formato exato solicitado
+            // Montagem do card estruturado com os emojis solicitados (Troféu, Relógio e Espadas)
             let cardTelegram = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
             cardTelegram += `🏆 <b>Liga:</b> ${liga}\n`;
             cardTelegram += `⏱ <b>Tempo:</b> ${tempoJogo}\n`;
-            cardTelegram += `⚽ <b>Confronto:</b> <code>${timesConfronto}</code>`;
+            cardTelegram += `⚔️ <b>Confronto:</b> <code>${timesConfronto}</code>`;
 
             await bot.sendMessage(CHAT_ID, cardTelegram, { parse_mode: 'HTML' }).catch(() => {});
             enviadosNoCiclo++;
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards limpos enviados.`);
+        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards globais enviados.`);
 
     } catch (erro) {
         console.error("❌ Erro na varredura:", erro.message);
@@ -134,5 +128,5 @@ async function varrerEEnviarAustriaDefinitivo() {
     }
 }
 
-varrerEEnviarAustriaDefinitivo();
-setInterval(varrerEEnviarAustriaDefinitivo, 180000);
+varrerEEnviarGlobalPerfeito();
+setInterval(varrerEEnviarGlobalPerfeito, 180000);
