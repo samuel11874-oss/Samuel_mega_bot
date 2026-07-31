@@ -6,19 +6,20 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Live Direto ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Alerta de Gols Pro ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-const jogosEnviados = new Set();
+// Memória de placares para rastrear os gols com precisão
+const placaresMemoria = new Map();
 
-async function executarRadarLive() {
+async function monitorarGolsPro() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Live] Iniciando navegador...");
+        console.log("⚡ [Radar Pro] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -33,107 +34,101 @@ async function executarRadarLive() {
         });
 
         const page = await browser.newPage();
-        
-        await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36');
-        await page.setViewport({ width: 375, height: 812, isMobile: true });
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
 
-        console.log("🌐 Acessando SokkerPRO Mobile...");
         await page.goto('https://m.sokkerpro.com/', {
             waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando renderização completa da aplicação...");
-        await new Promise(r => setTimeout(r, 8000));
+        console.log("⏳ Carregando os jogos ao vivo...");
+        await new Promise(r => setTimeout(r, 7000));
 
-        // Clica na aba de jogos ao vivo para garantir que os dados apareçam na tela
-        await page.evaluate(() => {
-            const elementos = Array.from(document.querySelectorAll('div, span, p'));
-            const abaAoVivo = elementos.find(el => el.innerText && el.innerText.includes('AO VIVO'));
-            if (abaAoVivo) {
-                abaAoVivo.click();
-            }
-        });
-
-        console.log("⏳ Aguardando carregamento da aba ao vivo e rolando a tela...");
-        await new Promise(r => setTimeout(r, 4000));
-
-        // Rola a página para baixo para carregar todos os blocos de jogos
-        for (let i = 0; i < 5; i++) {
-            await page.evaluate(() => window.scrollBy(0, 1000));
+        // Roda a página para garantir que todos os 48+ jogos carreguem
+        for (let i = 0; i < 6; i++) {
+            await page.evaluate(() => window.scrollBy(0, 800));
             await new Promise(r => setTimeout(r, 1500));
         }
 
-        // Extração profunda dos blocos de partidas ao vivo
-        const partidas = await page.evaluate(() => {
+        // Extração organizada dos dados da tela
+        const partidasDetectadas = await page.evaluate(() => {
             const lista = [];
             const blocos = document.querySelectorAll('div');
 
             blocos.forEach(el => {
-                // Filtra apenas blocos que parecem conter o card de um jogo
                 const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
-
-                if ((texto.includes(' - ') || texto.includes(':')) && texto.length > 15 && texto.length < 350) {
-                    const lower = texto.toLowerCase();
+                
+                if (texto.includes(' - ') && (texto.includes("'") || texto.includes('HT') || texto.includes('FT'))) {
+                    const linhas = texto.split(' ').filter(l => l.trim().length > 0);
                     
-                    // Verifica se tem indicadores claros de jogo ao vivo (minutos, HT, FT)
-                    const temAoVivo = /\b(ht|ft|\d{1,2}\s*['′])\b/i.test(lower);
-                    const ehSub = /sub\s*-?(19|20|21)|u\s*-?(19|20|21)/i.test(lower);
-                    const ehFem = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(lower);
-
-                    if (temAoVivo && !ehSub && !ehFem) {
-                        const chave = texto.substring(0, 35);
-                        if (!lista.some(p => p.chave === chave)) {
-                            lista.push({ chave, texto });
+                    for (let i = 0; i < linhas.length - 1; i++) {
+                        if (/^\d{1,2}$/.test(linhas[i]) && /^\d{1,2}$/.test(linhas[i+1])) {
+                            const placar = `${linhas[i]} x ${linhas[i+1]}`;
+                            const partes = texto.split(/[\d\s]+x[\d\s]+/);
+                            
+                            if (partes.length >= 2) {
+                                lista.push({
+                                    chave: texto.substring(0, 50),
+                                    textoBruto: texto,
+                                    placarAtual: placar
+                                });
+                            }
+                            break;
                         }
                     }
                 }
             });
 
-            return lista;
+            // Remove duplicatas
+            const unicos = [];
+            const vistos = new Set();
+            for (const item of lista) {
+                if (!vistos.has(item.chave)) {
+                    vistos.add(item.chave);
+                    unicos.push(item);
+                }
+            }
+            return unicos;
         });
 
-        console.log(`📊 Partidas ao vivo capturadas: ${partidas.length}`);
+        console.log(`📊 Partidas analisadas: ${partidasDetectadas.length}`);
 
-        const novas = partidas.filter(p => !jogosEnviados.has(p.chave));
+        for (const partida of partidasDetectadas) {
+            // Filtra categorias indesejadas (sub e feminino)
+            if (/sub-?\d{2}|\(w\)|women|feminino/i.test(partida.chave)) continue;
 
-        if (novas.length > 0) {
-            let msg = `⚽ <b>RADAR SOKKERPRO - AO VIVO</b>\n`;
-            msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+            if (!placaresMemoria.has(partida.chave)) {
+                // Cadastra na memória silenciosamente para começar a rastrear os gols
+                placaresMemoria.set(partida.chave, partida.placarAtual);
+            } else {
+                const placarAntigo = placaresMemoria.get(partida.chave);
 
-            let count = 1;
-            for (const p of novas) {
-                jogosEnviados.add(p.chave);
+                if (placarAntigo !== partida.placarAtual) {
+                    // 🚨 GOL DETECTADO! O placar mudou!
+                    placaresMemoria.set(partida.chave, partida.placarAtual);
 
-                let card = `🔴 <b>Partida #${count}</b>\n`;
-                card += `<code>${p.texto}</code>\n`;
-                card += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+                    let cardFormatado = `⚽🔥 **GOOOOOOOL DETECTADO!** 🔥⚽\n`;
+                    cardFormatado += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+                    cardFormatado += `🏟 **Jogo / Confronto:**\n<code>${partida.textoBruto}</code>\n\n`;
+                    cardFormatado += `⚽ **Novo Resultado:** <code>${partida.placarAtual}</code> (Anterior: ${placarAntigo})\n`;
+                    cardFormatado += `━━━━━━━━━━━━━━━━━━━━━━`;
 
-                if ((msg.length + card.length) > 3800) {
-                    await bot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML' }).catch(() => {});
-                    await new Promise(r => setTimeout(r, 1000));
-                    msg = `⚽ <b>CONTINUAÇÃO</b>\n━━━━━━━━━━━━━━━━━━━━━━\n\n` + card;
-                } else {
-                    msg += card;
+                    console.log(`⚽ GOL! ${partida.placarAtual} em ${partida.chave}`);
+                    await bot.sendMessage(CHAT_ID, cardFormatado, { parse_mode: 'HTML' }).catch(() => {});
+                    await new Promise(r => setTimeout(r, 1500));
                 }
-                count++;
             }
-
-            if (msg.trim().length > 0) {
-                await bot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML' }).catch(() => {});
-            }
-
-            console.log("✅ Alertas ao vivo enviados para o Telegram!");
-        } else {
-            console.log("ℹ️ Nenhum jogo novo nesta varredura.");
         }
 
+        console.log("✅ Varredura de gols finalizada com sucesso.");
+
     } catch (erro) {
-        console.error("❌ Erro na varredura ao vivo:", erro.message);
+        console.error("❌ Erro no monitoramento:", erro.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarLive();
-setInterval(executarRadarLive, 180000);
+// Roda imediatamente e repete a cada 2 minutos para pegar os gols instantaneamente
+monitorarGolsPro();
+setInterval(monitorarGolsPro, 120000);
