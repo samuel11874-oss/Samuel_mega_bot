@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Escanteios Ao Vivo ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Escanteios Reais ⚽🚩</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,10 +23,10 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerEEnviarComEscanteios() {
+async function varrerEEnviarEscanteiosReais() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Escanteios] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar Escanteios Reais] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -44,14 +44,14 @@ async function varrerEEnviarComEscanteios() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
 
         await page.goto('https://m.sokkerpro.com/', {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'networkidle2',
             timeout: 120000
         });
 
-        console.log("⏳ Aguardando os dados ao vivo carregarem...");
-        await new Promise(r => setTimeout(r, 6000));
+        console.log("⏳ Aguardando carregamento total dos dados e scripts dinâmicos...");
+        await new Promise(r => setTimeout(r, 9000)); // Tempo maior para sumir o "Loading data..."
 
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 6; i++) {
             await page.evaluate(() => window.scrollBy(0, 800));
             await new Promise(r => setTimeout(r, 1500));
         }
@@ -63,16 +63,20 @@ async function varrerEEnviarComEscanteios() {
             blocos.forEach(el => {
                 const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
 
+                // Filtro hiper-rigoroso para barrar propagandas e estados de carregamento (Loading)
                 if (
-                    texto.length > 25 &&
-                    texto.length < 350 &&
+                    texto.length > 30 &&
+                    texto.length < 400 &&
                     (/\d{1,3}'/.test(texto) || texto.includes('HT') || texto.includes('FT')) &&
                     (texto.includes('x') || texto.includes('-')) &&
+                    !texto.includes('Loading data') &&
                     !texto.includes('ODDSLIVE') &&
+                    !texto.includes('ODDSPRE') &&
                     !texto.includes('Subscribe') &&
                     !texto.includes('RESPONSIBILITY') &&
                     !texto.includes('AVERAGESLAST') &&
-                    !texto.includes('CHANNELS')
+                    !texto.includes('CHANNELS') &&
+                    !texto.includes('GAMEPLAY')
                 ) {
                     let linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                     let ligaEncontrada = "";
@@ -103,7 +107,7 @@ async function varrerEEnviarComEscanteios() {
             return resultados;
         });
 
-        console.log(`📊 Partidas válidas encontradas: ${partidasExtraidas.length}`);
+        console.log(`📊 Partidas limpas e válidas encontradas: ${partidasExtraidas.length}`);
         let enviadosNoCiclo = 0;
 
         for (let item of partidasExtraidas) {
@@ -119,16 +123,20 @@ async function varrerEEnviarComEscanteios() {
                 placarJogo = `${matchPlacar[1]} x ${matchPlacar[2]}`;
             }
 
-            // Extração de Escanteios (Procura padrões como "Canto: X x Y", "Corners: X-Y" ou números indicativos de cantos no bloco)
+            // Extração refinada de Escanteios buscando padrões numéricos isolados próximos a termos de canto ou estatística
             let escanteiosJogo = "0 x 0";
-            let matchEscanteios = bloco.match(/(?:cantos?|corners?)\D*([0-9]{1,2})\D*([0-9]{1,2})/i);
-            if (matchEscanteios) {
-                escanteiosJogo = `${matchEscanteios[1]} x ${matchEscanteios[2]}`;
+            let matchEscantes = bloco.match(/(?:cantos?|corners?)\D*([0-9]{1,2})\D*([0-9]{1,2})/i);
+            if (matchEscantes) {
+                escanteiosJogo = `${matchEscantes[1]} x ${matchEscantes[2]}`;
             } else {
-                // Tenta extrair caso o site exiba os cantos logo após o placar ou em formato numérico lateral dedicado
-                let matchAlternativo = bloco.match(/⚽.*?([0-9]{1,2})\s*[-–—xX]\s*([0-9]{1,2})\s*(?:cantos|corners)/i);
-                if (matchAlternativo) {
-                    escanteiosJogo = `${matchAlternativo[1]} x ${matchAlternativo[2]}`;
+                // Tenta varrer pares de números que representem os cantos no padrão do layout mobile do SokkerPRO
+                let digitosLinhados = bloco.match(/\b([0-1]?[0-9])\s*[–—-]\s*([0-1]?[0-9])\b/g);
+                if (digitosLinhados && digitosLinhados.length > 1) {
+                    // O segundo par geralmente representa os cantos após o placar
+                    let partesCantos = digitosLinhados[1].split(/[-–—]/);
+                    if (partesCantos.length === 2) {
+                        escanteiosJogo = `${partesCantos[0].trim()} x ${partesCantos[1].trim()}`;
+                    }
                 }
             }
 
@@ -179,7 +187,7 @@ async function varrerEEnviarComEscanteios() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards com escanteios enviados.`);
+        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards limpos enviados.`);
 
     } catch (erro) {
         console.error("❌ Erro na varredura:", erro.message);
@@ -188,5 +196,5 @@ async function varrerEEnviarComEscanteios() {
     }
 }
 
-varrerEEnviarComEscanteios();
-setInterval(varrerEEnviarComEscanteios, 180000);
+varrerEEnviarEscanteiosReais();
+setInterval(varrerEEnviarEscanteiosReais, 180000);
