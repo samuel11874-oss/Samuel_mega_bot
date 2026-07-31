@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Ligas Filtradas ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Escanteios Ao Vivo ⚽🚩</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,10 +23,10 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerEEnviarLigasFiltradas() {
+async function varrerEEnviarComEscanteios() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Ligas Limpas] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar Escanteios] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -119,6 +119,19 @@ async function varrerEEnviarLigasFiltradas() {
                 placarJogo = `${matchPlacar[1]} x ${matchPlacar[2]}`;
             }
 
+            // Extração de Escanteios (Procura padrões como "Canto: X x Y", "Corners: X-Y" ou números indicativos de cantos no bloco)
+            let escanteiosJogo = "0 x 0";
+            let matchEscanteios = bloco.match(/(?:cantos?|corners?)\D*([0-9]{1,2})\D*([0-9]{1,2})/i);
+            if (matchEscanteios) {
+                escanteiosJogo = `${matchEscanteios[1]} x ${matchEscanteios[2]}`;
+            } else {
+                // Tenta extrair caso o site exiba os cantos logo após o placar ou em formato numérico lateral dedicado
+                let matchAlternativo = bloco.match(/⚽.*?([0-9]{1,2})\s*[-–—xX]\s*([0-9]{1,2})\s*(?:cantos|corners)/i);
+                if (matchAlternativo) {
+                    escanteiosJogo = `${matchAlternativo[1]} x ${matchAlternativo[2]}`;
+                }
+            }
+
             let limpo = bloco;
             if (liga) limpo = limpo.replace(liga, '');
             if (matchTempo) limpo = limpo.replace(matchTempo[0], '');
@@ -158,14 +171,15 @@ async function varrerEEnviarLigasFiltradas() {
             }
             cardTelegram += `⏱ <b>Tempo:</b> ${tempoJogo}\n`;
             cardTelegram += `⚔️ <b>Confronto:</b> <code>${confrontoFinal}</code>\n`;
-            cardTelegram += `⚽ <b>Placar:</b> <b>${placarJogo}</b>`;
+            cardTelegram += `⚽ <b>Placar:</b> <b>${placarJogo}</b>\n`;
+            cardTelegram += `🚩 <b>Escanteios:</b> <b>${escanteiosJogo}</b>`;
 
             await bot.sendMessage(CHAT_ID, cardTelegram, { parse_mode: 'HTML' }).catch(() => {});
             enviadosNoCiclo++;
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards enviados.`);
+        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards com escanteios enviados.`);
 
     } catch (erro) {
         console.error("❌ Erro na varredura:", erro.message);
@@ -174,5 +188,5 @@ async function varrerEEnviarLigasFiltradas() {
     }
 }
 
-varrerEEnviarLigasFiltradas();
-setInterval(varrerEEnviarLigasFiltradas, 180000);
+varrerEEnviarComEscanteios();
+setInterval(varrerEEnviarComEscanteios, 180000);
