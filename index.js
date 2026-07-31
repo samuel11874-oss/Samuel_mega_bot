@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - V63 Definitivo ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - V64 Ao Vivo ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarV63() {
+async function executarRadarV64() {
     let browser = null;
     try {
-        console.log("⚡ [Radar V63] Buscando jogos usando o novo padrão de data e bloqueando falsos positivos...");
+        console.log("⚡ [Radar V64] Aplicando Filtro Sniper para isolar apenas jogos em andamento...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -45,7 +45,7 @@ async function executarRadarV63() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        // Script de extração com os padrões exatos que descobrimos no log
+        // Script de extração trabalhando por exclusão
         const partidasAoVivo = await page.evaluate(() => {
             const unicasSet = new Set();
             const blocos = document.querySelectorAll('tr, div.match-row, div.match-item');
@@ -54,21 +54,20 @@ async function executarRadarV63() {
                 const textoRaw = el.innerText || '';
                 const texto = textoRaw.replace(/\s+/g, ' ').trim();
 
+                // Verifica se é uma linha válida de jogo
                 if ((texto.includes('vs') || texto.includes(' - ')) && texto.length > 15) {
                     const textoLower = texto.toLowerCase();
 
-                    // 1. O SEGREDO DO LOG: Se tem o formato "MM/DD HH:MM" (ex: 07/31 08:30), o jogo AINDA NÃO COMEÇOU!
-                    const ehFuturo = /\d{2}\/\d{2}\s\d{2}:\d{2}/.test(texto);
+                    // 1. O FILTRO SNIPER: Se tem o formato "Mês/Dia Hora:Minuto" (ex: 07/31 08:30), o jogo NÃO COMEÇOU.
+                    // Quando a partida fica ao vivo no desktop, essa data sai da linha.
+                    const ehAgendado = /\d{2}\/\d{2}\s\d{2}:\d{2}/.test(texto);
 
                     // 2. Filtros de base e feminino
-                    const ehSub = /sub\s*-?(19|20|21)|u\s*-?(19|20|21)/i.test(textoLower);
+                    const ehSub = /sub\s*-?(19|20|21|23)|u\s*-?(19|20|21|23)/i.test(textoLower);
                     const ehFem = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(textoLower);
 
-                    // 3. Verifica se tem marcador real de tempo (ex: 45', HT, 1ºT), e evita cair na pegadinha da palavra "feminino"
-                    const temCronometro = /(\d{1,3})\s*['′]|ht|1ºt|2ºt|intervalo/i.test(textoLower);
-
-                    // Só é aprovado se: NÃO é futuro, NÃO é sub, NÃO é feminino, E (tem cronômetro)
-                    if (!ehFuturo && !ehSub && !ehFem && temCronometro) {
+                    // A mágica acontece aqui: Se NÃO é agendado (ou seja, a bola já está rolando) e NÃO é base/feminino, nós guardamos!
+                    if (!ehAgendado && !ehSub && !ehFem) {
                         unicasSet.add(texto);
                     }
                 }
@@ -87,11 +86,7 @@ async function executarRadarV63() {
             let contador = 1;
 
             for (const partida of partidasAoVivo) {
-                // Tenta extrair o minuto exato para colocar no topo do card
-                const matchMinuto = partida.match(/(\d{1,3}\s*['′])/);
-                const tempoInfo = matchMinuto ? `⏱ <b>[${matchMinuto[0].trim()}]</b>` : `⏱ <b>[AO VIVO]</b>`;
-
-                let linhaJogo = `${tempoInfo} <b>#${contador}</b>\n<code>${partida}</code>\n\n`;
+                let linhaJogo = `⏱ <b>#${contador} [AO VIVO]</b>\n<code>${partida}</code>\n\n`;
                 
                 if ((blocoAtual.length + linhaJogo.length) > 3800) {
                     await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
@@ -112,12 +107,12 @@ async function executarRadarV63() {
         }
 
     } catch (error) {
-        console.error("❌ Erro V63:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ Erro V63: ${error.message}`, { parse_mode: 'HTML' });
+        console.error("❌ Erro V64:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ Erro V64: ${error.message}`, { parse_mode: 'HTML' });
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarV63();
-setInterval(executarRadarV63, 180000);
+executarRadarV64();
+setInterval(executarRadarV64, 180000);
