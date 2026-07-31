@@ -6,18 +6,26 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Modo Investigação 🕵️‍♂️</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Definitivo ⚽🚩</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRaioX() {
+const memoriaPlacarJogos = new Map();
+
+function traduzirTempo(texto) {
+    let t = texto.toUpperCase();
+    if (t.includes('HT') || t.includes('INTERVALO')) return 'Intervalo';
+    if (t.includes('FT') || t.includes('FIM')) return 'Fim de Jogo';
+    return t.trim();
+}
+
+async function varrerDefinitivo() {
     let browser = null;
     try {
-        console.log("🕵️‍♂️ Iniciando a Super Investigação...");
-        await bot.sendMessage(CHAT_ID, "🕵️‍♂️ <b>Iniciando a Super Investigação...</b>\nVou capturar a estrutura de 3 jogos e enviar o log bruto para descobrirmos a posição exata dos escanteios.", { parse_mode: 'HTML' });
+        console.log("⚡ [Scanner Definitivo] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -26,6 +34,7 @@ async function executarRaioX() {
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
+                '--no-zygote',
                 '--single-process'
             ]
         });
@@ -35,53 +44,134 @@ async function executarRaioX() {
 
         await page.goto('https://m.sokkerpro.com/', {
             waitUntil: 'networkidle2',
-            timeout: 90000
+            timeout: 120000
         });
 
-        console.log("⏳ Aguardando renderização (10s)...");
-        await new Promise(r => setTimeout(r, 10000));
+        console.log("⏳ Aguardando renderização total...");
+        await new Promise(r => setTimeout(r, 12000)); 
 
-        const relatorioBruto = await page.evaluate(() => {
-            // Captura absolutamente todo o texto da página, separando por quebras de linha reais
-            let linhas = document.body.innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        for (let i = 0; i < 6; i++) {
+            await page.evaluate(() => window.scrollBy(0, 800));
+            await new Promise(r => setTimeout(r, 1500));
+        }
+
+        const partidasExtraidas = await page.evaluate(() => {
+            const isTime = (s) => /^\d{1,3}'/i.test(s) || /^(HT|FT|Intervalo)$/i.test(s);
             
-            let log = [];
-            let contadorJogos = 0;
-            let gravando = false;
-
-            for (let i = 0; i < linhas.length; i++) {
-                let txt = linhas[i];
-                
-                // O gatilho para identificar que um jogo começou é o relógio (ex: 15', HT, FT)
-                if (/^(\d{1,3}'|HT|FT|Intervalo)$/i.test(txt)) {
-                    contadorJogos++;
-                    if (contadorJogos > 3) break; // Pega apenas os 3 primeiros jogos para não poluir o Telegram
-                    
-                    log.push(`\n=== JOGO ${contadorJogos} ===`);
-                    if (i > 0) log.push(`[LINHA ANTERIOR]: ${linhas[i-1]}`);
-                    gravando = true;
-                }
-                
-                if (gravando) {
-                    log.push(`[LINHA]: ${txt}`);
+            const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+            let texts = [];
+            let n;
+            while (n = walk.nextNode()) {
+                let val = n.nodeValue.replace(/\s+/g, ' ').trim();
+                if (val.length > 0 && val !== '-' && val !== 'x' && val !== 'X' && !val.includes('Loading')) {
+                    texts.push(val);
                 }
             }
-            return log.join('\n');
+
+            let resultados = [];
+            let i = 0;
+            
+            while (i < texts.length) {
+                if (isTime(texts[i])) {
+                    let matchData = {
+                        tempo: texts[i],
+                        league: (i > 0 && isNaN(texts[i-1]) && !texts[i-1].includes('%')) ? texts[i-1] : "Futebol Ao Vivo",
+                        textos: []
+                    };
+                    
+                    for (let j = 1; j <= 25; j++) {
+                        if (i + j >= texts.length) break;
+                        if (isTime(texts[i + j])) break; 
+                        matchData.textos.push(texts[i + j]);
+                    }
+                    
+                    resultados.push(matchData);
+                    i += matchData.textos.length + 1;
+                } else {
+                    i++;
+                }
+            }
+            
+            let processados = [];
+            
+            for (let data of resultados) {
+                let items = data.textos;
+                
+                // Procuramos o índice onde aparece a porcentagem da posse de bola
+                let idxPorcentagem = items.findIndex(item => item.includes('%'));
+                
+                if (idxPorcentagem > 0) {
+                    let timeCasa = items[idxPorcentagem - 1];
+                    let timeFora = items[idxPorcentagem + 1];
+                    
+                    if (!timeCasa || !timeFora) continue;
+                    
+                    // Coleta os números inteiros que vêm logo após o time de fora (Gols e possivelmente Escanteios)
+                    let numerosApos = [];
+                    for (let k = idxPorcentagem + 2; k < items.length; k++) {
+                        let val = items[k];
+                        // Se encontrar odds com ponto decimal (ex: 2.10), paramos de coletar dados da partida
+                        if (val.includes('.')) break;
+                        if (/^\d+$/.test(val)) {
+                            numerosApos.push(val);
+                        }
+                    }
+                    
+                    let golsCasa = numerosApos.length > 0 ? numerosApos[0] : "0";
+                    let golsFora = numerosApos.length > 1 ? numerosApos[1] : "0";
+                    
+                    // Se houver mais números inteiros na sequência antes das odds, eles representam os escanteios
+                    let escCasa = numerosApos.length > 2 ? numerosApos[2] : "0";
+                    let escFora = numerosApos.length > 3 ? numerosApos[3] : "0";
+
+                    processados.push({
+                        liga: data.league,
+                        tempo: data.tempo,
+                        confronto: `${timeCasa} x ${timeFora}`,
+                        placar: `${golsCasa} x ${golsFora}`,
+                        escanteios: `${escCasa} x ${escFora}`
+                    });
+                }
+            }
+            return processados;
         });
 
-        console.log("Raio-X Concluído:\n", relatorioBruto);
-        
-        // Envia o texto como bloco de código (pre) para o Telegram não desformatar
-        let mensagem = `🛠 <b>RAIO-X SOKKERPRO</b> 🛠\n\n<pre>${relatorioBruto.substring(0, 3500)}</pre>`;
-        await bot.sendMessage(CHAT_ID, mensagem, { parse_mode: 'HTML' });
-        await bot.sendMessage(CHAT_ID, "👆 Copie esse texto do Raio-X e me envie aqui na conversa. Com base nisso, vou criar o filtro definitivo pros escanteios!");
+        console.log(`📊 Partidas estruturadas com sucesso: ${partidasExtraidas.length}`);
+        let enviadosNoCiclo = 0;
+
+        for (let item of partidasExtraidas) {
+            let chaveJogo = item.confronto.toLowerCase().replace(/\s+/g, '');
+
+            if (memoriaPlacarJogos.has(chaveJogo)) {
+                let placarAnterior = memoriaPlacarJogos.get(chaveJogo);
+                if (placarAnterior === item.placar) {
+                    continue; 
+                }
+            }
+            memoriaPlacarJogos.set(chaveJogo, item.placar);
+
+            let cardTelegram = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
+            if (item.liga && item.liga !== "Futebol Ao Vivo" && item.liga.length > 2) {
+                cardTelegram += `🏆 <b>Liga:</b> ${item.liga}\n`;
+            }
+            cardTelegram += `⏱ <b>Tempo:</b> ${traduzirTempo(item.tempo)}\n`;
+            cardTelegram += `⚔️ <b>Confronto:</b> <code>${item.confronto}</code>\n`;
+            cardTelegram += `⚽ <b>Placar:</b> <b>${item.placar}</b>\n`;
+            cardTelegram += `🚩 <b>Escanteios:</b> <b>${item.escanteios}</b>`;
+
+            await bot.sendMessage(CHAT_ID, cardTelegram, { parse_mode: 'HTML' }).catch(() => {});
+            enviadosNoCiclo++;
+            await new Promise(r => setTimeout(r, 2000));
+        }
+
+        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards enviados.`);
 
     } catch (erro) {
-        console.error("❌ Erro no Raio-X:", erro.message);
-        await bot.sendMessage(CHAT_ID, `Erro no Raio-X: ${erro.message}`);
+        console.error("❌ Erro na varredura:", erro.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRaioX();
+varrerDefinitivo();
+setInterval(varrerDefinitivo, 180000);
