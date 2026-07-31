@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Fast Radar ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Live Direto ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -15,10 +15,10 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 
 const jogosEnviados = new Set();
 
-async function executarRadarRapido() {
+async function executarRadarLive() {
     let browser = null;
     try {
-        console.log("⚡ [Radar] Iniciando navegador otimizado...");
+        console.log("⚡ [Radar Live] Iniciando navegador...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -28,48 +28,61 @@ async function executarRadarRapido() {
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
                 '--no-zygote',
-                '--single-process',
-                '--disable-extensions',
-                '--disable-accelerated-2d-canvas'
+                '--single-process'
             ]
         });
 
         const page = await browser.newPage();
         
-        // Define um user-agent real para evitar bloqueios de conexão
-        await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36');
+        await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36');
+        await page.setViewport({ width: 375, height: 812, isMobile: true });
 
-        console.log("🌐 Conectando leve ao SokkerPRO...");
-        // Usa domcontentloaded para não travar esperando scripts lentos de terceiros
+        console.log("🌐 Acessando SokkerPRO Mobile...");
         await page.goto('https://m.sokkerpro.com/', {
-            waitUntil: 'domcontentloaded',
-            timeout: 30000
+            waitUntil: 'networkidle2',
+            timeout: 60000
         });
 
-        console.log("⏳ Aguardando os dados ao vivo carregarem...");
-        await new Promise(r => setTimeout(r, 5000));
+        console.log("⏳ Aguardando renderização completa da aplicação...");
+        await new Promise(r => setTimeout(r, 8000));
 
-        // Rola levemente para baixo para puxar os cards
-        await page.evaluate(() => window.scrollBy(0, 800));
-        await new Promise(r => setTimeout(r, 2000));
+        // Clica na aba de jogos ao vivo para garantir que os dados apareçam na tela
+        await page.evaluate(() => {
+            const elementos = Array.from(document.querySelectorAll('div, span, p'));
+            const abaAoVivo = elementos.find(el => el.innerText && el.innerText.includes('AO VIVO'));
+            if (abaAoVivo) {
+                abaAoVivo.click();
+            }
+        });
 
-        // Extrai os blocos de jogos limpos direto da tela principal
+        console.log("⏳ Aguardando carregamento da aba ao vivo e rolando a tela...");
+        await new Promise(r => setTimeout(r, 4000));
+
+        // Rola a página para baixo para carregar todos os blocos de jogos
+        for (let i = 0; i < 5; i++) {
+            await page.evaluate(() => window.scrollBy(0, 1000));
+            await new Promise(r => setTimeout(r, 1500));
+        }
+
+        // Extração profunda dos blocos de partidas ao vivo
         const partidas = await page.evaluate(() => {
             const lista = [];
-            const blocos = document.querySelectorAll('div, tr');
+            const blocos = document.querySelectorAll('div');
 
             blocos.forEach(el => {
+                // Filtra apenas blocos que parecem conter o card de um jogo
                 const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
 
-                // Valida se o bloco parece um jogo com placar/minuto
-                if ((texto.includes(' - ') || texto.includes(':')) && texto.length > 12 && texto.length < 300) {
+                if ((texto.includes(' - ') || texto.includes(':')) && texto.length > 15 && texto.length < 350) {
                     const lower = texto.toLowerCase();
-                    const temTempo = /\b(ht|ft|\d{1,2}\s*['′])\b/i.test(lower);
+                    
+                    // Verifica se tem indicadores claros de jogo ao vivo (minutos, HT, FT)
+                    const temAoVivo = /\b(ht|ft|\d{1,2}\s*['′])\b/i.test(lower);
                     const ehSub = /sub\s*-?(19|20|21)|u\s*-?(19|20|21)/i.test(lower);
                     const ehFem = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(lower);
 
-                    if (temTempo && !ehSub && !ehFem) {
-                        const chave = texto.substring(0, 30);
+                    if (temAoVivo && !ehSub && !ehFem) {
+                        const chave = texto.substring(0, 35);
                         if (!lista.some(p => p.chave === chave)) {
                             lista.push({ chave, texto });
                         }
@@ -80,7 +93,7 @@ async function executarRadarRapido() {
             return lista;
         });
 
-        console.log(`📊 Partidas ao vivo capturadas com sucesso: ${partidas.length}`);
+        console.log(`📊 Partidas ao vivo capturadas: ${partidas.length}`);
 
         const novas = partidas.filter(p => !jogosEnviados.has(p.chave));
 
@@ -92,7 +105,7 @@ async function executarRadarRapido() {
             for (const p of novas) {
                 jogosEnviados.add(p.chave);
 
-                let card = `🔴 <b>Jogo #${count}</b>\n`;
+                let card = `🔴 <b>Partida #${count}</b>\n`;
                 card += `<code>${p.texto}</code>\n`;
                 card += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
@@ -110,17 +123,17 @@ async function executarRadarRapido() {
                 await bot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML' }).catch(() => {});
             }
 
-            console.log("✅ Alertas enviados para o Telegram!");
+            console.log("✅ Alertas ao vivo enviados para o Telegram!");
         } else {
-            console.log("ℹ️ Nenhum jogo novo nesta checagem rápida.");
+            console.log("ℹ️ Nenhum jogo novo nesta varredura.");
         }
 
     } catch (erro) {
-        console.error("❌ Erro na varredura rápida:", erro.message);
+        console.error("❌ Erro na varredura ao vivo:", erro.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarRapido();
-setInterval(executarRadarRapido, 180000); // Roda a cada 3 minutos sem travamentos
+executarRadarLive();
+setInterval(executarRadarLive, 180000);
