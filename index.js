@@ -6,17 +6,17 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Radar V61 Ao Vivo ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Samuel_mega_bot - Investigação V62 ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-async function executarRadarV61() {
+async function executarInvestigacaoV62() {
     let browser = null;
     try {
-        console.log("⚡ [Radar V61] Iniciando varredura ampla de jogos ao vivo...");
+        console.log("⚡ [Investigação V62] Iniciando modo detetive para achar apenas jogos em TEMPO REAL...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -32,13 +32,12 @@ async function executarRadarV61() {
 
         const page = await browser.newPage();
         
-        console.log("🌐 Acessando https://www.totalcorner.com/pt/match/live ...");
+        console.log("🌐 Acessando TotalCorner...");
         await page.goto('https://www.totalcorner.com/pt/match/live', {
             waitUntil: 'networkidle0',
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando carregamento e rolando a página...");
         await new Promise(r => setTimeout(r, 6000));
 
         for (let i = 0; i < 4; i++) {
@@ -46,48 +45,81 @@ async function executarRadarV61() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        // Extração inteligente: pega tudo que é jogo ativo, removendo apenas pré-jogos futuros e categorias indesejadas
-        const partidasAoVivo = await page.evaluate(() => {
-            const unicasSet = new Set();
-            const blocos = document.querySelectorAll('tr, div');
+        // Script de extração com depuração (debug)
+        const dados = await page.evaluate(() => {
+            const aoVivoSet = new Set();
+            const logsInvestigacao = [];
+            const blocos = document.querySelectorAll('tr, div.match-row, div.match-item');
+
+            let count = 0;
 
             blocos.forEach(el => {
-                const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
+                const textoRaw = el.innerText || '';
+                const texto = textoRaw.replace(/\s+/g, ' ').trim();
 
-                // Valida se é um bloco de confronto válido
-                if ((texto.includes('vs') || texto.includes(' - ')) && texto.length > 15 && texto.length < 600) {
+                // Verifica se é um bloco de jogo (tem "vs" ou " - ")
+                if ((texto.includes('vs') || texto.includes(' - ')) && texto.length > 15 && texto.length < 500) {
                     const textoLower = texto.toLowerCase();
 
-                    // Descarta explicitamente se for jogo futuro marcado com "Hora" (ex: Hora 06:00)
-                    const ehFuturo = /hora\s*\d{2}:\d{2}/i.test(textoLower);
+                    // 1. Investigando a presença de tempo
+                    const temHora = textoLower.includes('hora'); // Jogo Futuro
+                    const temMin = textoLower.includes('mín') || textoLower.includes('min'); // Jogo Atual
+                    
+                    // 2. Procurando cronômetro clássico (ex: 45', HT, 1ºT, 2ºT)
+                    const temTempo = /(\d{1,3})\s*['′]|ht|1ºt|2ºt|intervalo/i.test(textoLower);
+                    
+                    // 3. A ARMA SECRETA: Jogo agendado não tem Ataque Perigoso rodando (ex: Perigo 14 - 5)
+                    const temPerigoAtivo = /(perigo|danger)\s*\d+\s*-\s*\d+/i.test(textoLower);
 
-                    // Filtros de categoria: Remove Sub-19, Sub-20 e Feminino
-                    const ehSub19ou20 = /sub\s*-?(19|20)|u\s*-?(19|20)/i.test(textoLower);
-                    const ehFeminino = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(textoLower);
+                    // Só é AO VIVO se tiver o minuto rodando OU tiver ataques perigosos numéricos rolando
+                    const ehAoVivoReal = (temMin || temTempo || temPerigoAtivo);
+                    const ehFuturo = temHora;
+                    
+                    // Filtros para barrar categorias que você não quer
+                    const ehSub = /sub\s*-?(19|20)|u\s*-?(19|20)/i.test(textoLower);
+                    const ehFem = /\(w\)|\bwomen\b|feminino|\(f\)/i.test(textoLower);
 
-                    // Se não for futuro e não for da categoria bloqueada, é um jogo válido ao vivo/andamento
-                    if (!ehFuturo && !ehSub19ou20 && !ehFeminino) {
-                        unicasSet.add(texto);
+                    // Salva as 10 primeiras leituras para lermos no log do Render
+                    if (count < 10) {
+                        logsInvestigacao.push(
+                            `[JOGO ${count + 1}] LIDO: "${texto.substring(0, 60)}..." | TEM_HORA: ${temHora} | TEM_MINUTO: ${temMin} | PERIGO_ATIVO: ${temPerigoAtivo} | RESULTADO: ${ehAoVivoReal && !ehFuturo ? 'VAI PRO TELEGRAM' : 'BARRADO'}`
+                        );
+                        count++;
+                    }
+
+                    // CRITÉRIO FINAL ESTRITO: É ao vivo E NÃO tem "hora" E NÃO é base/feminino
+                    if (ehAoVivoReal && !ehFuturo && !ehSub && !ehFem) {
+                        aoVivoSet.add(texto);
                     }
                 }
             });
 
-            return Array.from(unicasSet);
+            return {
+                jogosAoVivo: Array.from(aoVivoSet),
+                logs: logsInvestigacao
+            };
         });
 
-        console.log(`📊 Jogos ao vivo válidos encontrados: ${partidasAoVivo.length}`);
+        // ==========================================
+        // IMPRIMINDO A INVESTIGAÇÃO NO RENDER
+        // ==========================================
+        console.log("\n=========================================");
+        console.log("🕵️ RESULTADO DA INVESTIGAÇÃO V62 (RAIO-X)");
+        console.log("=========================================");
+        dados.logs.forEach(log => console.log(log));
+        console.log("=========================================\n");
 
-        if (partidasAoVivo.length > 0) {
-            let mensagem = `🔴 <b>[RADAR TOTALCORNER - AO VIVO]</b>\n`;
-            mensagem += `🔥 Total de jogos em andamento: <code>${partidasAoVivo.length}</code>\n\n`;
+        console.log(`📊 Jogos 100% em TEMPO REAL filtrados: ${dados.jogosAoVivo.length}`);
+
+        if (dados.jogosAoVivo.length > 0) {
+            let mensagem = `🔴 <b>[RADAR TOTALCORNER - TEMPO REAL]</b>\n`;
+            mensagem += `🔥 Partidas rodando agora: <code>${dados.jogosAoVivo.length}</code>\n\n`;
 
             let blocoAtual = mensagem;
             let contador = 1;
 
-            for (const partida of partidasAoVivo) {
-                // Tenta extrair qualquer indicador de minuto ou status se houver no texto
-                let linhaJogo = `<b>#${contador}</b> 🟢\n<code>${partida}</code>\n\n`;
-                
+            for (const partida of dados.jogosAoVivo) {
+                let linhaJogo = `⏱ <b>#${contador}</b>\n<code>${partida}</code>\n\n`;
                 if ((blocoAtual.length + linhaJogo.length) > 3800) {
                     await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
                     await new Promise(r => setTimeout(r, 1000));
@@ -101,20 +133,19 @@ async function executarRadarV61() {
             if (blocoAtual.trim().length > 0) {
                 await bot.sendMessage(CHAT_ID, blocoAtual, { parse_mode: 'HTML' }).catch(() => {});
             }
-
-            console.log("✅ Relatório enviado com sucesso ao Telegram!");
+            console.log("✅ Lista de jogos estrita enviada ao Telegram!");
         } else {
-            console.log("ℹ️ Nenhum jogo encontrado.");
-            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> Nenhum jogo encontrado nesta varredura.`, { parse_mode: 'HTML' });
+            console.log("ℹ️ Nenhum jogo ao vivo encontrado.");
+            await bot.sendMessage(CHAT_ID, `⚠️ <b>Aviso:</b> O bot checou a página mas não encontrou nenhum jogo em andamento no momento.`, { parse_mode: 'HTML' });
         }
 
     } catch (error) {
-        console.error("❌ Erro V61:", error.message);
-        await bot.sendMessage(CHAT_ID, `❌ <b>Erro V61:</b> <code>${error.message}</code>`, { parse_mode: 'HTML' }).catch(() => {});
+        console.error("❌ Erro V62:", error.message);
+        await bot.sendMessage(CHAT_ID, `❌ Erro: ${error.message}`, { parse_mode: 'HTML' });
     } finally {
         if (browser) await browser.close();
     }
 }
 
-executarRadarV61();
-setInterval(executarRadarV61, 180000);
+executarInvestigacaoV62();
+setInterval(executarInvestigacaoV62, 180000);
