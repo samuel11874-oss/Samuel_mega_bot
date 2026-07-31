@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Ligas Reais ⚽</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Ligas Filtradas ⚽</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,10 +23,10 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerEEnviarLigasReais() {
+async function varrerEEnviarLigasFiltradas() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Ligas Reais] Conectando ao SokkerPRO...");
+        console.log("⚡ [Radar Ligas Limpas] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -56,17 +56,13 @@ async function varrerEEnviarLigasReais() {
             await new Promise(r => setTimeout(r, 1500));
         }
 
-        // Varredura cirúrgica focando em capturar o cabeçalho da liga e o bloco do jogo associado
         const partidasExtraidas = await page.evaluate(() => {
             const resultados = [];
-            
-            // O site mobile agrupa os blocos em elementos. Vamos mapear o texto completo da página ou blocos maiores
             const blocos = document.querySelectorAll('div');
 
             blocos.forEach(el => {
                 const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
 
-                // Filtro rigoroso para pegar apenas partidas reais e descartar propagandas de odds
                 if (
                     texto.length > 25 &&
                     texto.length < 350 &&
@@ -81,10 +77,8 @@ async function varrerEEnviarLigasReais() {
                     let linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                     let ligaEncontrada = "";
                     
-                    // Varre as linhas de cima para baixo procurando o nome do campeonato/país
                     for (let linha of linhas) {
                         let lUp = linha.toUpperCase();
-                        // Se a linha tem características de liga (contém termos geográficos ou de torneio e não é tempo/placar)
                         if (
                             (lUp.includes('COLOMBIA') || lUp.includes('ARGENTINA') || lUp.includes('BRAZIL') || 
                              lUp.includes('GERMANY') || lUp.includes('SPAIN') || lUp.includes('ITALY') || 
@@ -101,7 +95,7 @@ async function varrerEEnviarLigasReais() {
 
                     resultados.push({
                         textoBloco: texto,
-                        liga: ligaEncontrada || "Futebol Ao Vivo"
+                        liga: ligaEncontrada || ""
                     });
                 }
             });
@@ -116,20 +110,17 @@ async function varrerEEnviarLigasReais() {
             let bloco = item.textoBloco;
             let liga = item.liga;
 
-            // 1. Extração do Tempo de Jogo
             let matchTempo = bloco.match(/(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT)/i);
             let tempoJogo = matchTempo ? traduzirTempo(matchTempo[0]) : "Ao Vivo";
 
-            // 2. Extração do Placar Real
             let placarJogo = "0 x 0";
             let matchPlacar = bloco.match(/\b([0-5])\s*[-–—xX]\s*([0-5])\b/);
             if (matchPlacar) {
                 placarJogo = `${matchPlacar[1]} x ${matchPlacar[2]}`;
             }
 
-            // 3. Limpeza do Confronto
             let limpo = bloco;
-            if (liga !== "Futebol Ao Vivo") limpo = limpo.replace(liga, '');
+            if (liga) limpo = limpo.replace(liga, '');
             if (matchTempo) limpo = limpo.replace(matchTempo[0], '');
             
             limpo = limpo.replace(/\d+%/g, '');
@@ -150,7 +141,6 @@ async function varrerEEnviarLigasReais() {
 
             let chaveJogo = confrontoFinal.toLowerCase().replace(/\s+/g, '');
 
-            // 4. Controle de Gols e Duplicidade (Envia apenas uma vez, e reenvia se houver gol)
             if (memoriaPlacarJogos.has(chaveJogo)) {
                 let placarAnterior = memoriaPlacarJogos.get(chaveJogo);
                 if (placarAnterior === placarJogo) {
@@ -163,7 +153,9 @@ async function varrerEEnviarLigasReais() {
             memoriaPlacarJogos.set(chaveJogo, placarJogo);
 
             let cardTelegram = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
-            cardTelegram += `🏆 <b>Liga:</b> ${liga}\n`;
+            if (liga) {
+                cardTelegram += `🏆 <b>Liga:</b> ${liga}\n`;
+            }
             cardTelegram += `⏱ <b>Tempo:</b> ${tempoJogo}\n`;
             cardTelegram += `⚔️ <b>Confronto:</b> <code>${confrontoFinal}</code>\n`;
             cardTelegram += `⚽ <b>Placar:</b> <b>${placarJogo}</b>`;
@@ -173,7 +165,7 @@ async function varrerEEnviarLigasReais() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards enviados com sucesso.`);
+        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards enviados.`);
 
     } catch (erro) {
         console.error("❌ Erro na varredura:", erro.message);
@@ -182,5 +174,5 @@ async function varrerEEnviarLigasReais() {
     }
 }
 
-varrerEEnviarLigasReais();
-setInterval(varrerEEnviarLigasReais, 180000);
+varrerEEnviarLigasFiltradas();
+setInterval(varrerEEnviarLigasFiltradas, 180000);
