@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Escanteios Definitivo ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Investigador de Escanteios ⚽🚩</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -23,10 +23,10 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerEEnviarEscanteios() {
+async function varrerInteligente() {
     let browser = null;
     try {
-        console.log("⚡ [Radar Definitivo] Conectando ao SokkerPRO...");
+        console.log("⚡ [Investigador Array] Conectando ao SokkerPRO...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -48,9 +48,10 @@ async function varrerEEnviarEscanteios() {
             timeout: 120000
         });
 
-        console.log("⏳ Aguardando renderização completa dos dados...");
-        await new Promise(r => setTimeout(r, 10000));
+        console.log("⏳ Aguardando renderização completa dos dados (12s)...");
+        await new Promise(r => setTimeout(r, 12000)); 
 
+        // Scroll suave para revelar jogos mais abaixo
         for (let i = 0; i < 6; i++) {
             await page.evaluate(() => window.scrollBy(0, 800));
             await new Promise(r => setTimeout(r, 1500));
@@ -61,121 +62,104 @@ async function varrerEEnviarEscanteios() {
             const blocos = document.querySelectorAll('div');
 
             blocos.forEach(el => {
-                const texto = el.innerText ? el.innerText.replace(/\s+/g, ' ').trim() : '';
-
-                // Filtro blindado contra lixo, loadings e anúncios
+                let textoOriginal = el.innerText || "";
+                
+                // Quebra o texto respeitando as quebras de linha reais do HTML
+                let linhas = textoOriginal.split('\n').map(t => t.trim()).filter(t => t !== '');
+                
+                // Verifica se essa div tem estrutura de uma partida ao vivo
+                let temTempo = linhas.some(l => /^(\d{1,3}'(?:\+\d+)?|HT|FT|Intervalo)$/i.test(l));
+                
                 if (
-                    texto.length > 30 &&
-                    texto.length < 450 &&
-                    (/\d{1,3}'/.test(texto) || texto.includes('HT') || texto.includes('FT')) &&
-                    (texto.includes('x') || texto.includes('-')) &&
-                    !texto.includes('Loading') &&
-                    !texto.includes('loading') &&
-                    !texto.includes('ODDS') &&
-                    !texto.includes('GAMEPLAY') &&
-                    !texto.includes('Subscribe') &&
-                    !texto.includes('RESPONSIBILITY') &&
-                    !texto.includes('AVERAGESLAST') &&
-                    !texto.includes('CHANNELS')
+                    temTempo && 
+                    linhas.length >= 4 && 
+                    linhas.length <= 25 && 
+                    !linhas.includes('GAMEPLAY') && 
+                    !linhas.includes('ODDSPRE') &&
+                    !linhas.includes('Subscribe') &&
+                    !linhas.includes('Loading data')
                 ) {
-                    let linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                    let ligaEncontrada = "";
-                    
-                    for (let linha of linhas) {
-                        let lUp = linha.toUpperCase();
-                        if (
-                            (lUp.includes('COLOMBIA') || lUp.includes('ARGENTINA') || lUp.includes('BRAZIL') || 
-                             lUp.includes('GERMANY') || lUp.includes('SPAIN') || lUp.includes('ITALY') || 
-                             lUp.includes('ENGLAND') || lUp.includes('MEXICO') || lUp.includes('LEAGUE') || 
-                             lUp.includes('PRIMERA') || lUp.includes('CHAMPIONSHIP') || lUp.includes('PREMIERSHIP') || 
-                             lUp.includes('OBERLIGA') || lUp.includes('REGIONALLIGA') || lUp.includes('CUP') || 
-                             lUp.includes('WOMEN') || lUp.includes('PRO') || lUp.includes('JUNIOR') ||
-                             lUp.includes('DIVISION') || lUp.includes('MLS')) &&
-                            !lUp.includes("'") && !lUp.includes("X") && lUp.length < 45
-                        ) {
-                            ligaEncontrada = linha;
-                            break;
-                        }
-                    }
-
-                    resultados.push({
-                        textoBloco: texto,
-                        liga: ligaEncontrada || ""
-                    });
+                    resultados.push(linhas);
                 }
             });
 
             return resultados;
         });
 
-        console.log(`📊 Partidas filtradas encontradas: ${partidasExtraidas.length}`);
+        console.log(`📊 Blocos analisados encontrados: ${partidasExtraidas.length}`);
+        
         let enviadosNoCiclo = 0;
+        let jogosProcessados = new Set(); 
 
-        for (let item of partidasExtraidas) {
-            let bloco = item.textoBloco;
-            let liga = item.liga;
+        for (let linhas of partidasExtraidas) {
+            let tempoJogo = "Ao Vivo";
+            let idxTempo = linhas.findIndex(l => /^(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT|Intervalo)$/i.test(l));
+            
+            if (idxTempo === -1) {
+                idxTempo = linhas.findIndex(l => /(\d{1,3}'|HT|FT)/i.test(l));
+            }
+            
+            if (idxTempo === -1) continue;
 
-            let matchTempo = bloco.match(/(\d{1,3}'(?:\s*\+\s*\d+)?|HT|FT)/i);
-            let tempoJogo = matchTempo ? traduzirTempo(matchTempo[0]) : "Ao Vivo";
+            tempoJogo = traduzirTempo(linhas[idxTempo]);
+
+            let timesEncontrados = [];
+            let numerosEncontrados = [];
+
+            // Separador Cirúrgico: varre as linhas e separa textos de números
+            for (let i = 0; i < linhas.length; i++) {
+                let linha = linhas[i];
+                
+                if (i === idxTempo) continue;
+                if (linha.toUpperCase().includes('GOAL') || linha.toUpperCase().includes('VAR') || linha.includes('Live')) continue;
+
+                // Captura placares e números puros isolados
+                if (/^\d+$/.test(linha)) {
+                    numerosEncontrados.push(linha);
+                } else if (/^\d+\s*[-–—xX]\s*\d+$/.test(linha)) {
+                    let partes = linha.split(/[-–—xX]/).map(p => p.trim());
+                    numerosEncontrados.push(partes[0], partes[1]);
+                } else if (linha.length > 2) {
+                    // Se tem mais de 2 letras e passou nos filtros, é o nome do time/liga (Ex: "12 de Junio VH" entra aqui e não dá conflito)
+                    timesEncontrados.push(linha);
+                }
+            }
+
+            // Remove duplicações de textos geradas pelo layout responsivo invisível
+            timesEncontrados = [...new Set(timesEncontrados)];
+            
+            if (timesEncontrados.length < 2) continue;
+
+            // Define quem é quem
+            let liga = timesEncontrados.length >= 3 ? timesEncontrados[0] : "";
+            let timeCasa = timesEncontrados.length >= 3 ? timesEncontrados[1] : timesEncontrados[0];
+            let timeFora = timesEncontrados.length >= 3 ? timesEncontrados[2] : timesEncontrados[1];
+
+            let confrontoFinal = `${timeCasa} x ${timeFora}`;
+            
+            if (jogosProcessados.has(confrontoFinal)) continue;
+            jogosProcessados.add(confrontoFinal);
 
             let placarJogo = "0 x 0";
-            let matchPlacar = bloco.match(/\b([0-5])\s*[-–—xX]\s*([0-5])\b/);
-            if (matchPlacar) {
-                placarJogo = `${matchPlacar[1]} x ${matchPlacar[2]}`;
-            }
-
-            // Varredura cirúrgica de escanteios baseada na estrutura numérica padrão do SokkerPRO
             let escanteiosJogo = "0 x 0";
-            let matchesNumericos = bloco.match(/\b([0-1]?[0-9])\s*[-–—]\s*([0-1]?[0-9])\b/g);
-            if (matchesNumericos && matchesNumericos.length >= 2) {
-                // O segundo par de números no bloco costuma representar os cantos
-                let partesCantos = matchesNumericos[1].split(/[-–—]/);
-                if (partesCantos.length === 2) {
-                    escanteiosJogo = `${partesCantos[0].trim()} x ${partesCantos[1].trim()}`;
-                }
-            } else {
-                // Segunda tentativa via rótulo de texto explicito se houver
-                let matchRotulo = bloco.match(/(?:cantos?|corners?)\D*([0-9]{1,2})\D*([0-9]{1,2})/i);
-                if (matchRotulo) {
-                    escanteiosJogo = `${matchRotulo[1]} x ${matchRotulo[2]}`;
-                }
-            }
 
-            let limpo = bloco;
-            if (liga) limpo = limpo.replace(liga, '');
-            if (matchTempo) limpo = limpo.replace(matchTempo[0], '');
-            
-            limpo = limpo.replace(/\d+%/g, '');
-            limpo = limpo.replace(/\b([0-5])\s*[-–—xX]\s*([0-5])\b/g, '');
-            limpo = limpo.replace(/\b\d+\.\d{2}\b/g, '');
-
-            let pedacos = limpo.split(/[-–—]|vs/i).map(p => p.replace(/[\d%]/g, '').trim()).filter(p => p.length > 2);
-
-            let confrontoFinal = "";
-            if (pedacos.length >= 2) {
-                confrontoFinal = `${pedacos[0]} x ${pedacos[1]}`;
-            } else {
-                confrontoFinal = limpo.replace(/\s+/g, ' ').trim();
-                confrontoFinal = confrontoFinal.replace(/^[x\s-]+|[x\s-]+$/g, '');
-            }
-
-            if (!confrontoFinal || confrontoFinal.length < 5 || confrontoFinal.includes('x x')) continue;
+            // Lógica posicional: Os primeiros 2 números são os Gols, os 2 números seguintes são os Escanteios
+            if (numerosEncontrados.length >= 2) placarJogo = `${numerosEncontrados[0]} x ${numerosEncontrados[1]}`;
+            if (numerosEncontrados.length >= 4) escanteiosJogo = `${numerosEncontrados[2]} x ${numerosEncontrados[3]}`;
 
             let chaveJogo = confrontoFinal.toLowerCase().replace(/\s+/g, '');
-
             if (memoriaPlacarJogos.has(chaveJogo)) {
                 let placarAnterior = memoriaPlacarJogos.get(chaveJogo);
                 if (placarAnterior === placarJogo) {
                     continue; 
                 } else {
-                    console.log(`⚽ GOL DETECTADO em ${confrontoFinal}! Placar anterior: ${placarAnterior} -> Novo: ${placarJogo}`);
+                    console.log(`⚽ GOL DETECTADO! ${confrontoFinal} | ${placarAnterior} -> ${placarJogo}`);
                 }
             }
-
             memoriaPlacarJogos.set(chaveJogo, placarJogo);
 
             let cardTelegram = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
-            if (liga) {
+            if (liga && !liga.includes("Ao Vivo")) {
                 cardTelegram += `🏆 <b>Liga:</b> ${liga}\n`;
             }
             cardTelegram += `⏱ <b>Tempo:</b> ${tempoJogo}\n`;
@@ -188,7 +172,7 @@ async function varrerEEnviarEscanteios() {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards limpos enviados.`);
+        console.log(`✅ Ciclo concluído. ${enviadosNoCiclo} cards enviados com dados precisos.`);
 
     } catch (erro) {
         console.error("❌ Erro na varredura:", erro.message);
@@ -197,5 +181,5 @@ async function varrerEEnviarEscanteios() {
     }
 }
 
-varrerEEnviarEscanteios();
-setInterval(varrerEEnviarEscanteios, 180000);
+varrerInteligente();
+setInterval(varrerInteligente, 180000);
