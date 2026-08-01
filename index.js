@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Com Liga e Escanteios ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Mercado de Escanteios ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -25,7 +25,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando varredura com Liga e Escanteios...");
+    console.log("🕒 [BOT] Iniciando varredura focada em Escanteios...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -55,65 +55,66 @@ async function varrerPartidasAoVivo() {
             await new Promise(r => setTimeout(r, 1000));
         }
 
+        // Extração avançada mapeando a estrutura dos cards do SokkerPRO do print
         const partidas = await page.evaluate(() => {
             let lista = [];
-            let textoCorpo = document.body ? document.body.innerText : '';
-            let linhasTotal = textoCorpo.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            // Cada card de jogo na listagem costuma estar agrupado em containers
+            let cards = document.querySelectorAll('div');
             
-            for (let i = 0; i < linhasTotal.length; i++) {
-                let linha = linhasTotal[i];
-                if (/^\d{1,3}'$/.test(linha) || linha === 'HT') {
-                    // Pega linhas acima para capturar a Liga e linhas abaixo para os times e placar
-                    let inicio = Math.max(0, i - 5);
-                    let fim = Math.min(linhasTotal.length, i + 12);
-                    let bloco = linhasTotal.slice(inicio, fim);
-                    lista.push(bloco);
+            cards.forEach(card => {
+                let texto = card.innerText ? card.innerText.trim() : '';
+                // Procura blocos que contenham minuto ativo (ex: 35', 69', 4') e dados de pressão/odds
+                if (/\b\d{1,3}'\b/.test(texto) && (texto.includes('%') || texto.includes('AO VIVO'))) {
+                    let linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                    if (linhas.length >= 5 && !lista.includes(linhas)) {
+                        lista.push(linhas);
+                    }
                 }
-            }
+            });
             return lista;
         });
 
-        console.log(`📊 Blocos de partidas encontrados: ${partidas.length}`);
+        console.log(`📊 Jogos capturados: ${partidas.length}`);
         let enviados = 0;
 
         for (let linhas of partidas) {
-            let tempo = linhas.find(l => /^\d{1,3}'$/.test(l) || l === 'HT') || "Ao Vivo";
-            
-            let ignorar = ['no ads', 'subscribe', 'pro', 'finished', 'replays', 'placar', '1 x 2', 'all', 'live', 'upcoming', 'visual', 'new', 'ver mais'];
+            let linhaTempo = linhas.find(l => /\b\d{1,3}'\b/.test(l));
+            if (!linhaTempo) continue;
 
-            // Tenta identificar a liga (geralmente aparece nas primeiras linhas do bloco antes dos times)
-            let possiveisLigas = linhas.filter(l => {
-                let lLower = l.toLowerCase();
-                return l.length > 3 && 
-                    !l.includes('%') && 
-                    !l.includes('.') && 
-                    !/^\d+$/.test(l) && 
-                    !/^\d{1,3}'$/.test(l) &&
-                    !ignorar.some(ig => lLower.includes(ig));
-            });
-
-            let liga = "Futebol Ao Vivo";
-            if (possiveisLigas.length >= 3) {
-                liga = `${possiveisLigas[0]} - ${possiveisLigas[1]}`;
-            } else if (possiveisLigas.length > 0) {
-                liga = possiveisLigas[0];
+            // Identifica a liga (geralmente vem logo acima do confronto nos prints do SokkerPRO)
+            let indexTempo = linhas.indexOf(linhaTempo);
+            let liga = indexTempo > 1 ? linhas[indexTempo - 2] : "Futebol Ao Vivo";
+            if (liga.length < 3 || liga.includes('%') || /^\d+$/.test(liga)) {
+                liga = "Futebol Ao Vivo - Ao Vivo";
             }
 
-            let possiveisTimes = possiveisLigas.slice(-2); // Os dois últimos nomes costumam ser os times
-            if (possiveisTimes.length < 2) continue;
+            // Filtra os times válidos do bloco
+            let times = linhas.filter(l => 
+                l.length > 2 && 
+                !l.includes('%') && 
+                !l.includes('.') && 
+                !/^\d+$/.test(l) && 
+                !/\b\d{1,3}'\b/.test(l) &&
+                !l.toLowerCase().includes('live') &&
+                !l.toLowerCase().includes('todos') &&
+                !l.toLowerCase().includes('próximos') &&
+                !l.toLowerCase().includes('fim')
+            );
 
-            let timeCasa = possiveisTimes[0];
-            let timeFora = possiveisTimes[1];
+            if (times.length < 2) continue;
+
+            let timeCasa = times[0];
+            let timeFora = times[1];
             let confronto = `${timeCasa} x ${timeFora}`;
 
-            // Evita capturar lixo como times
-            if (timeCasa.toLowerCase().includes('subscribe') || timeFora.toLowerCase().includes('no ads')) continue;
-
+            // Extração de placar e estatísticas de escanteios quando disponíveis na visão rápida
             let numeros = linhas.filter(l => /^\d+$/.test(l));
             let golsCasa = numeros.length > 0 ? numeros[0] : "0";
             let golsFora = numeros.length > 1 ? numeros[1] : "0";
-            let escCasa = numeros.length > 4 ? numeros[4] : (numeros.length > 2 ? numeros[2] : "0");
-            let escFora = numeros.length > 5 ? numeros[5] : (numeros.length > 3 ? numeros[3] : "0");
+            
+            // Estimativa/Captura de escanteios baseada na posição dos dados do card
+            let escCasa = numeros.length > 3 ? numeros[2] : "0";
+            let escFora = numeros.length > 4 ? numeros[3] : "0";
 
             let placar = `${golsCasa} x ${golsFora}`;
             let escanteios = `${escCasa} x ${escFora}`;
@@ -125,20 +126,34 @@ async function varrerPartidasAoVivo() {
             memoriaJogos.set(chave, placar);
             memoriaJogos.set(chave + '_esc', escanteios);
 
-            let card = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
+            // Análise rápida de mercado de escanteios baseada no momento da partida
+            let minNum = parseInt(linhaTempo);
+            let analiseMercado = "Aguardando pressão ideal para entrada.";
+            if (!isNaN(minNum)) {
+                if (minNum >= 75) {
+                    analiseMercado = "🔥 **Oportunidade de Cantos Limite!** Jogo na reta final com alta tendência de pressão e bolas paradas.";
+                } else if (minNum >= 35 && minNum <= 45) {
+                    analiseMercado = "⚡ **Fim de 1º Tempo:** Atenção a pressão exercida para mercado de escanteios antes do intervalo.";
+                } else {
+                    analiseMercado = "📊 Jogo em desenvolvimento, monitorando volume ofensivo e cantos.";
+                }
+            }
+
+            let card = `🚩 <b>Alerta de Escanteios - SokkerPRO</b>\n\n`;
             card += `🏆 <b>Liga:</b> ${liga}\n`;
-            card += `⏱ <b>Tempo:</b> ${traduzirTempo(tempo)}\n`;
+            card += `⏱ <b>Tempo:</b> ${traduzirTempo(linhaTempo)}\n`;
             card += `⚔️ <b>Confronto:</b> <code>${confronto}</code>\n`;
             card += `⚽ <b>Placar:</b> <b>${placar}</b>\n`;
-            card += `🚩 <b>Escanteios:</b> <b>${escanteios}</b>`;
+            card += `🚩 <b>Escanteios Atuais:</b> <b>${escanteios}</b>\n\n`;
+            card += `💡 <b>Análise de Mercado:</b>\n${analiseMercado}`;
 
             await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
             enviados++;
-            console.log(`📤 Alerta Enviado | Liga: ${liga} | ${confronto} (${placar}) - Escanteios: ${escanteios}`);
+            console.log(`📤 Alerta de Escanteios Enviado | ${confronto} (${linhaTempo}) - Escanteios: ${escanteios}`);
             await new Promise(r => setTimeout(r, 1000));
         }
 
-        console.log(`✅ Ciclo finalizado. ${enviados} alertas enviados ao Telegram.`);
+        console.log(`✅ Ciclo finalizado. ${enviados} alertas enviados.`);
 
     } catch (erro) {
         console.error(`❌ Erro crítico: ${erro.message}`);
