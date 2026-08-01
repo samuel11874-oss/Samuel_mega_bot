@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Monitor de Logs Ativo ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Scanner Destravado ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -46,16 +46,16 @@ async function varrerPartidasAoVivo() {
 
         console.log("🌐 [LOG] Acessando https://m.sokkerpro.com/ ...");
         await page.goto('https://m.sokkerpro.com/', {
-            waitUntil: 'networkidle2',
+            waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
-        console.log("⏳ [LOG] Página aberta. Aguardando 10 segundos para carregar os scripts...");
-        await new Promise(r => setTimeout(r, 10000));
+        console.log("⏳ [LOG] Página aberta. Aguardando 6 segundos para renderização inicial...");
+        await new Promise(r => setTimeout(r, 6000));
 
-        console.log("📜 [LOG] Realizando rolagem na página para forçar exibição dos jogos...");
-        for (let i = 0; i < 3; i++) {
-            await page.evaluate(() => window.scrollBy(0, 500));
+        console.log("📜 [LOG] Realizando rolagem na página...");
+        for (let i = 0; i < 2; i++) {
+            await page.evaluate(() => window.scrollBy(0, 400));
             await new Promise(r => setTimeout(r, 1000));
         }
 
@@ -123,7 +123,7 @@ async function varrerPartidasAoVivo() {
                 });
                 enviados++;
                 console.log(`📤 [LOG] Alerta enviado: ${confronto} (${placar})`);
-                await new Promise(r => setTimeout(r, 1500));
+                await new Promise(r => setTimeout(r, 1000));
             }
         }
 
@@ -140,8 +140,5 @@ async function varrerPartidasAoVivo() {
     }
 }
 
-// Executa imediatamente ao ligar
 varrerPartidasAoVivo();
-
-// Repete a cada 2 minutos
 setInterval(varrerPartidasAoVivo, 120000);
