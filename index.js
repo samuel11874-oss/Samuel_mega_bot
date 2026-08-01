@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Card Único ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Seletor Preciso ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -25,7 +25,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando varredura unificada...");
+    console.log("🕒 [BOT] Varredura com extração precisa de cards...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -47,7 +47,7 @@ async function varrerPartidasAoVivo() {
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando renderização...");
+        console.log("⏳ Aguardando carregamento...");
         await new Promise(r => setTimeout(r, 10000));
 
         for (let i = 0; i < 3; i++) {
@@ -55,71 +55,83 @@ async function varrerPartidasAoVivo() {
             await new Promise(r => setTimeout(r, 1500));
         }
 
-        // Captura elementos isolados e únicos por partida usando seletores estruturados
-        const dadosPartidas = await page.evaluate(() => {
-            let cards = document.querySelectorAll('div');
-            let unicos = new Set();
-            let resultados = [];
-
-            cards.forEach(el => {
+        // Extração cirúrgica focada nas linhas de jogos do SokkerPRO
+        const partidas = await page.evaluate(() => {
+            let listaJogos = [];
+            
+            // O site agrupa cada jogo ou bloco de partida. Vamos varrer elementos que contêm minutos de jogo.
+            let elementos = document.querySelectorAll('div');
+            
+            elementos.forEach(el => {
                 let texto = el.innerText ? el.innerText.trim() : '';
-                // Filtra blocos que contêm formato de tempo exato de jogo e tamanho ideal de card
-                if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(texto) && texto.split('\n').length >= 4 && texto.length < 350) {
-                    if (!unicos.has(texto)) {
-                        unicos.add(texto);
-                        resultados.push(texto.split('\n').map(l => l.trim()).filter(l => l.length > 0));
+                // Verifica se o bloco contém o formato padrão de tempo (ex: 45', 76', 90', etc) e tamanho ideal
+                if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(texto) && !texto.includes('TODOS') && !texto.includes('PRÓXIMOS')) {
+                    let linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                    
+                    // Valida se o bloco tem linhas suficientes para formar um jogo real
+                    let temTempo = linhas.some(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l));
+                    let temPlacarNums = linhas.filter(l => /^\d+$/.test(l));
+
+                    if (temTempo && temPlacarNums.length >= 2 && linhas.length >= 4 && linhas.length <= 25) {
+                        // Evita duplicatas exatas de blocos aninhados
+                        let assinatura = linhas.join(' | ');
+                        if (!listaJogos.some(j => j.assinatura === assinatura)) {
+                            listaJogos.push({ assinatura, linhas });
+                        }
                     }
                 }
             });
 
-            return resultados;
+            return listaJogos.map(j => j.linhas);
         });
 
-        console.log(`📊 Partidas brutas unicas capturadas: ${dadosPartidas.length}`);
+        console.log(`📊 Partidas válidas encontradas: ${partidas.length}`);
         let enviados = 0;
 
-        for (let linhas of dadosPartidas) {
+        for (let linhas of partidas) {
             let linhaTempo = linhas.find(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l));
             if (!linhaTempo) continue;
 
-            let indexTempo = linhas.indexOf(linhaTempo);
-            let liga = indexTempo >= 2 ? linhas[indexTempo - 2] : (indexTempo >= 1 ? linhas[indexTempo - 1] : "Futebol Ao Vivo");
-            if (liga.length < 3 || /^\d+$/.test(liga) || liga.includes('%') || liga.toLowerCase().includes('todos')) {
-                liga = "Futebol Ao Vivo";
-            }
-
-            let times = linhas.filter(l => 
+            // Limpa e valida as linhas de texto para isolar os nomes dos times
+            let linhasLimpas = linhas.filter(l => 
                 l.length > 2 && 
                 !l.includes('%') && 
                 !l.includes('.') && 
                 !/^\d+$/.test(l) && 
                 !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l) &&
+                !l.toLowerCase().includes('min') &&
+                !l.toLowerCase().includes('+') &&
                 !l.toLowerCase().includes('live') &&
-                !l.toLowerCase().includes('todos') &&
-                !l.toLowerCase().includes('próximos') &&
-                !l.toLowerCase().includes('fim') &&
-                !l.toLowerCase().includes('visão')
+                !l.toLowerCase().includes('visão') &&
+                !l.toLowerCase().includes('odds')
             );
 
-            if (times.length < 2) continue;
+            if (linhasLimpas.length < 2) continue;
 
-            let timeCasa = times[0];
-            let timeFora = times[1];
+            // Os dois primeiros textos limpos após os filtros são estritamente os times
+            let timeCasa = linhasLimpas[0];
+            let timeFora = linhasLimpas[1];
             let confronto = `${timeCasa} x ${timeFora}`;
 
+            // Tenta achar a liga (geralmente as primeiras linhas antes dos times)
+            let indexTempo = linhas.indexOf(linhaTempo);
+            let liga = "Futebol Ao Vivo";
+            for (let i = 0; i < indexTempo; i++) {
+                let l = linhas[i];
+                if (l.length > 3 && !/^\d+$/.test(l) && !l.includes('%') && !l.toLowerCase().includes('vião')) {
+                    liga = l;
+                    break;
+                }
+            }
+
+            // Extração correta dos gols/placar
             let numeros = linhas.filter(l => /^\d+$/.test(l));
             let golsCasa = numeros.length > 0 ? numeros[0] : "0";
-            let golsFora = numeros.length > 1 ? numeros[1] : "1";
+            let golsFora = numeros.length > 1 ? numeros[1] : "0";
             let placar = `${golsCasa} x ${golsFora}`;
 
-            // Chave baseada exclusivamente no confronto para garantir 1 único card por jogo
             let chaveConfronto = confronto.toLowerCase().replace(/\s+/g, '');
-            
-            // Se já enviamos este jogo, pula para evitar duplicidade de cards
-            if (memoriaJogos.has(chaveConfronto)) {
-                continue;
-            }
-            
+            if (memoriaJogos.has(chaveConfronto)) continue;
             memoriaJogos.set(chaveConfronto, true);
 
             let card = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
@@ -130,11 +142,11 @@ async function varrerPartidasAoVivo() {
 
             await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
             enviados++;
-            console.log(`📤 Card Único Enviado | ${liga} | ${confronto} (${placar})`);
+            console.log(`📤 Enviado com Sucesso | ${liga} | ${confronto} (${placar})`);
             await new Promise(r => setTimeout(r, 1000));
         }
 
-        console.log(`✅ Ciclo finalizado. ${enviados} cards únicos enviados.`);
+        console.log(`✅ Ciclo finalizado. ${enviados} cards enviados.`);
 
     } catch (erro) {
         console.error(`❌ Erro crítico: ${erro.message}`);
