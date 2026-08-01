@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Scanner Direto ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Card Único ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -25,7 +25,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando varredura na home do SokkerPRO...");
+    console.log("🕒 [BOT] Iniciando varredura unificada...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -47,27 +47,27 @@ async function varrerPartidasAoVivo() {
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando renderização dos cards...");
+        console.log("⏳ Aguardando renderização...");
         await new Promise(r => setTimeout(r, 10000));
 
-        // Rola a página para baixo para disparar lazy-loads se houverem
         for (let i = 0; i < 3; i++) {
             await page.evaluate(() => window.scrollBy(0, 600));
             await new Promise(r => setTimeout(r, 1500));
         }
 
-        // Extrai o texto visível de todos os elementos estruturados da página
+        // Captura elementos isolados e únicos por partida usando seletores estruturados
         const dadosPartidas = await page.evaluate(() => {
-            let blocos = document.querySelectorAll('article, section, [class*="match"], [class*="game"], div');
+            let cards = document.querySelectorAll('div');
+            let unicos = new Set();
             let resultados = [];
 
-            blocos.forEach(el => {
+            cards.forEach(el => {
                 let texto = el.innerText ? el.innerText.trim() : '';
-                // Procura blocos que tenham o formato de tempo ao vivo (ex: 35', 76', etc)
-                if (/\d{1,3}'/.test(texto) && texto.split('\n').length >= 4 && texto.length < 400) {
-                    let linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                    if (!resultados.some(r => r.join('|') === linhas.join('|'))) {
-                        resultados.push(linhas);
+                // Filtra blocos que contêm formato de tempo exato de jogo e tamanho ideal de card
+                if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(texto) && texto.split('\n').length >= 4 && texto.length < 350) {
+                    if (!unicos.has(texto)) {
+                        unicos.add(texto);
+                        resultados.push(texto.split('\n').map(l => l.trim()).filter(l => l.length > 0));
                     }
                 }
             });
@@ -75,32 +75,30 @@ async function varrerPartidasAoVivo() {
             return resultados;
         });
 
-        console.log(`📊 Partidas capturadas: ${dadosPartidas.length}`);
+        console.log(`📊 Partidas brutas unicas capturadas: ${dadosPartidas.length}`);
         let enviados = 0;
 
         for (let linhas of dadosPartidas) {
-            let linhaTempo = linhas.find(l => /\d{1,3}'/.test(l));
+            let linhaTempo = linhas.find(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l));
             if (!linhaTempo) continue;
 
             let indexTempo = linhas.indexOf(linhaTempo);
-            
-            // Tenta pegar a liga nas linhas acima do tempo
             let liga = indexTempo >= 2 ? linhas[indexTempo - 2] : (indexTempo >= 1 ? linhas[indexTempo - 1] : "Futebol Ao Vivo");
-            if (liga.length < 3 || /^\d+$/.test(liga) || liga.includes('%')) {
+            if (liga.length < 3 || /^\d+$/.test(liga) || liga.includes('%') || liga.toLowerCase().includes('todos')) {
                 liga = "Futebol Ao Vivo";
             }
 
-            // Filtra os times
             let times = linhas.filter(l => 
                 l.length > 2 && 
                 !l.includes('%') && 
                 !l.includes('.') && 
                 !/^\d+$/.test(l) && 
-                !/\d{1,3}'/.test(l) &&
+                !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l) &&
                 !l.toLowerCase().includes('live') &&
                 !l.toLowerCase().includes('todos') &&
                 !l.toLowerCase().includes('próximos') &&
-                !l.toLowerCase().includes('fim')
+                !l.toLowerCase().includes('fim') &&
+                !l.toLowerCase().includes('visão')
             );
 
             if (times.length < 2) continue;
@@ -109,18 +107,20 @@ async function varrerPartidasAoVivo() {
             let timeFora = times[1];
             let confronto = `${timeCasa} x ${timeFora}`;
 
-            // Extração de placar
             let numeros = linhas.filter(l => /^\d+$/.test(l));
             let golsCasa = numeros.length > 0 ? numeros[0] : "0";
-            let golsFora = numeros.length > 1 ? numeros[1] : "0";
-
+            let golsFora = numeros.length > 1 ? numeros[1] : "1";
             let placar = `${golsCasa} x ${golsFora}`;
 
-            let chave = confronto.toLowerCase().replace(/\s+/g, '');
-            if (memoriaJogos.get(chave) === placar) {
-                continue; 
+            // Chave baseada exclusivamente no confronto para garantir 1 único card por jogo
+            let chaveConfronto = confronto.toLowerCase().replace(/\s+/g, '');
+            
+            // Se já enviamos este jogo, pula para evitar duplicidade de cards
+            if (memoriaJogos.has(chaveConfronto)) {
+                continue;
             }
-            memoriaJogos.set(chave, placar);
+            
+            memoriaJogos.set(chaveConfronto, true);
 
             let card = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
             card += `🏆 <b>Liga:</b> ${liga}\n`;
@@ -130,11 +130,11 @@ async function varrerPartidasAoVivo() {
 
             await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
             enviados++;
-            console.log(`📤 Alerta Enviado | ${liga} | ${confronto} (${placar})`);
+            console.log(`📤 Card Único Enviado | ${liga} | ${confronto} (${placar})`);
             await new Promise(r => setTimeout(r, 1000));
         }
 
-        console.log(`✅ Ciclo finalizado. ${enviados} alertas enviados.`);
+        console.log(`✅ Ciclo finalizado. ${enviados} cards únicos enviados.`);
 
     } catch (erro) {
         console.error(`❌ Erro crítico: ${erro.message}`);
