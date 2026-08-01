@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Versão Definitiva Anti-Odds ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Versão Cirúrgica Definitiva ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -26,7 +26,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando varredura com Blindagem Anti-Odds...");
+    console.log("🕒 [BOT] Iniciando varredura com Captura Avançada de Ligas...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -59,6 +59,7 @@ async function varrerPartidasAoVivo() {
 
         const partidasRaw = await page.evaluate(() => {
             let results = [];
+            // Varre os blocos principais de partidas (cards de jogos)
             let rows = document.querySelectorAll('div, tr, li, article');
             
             for (let row of rows) {
@@ -77,7 +78,34 @@ async function varrerPartidasAoVivo() {
                 let words = parts.filter(l => !/^\d+$/.test(l) && !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l) && l.length > 2);
                 
                 if (hasTime && nums.length >= 2 && words.length >= 2 && parts.length < 25) {
-                    results.push(parts);
+                    // Tenta achar um título de liga nas proximidades superiores do DOM (elemento pai ou anterior)
+                    let ligaDetectada = "Futebol Ao Vivo";
+                    let parent = row.parentElement;
+                    let tentativas = 0;
+                    
+                    while (parent && tentativas < 4) {
+                        let prev = parent.previousElementSibling;
+                        if (prev && prev.innerText && prev.innerText.trim().length > 2) {
+                            let textoPrev = prev.innerText.trim().split('\n')[0];
+                            if (textoPrev && textoPrev.length < 40 && !/\d+['"]/.test(textoPrev)) {
+                                ligaDetectada = textoPrev;
+                                break;
+                            }
+                        }
+                        // Busca por títulos dentro do próprio bloco pai
+                        let headers = parent.querySelectorAll('h1, h2, h3, h4, span, div');
+                        for (let h of headers) {
+                            let t = h.innerText ? h.innerText.trim() : '';
+                            if (t.length > 2 && t.length < 40 && (t.includes(' - ') || t.includes('/') || h.className.includes('league') || h.className.includes('title') || h.className.includes('header'))) {
+                                ligaDetectada = t.split('\n')[0];
+                                break;
+                            }
+                        }
+                        parent = parent.parentElement;
+                        tentativas++;
+                    }
+
+                    results.push({ partes: parts, ligaContexto: ligaDetectada });
                 }
             }
             return results;
@@ -86,10 +114,13 @@ async function varrerPartidasAoVivo() {
         console.log(`📊 Blocos brutos encontrados: ${partidasRaw.length}`);
         let enviados = 0;
 
-        partidasRaw.sort((a, b) => a.length - b.length);
+        partidasRaw.sort((a, b) => a.partes.length - b.partes.length);
         let processados = new Set();
 
-        for (let partes of partidasRaw) {
+        for (let item of partidasRaw) {
+            let partes = item.partes;
+            let ligaContexto = item.ligaContexto;
+
             let tempo = partes.find(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l));
             let numeros = partes.filter(l => /^\d+$/.test(l));
             
@@ -98,13 +129,12 @@ async function varrerPartidasAoVivo() {
             let golsFora = numeros[1];
             let placar = `${golsCasa} x ${golsFora}`;
 
-            // BLINDAGEM ANTI-ODDS E ANTI-LIXO: Remove números decimais (ex: 5.00), avisos e rodapés
             let textosLimpos = partes.filter(p => {
                 let up = p.toUpperCase();
                 return p !== tempo && 
                        !/^\d+$/.test(p) && 
                        p.length > 2 &&
-                       !/^\d+[.,]\d+$/.test(p) && // Remove odds como 5.00, 2.37, 11.00
+                       !/^\d+[.,]\d+$/.test(p) && 
                        !up.includes('VISÃO') && 
                        !up.includes('ODDS') && 
                        !up.includes('LIVE') && 
@@ -117,14 +147,12 @@ async function varrerPartidasAoVivo() {
 
             if (textosLimpos.length < 2) continue;
 
-            // Varre de trás para frente para pegar estritamente os dois últimos textos que NÃO sejam números decimais ou odds
             let timeCasa = "";
             let timeFora = "";
             let candidatosTimes = [];
 
             for (let i = textosLimpos.length - 1; i >= 0; i--) {
                 let txt = textosLimpos[i];
-                // Ignora se parecer odd ou marcador numérico solto
                 if (/^\d+([.,]\d+)?$/.test(txt)) continue;
                 candidatosTimes.unshift(txt);
                 if (candidatosTimes.length === 2) break;
@@ -135,17 +163,17 @@ async function varrerPartidasAoVivo() {
             timeCasa = candidatosTimes[0];
             timeFora = candidatosTimes[1];
 
-            // A liga fica sendo o primeiro texto válido que sobrou antes dos times
-            let liga = "Futebol Ao Vivo";
-            for (let i = 0; i < textosLimpos.length; i++) {
-                let txt = textosLimpos[i];
-                if (txt !== timeCasa && txt !== timeFora && !/^\d+([.,]\d+)?$/.test(txt)) {
-                    liga = txt;
-                    break;
+            let liga = ligaContexto;
+            if (!liga || liga === "Futebol Ao Vivo") {
+                for (let i = 0; i < textosLimpos.length; i++) {
+                    let txt = textosLimpos[i];
+                    if (txt !== timeCasa && txt !== timeFora && !/^\d+([.,]\d+)?$/.test(txt)) {
+                        liga = txt;
+                        break;
+                    }
                 }
             }
 
-            // Validações rigorosas finais contra falsos positivos
             let timeCasaUp = timeCasa.toUpperCase();
             let timeForaUp = timeFora.toUpperCase();
 
@@ -171,7 +199,7 @@ async function varrerPartidasAoVivo() {
 
             await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
             enviados++;
-            console.log(`📤 CARD LIMPO ENVIADO | ${confronto} (${placar})`);
+            console.log(`📤 CARD PERFEITO ENVIADO | [${liga}] ${confronto} (${placar})`);
             await new Promise(r => setTimeout(r, 1000));
         }
 
