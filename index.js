@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Leve & Funcional ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Scanner Ativo ⚽🚩</h2>'));
 app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
@@ -22,10 +22,10 @@ function traduzirTempo(texto) {
     return t.trim();
 }
 
-async function varrerLeve() {
+async function varrerComEspera() {
     let browser = null;
     try {
-        console.log("⚡ [Scanner Leve] Iniciando varredura...");
+        console.log("⚡ [Scanner] Conectando e aguardando carregamento...");
 
         browser = await puppeteer.launch({
             headless: true,
@@ -43,30 +43,25 @@ async function varrerLeve() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
 
         await page.goto('https://m.sokkerpro.com/', {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        // Aguarda os dados carregarem na tela
-        await new Promise(r => setTimeout(r, 6000));
+        // Aguarda 12 segundos para o site injetar os jogos na tela
+        console.log("⏳ Aguardando renderização dos jogos (12s)...");
+        await new Promise(r => setTimeout(r, 12000));
 
         const partidas = await page.evaluate(() => {
             let dados = [];
-            // Procura todos os blocos de texto que contêm o tempo do jogo (ex: 15', 30')
             let elementos = document.querySelectorAll('*');
             
             elementos.forEach(el => {
                 let txt = el.innerText ? el.innerText.trim() : '';
-                // Se encontrar um elemento com o tempo de jogo e o texto tiver tamanho suficiente para ser um card
-                if (/^\d{1,3}'$/.test(txt) && el.innerText.length > 30 && el.innerText.length < 400) {
+                // Procura elementos que contêm o tempo de minutos (ex: 25')
+                if (/^\d{1,3}'$/.test(txt) && el.innerText.length > 30 && el.innerText.length < 500) {
                     let linhas = el.innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                    
-                    if (linhas.length >= 4) {
-                        let tempo = txt;
-                        // Tenta extrair informações limpas do bloco
-                        dados.push({
-                            bloco: linhas.join(' | ')
-                        });
+                    if (linhas.length >= 3) {
+                        dados.push({ bloco: linhas.join(' | ') });
                     }
                 }
             });
@@ -74,17 +69,17 @@ async function varrerLeve() {
             return dados;
         });
 
-        console.log(`📊 Blocos capturados: ${partidas.length}`);
+        console.log(`📊 Blocos capturados com sucesso: ${partidas.length}`);
         if (partidas.length > 0) {
-            console.log("Exemplo de bloco:", partidas[0].bloco);
+            console.log("Primeiro bloco encontrado:", partidas[0].bloco);
         }
 
     } catch (erro) {
-        console.error("❌ Erro na varredura leve:", erro.message);
+        console.error("❌ Erro na varredura:", erro.message);
     } finally {
         if (browser) await browser.close();
     }
 }
 
-varrerLeve();
-setInterval(varrerLeve, 120000);
+varrerComEspera();
+setInterval(varrerComEspera, 120000);
