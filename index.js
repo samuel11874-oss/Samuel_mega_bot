@@ -6,8 +6,9 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Definitivo Ao Vivo ⚽🚩</h2>'));
-app.listen(process.env.PORT || 3000);
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Monitor de Logs Ativo ⚽🚩</h2>'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
 const TOKEN = '8287186194:AAGyqB2sak2oFr3GadpC4GHWuG2ELpTYcBU';
 const CHAT_ID = '8285908313';
@@ -23,10 +24,11 @@ function traduzirTempo(texto) {
 }
 
 async function varrerPartidasAoVivo() {
+    console.log("\n========================================");
+    console.log("🕒 [LOG] Iniciando novo ciclo de varredura...");
     let browser = null;
     try {
-        console.log("⚡ [Bot] Iniciando varredura ao vivo...");
-
+        console.log("🚀 [LOG] Lançando o navegador Puppeteer...");
         browser = await puppeteer.launch({
             headless: true,
             args: [
@@ -38,31 +40,33 @@ async function varrerPartidasAoVivo() {
             ]
         });
 
+        console.log("📂 [LOG] Criando nova aba no navegador...");
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
 
+        console.log("🌐 [LOG] Acessando https://m.sokkerpro.com/ ...");
         await page.goto('https://m.sokkerpro.com/', {
             waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando carregamento da página...");
-        await new Promise(r => setTimeout(r, 8000));
+        console.log("⏳ [LOG] Página aberta. Aguardando 10 segundos para carregar os scripts...");
+        await new Promise(r => setTimeout(r, 10000));
 
-        // Rola a página para baixo para garantir o carregamento dos jogos
-        for (let i = 0; i < 4; i++) {
-            await page.evaluate(() => window.scrollBy(0, 600));
+        console.log("📜 [LOG] Realizando rolagem na página para forçar exibição dos jogos...");
+        for (let i = 0; i < 3; i++) {
+            await page.evaluate(() => window.scrollBy(0, 500));
             await new Promise(r => setTimeout(r, 1000));
         }
 
+        console.log("🔍 [LOG] Extraindo elementos HTML da tela...");
         const partidas = await page.evaluate(() => {
             let lista = [];
             let elementos = document.querySelectorAll('*');
 
             elementos.forEach(el => {
                 let texto = el.innerText ? el.innerText.trim() : '';
-                // Procura blocos que contêm o tempo de jogo (ex: 25')
-                if (/^\d{1,3}'$/.test(texto) && el.innerText.length > 25 && el.innerText.length < 400) {
+                if (/^\d{1,3}'$/.test(texto) && el.innerText.length > 25 && el.innerText.length < 500) {
                     let linhas = el.innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                     if (linhas.length >= 3) {
                         lista.push(linhas);
@@ -72,13 +76,12 @@ async function varrerPartidasAoVivo() {
             return lista;
         });
 
-        console.log(`📊 Partidas brutas encontradas: ${partidas.length}`);
+        console.log(`📊 [LOG] Total de blocos brutos capturados: ${partidas.length}`);
         let enviados = 0;
 
         for (let linhas of partidas) {
             let tempo = linhas.find(l => /^\d{1,3}'$/.test(l) || l === 'HT' || l === 'Intervalo') || "Ao Vivo";
             
-            // Filtra linhas que parecem times (ignorando números, porcentagens e odds)
             let possiveisTimes = linhas.filter(l => 
                 l.length > 2 && 
                 !l.includes('%') && 
@@ -93,7 +96,6 @@ async function varrerPartidasAoVivo() {
                 let timeFora = possiveisTimes[1];
                 let confronto = `${timeCasa} x ${timeFora}`;
 
-                // Procura números inteiros isolados que representam gols e escanteios
                 let numeros = linhas.filter(l => /^\d+$/.test(l));
                 let golsCasa = numeros.length > 0 ? numeros[0] : "0";
                 let golsFora = numeros.length > 1 ? numeros[1] : "0";
@@ -105,7 +107,7 @@ async function varrerPartidasAoVivo() {
 
                 let chave = confronto.toLowerCase().replace(/\s+/g, '');
                 if (memoriaJogos.get(chave) === placar && memoriaJogos.get(chave + '_esc') === escanteios) {
-                    continue; // Evita spam se nada mudou
+                    continue; 
                 }
                 memoriaJogos.set(chave, placar);
                 memoriaJogos.set(chave + '_esc', escanteios);
@@ -116,20 +118,30 @@ async function varrerPartidasAoVivo() {
                 card += `⚽ <b>Placar:</b> <b>${placar}</b>\n`;
                 card += `🚩 <b>Escanteios:</b> <b>${escanteios}</b>`;
 
-                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
+                await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(err => {
+                    console.log(`❌ [LOG] Erro ao enviar mensagem pro Telegram: ${err.message}`);
+                });
                 enviados++;
+                console.log(`📤 [LOG] Alerta enviado: ${confronto} (${placar})`);
                 await new Promise(r => setTimeout(r, 1500));
             }
         }
 
-        console.log(`✅ Ciclo finalizado. ${enviados} alertas enviados ao Telegram.`);
+        console.log(`✅ [LOG] Ciclo finalizado com sucesso. ${enviados} novos alertas enviados.`);
 
     } catch (erro) {
-        console.error("❌ Erro na varredura:", erro.message);
+        console.error(`❌ [LOG CRÍTICO] Erro na execução: ${erro.message}`);
     } finally {
-        if (browser) await browser.close();
+        if (browser) {
+            console.log("🔒 [LOG] Fechando instância do navegador...");
+            await browser.close();
+        }
+        console.log("========================================\n");
     }
 }
 
+// Executa imediatamente ao ligar
 varrerPartidasAoVivo();
-setInterval(varrerPartidasAoVivo, 120000); // Roda a cada 2 minutos automaticamente
+
+// Repete a cada 2 minutos
+setInterval(varrerPartidasAoVivo, 120000);
