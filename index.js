@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Versão Cirúrgica Final ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - EscaScan Profissional V4 ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -26,7 +26,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando varredura com Blindagem de Ligas Local...");
+    console.log("🕒 [BOT] Iniciando varredura com Escaneamento de Estatísticas (Limite: 5 jogos)...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -57,8 +57,9 @@ async function varrerPartidasAoVivo() {
             await new Promise(r => setTimeout(r, 1500));
         }
 
-        const partidasRaw = await page.evaluate(() => {
-            let results = [];
+        // Captura os links e dados básicos da lista principal para identificar as partidas
+        const linksPartidas = await page.evaluate(() => {
+            let list = [];
             let rows = document.querySelectorAll('div, tr, li, article');
             
             for (let row of rows) {
@@ -67,9 +68,7 @@ async function varrerPartidasAoVivo() {
                 let node;
                 while (node = walker.nextNode()) {
                     let val = node.nodeValue.trim();
-                    if (val && val.length > 0) {
-                        parts.push(val);
-                    }
+                    if (val && val.length > 0) parts.push(val);
                 }
                 
                 let hasTime = parts.some(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l));
@@ -77,52 +76,31 @@ async function varrerPartidasAoVivo() {
                 let words = parts.filter(l => !/^\d+$/.test(l) && !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l) && l.length > 2);
                 
                 if (hasTime && nums.length >= 2 && words.length >= 2 && parts.length < 25) {
+                    // Tenta achar um link clicable dentro ou próximo ao card
+                    let linkEl = row.querySelector('a') || row.closest('a');
+                    let href = linkEl ? linkEl.href : null;
                     
-                    // CAPTURA LOCAL DE LIGA: Procura o nome do campeonato estritamente no elemento anterior imediato
-                    let ligaDetectada = "Futebol Ao Vivo";
-                    let prevEl = row.previousElementSibling;
-                    let tentativas = 0;
-                    
-                    while (prevEl && tentativas < 2) {
-                        let textoPrev = prevEl.innerText ? prevEl.innerText.trim().split('\n')[0] : '';
-                        if (textoPrev && textoPrev.length > 2 && textoPrev.length < 45 && !/\d+['"]/.test(textoPrev) && !/^\d+$/.test(textoPrev)) {
-                            ligaDetectada = textoPrev;
-                            break;
-                        }
-                        prevEl = prevEl.previousElementSibling;
-                        tentativas++;
-                    }
-
-                    // Se não achou em cima, tenta varrer os textos internos que parecem nome de liga/país
-                    if (ligaDetectada === "Futebol Ao Vivo") {
-                        for (let p of parts) {
-                            if (p.length > 3 && p.length < 35 && (p.includes('-') || p.includes('/')) && !/\d/.test(p)) {
-                                ligaDetectada = p;
-                                break;
-                            }
-                        }
-                    }
-
-                    results.push({ partes: parts, ligaContexto: ligaDetectada });
+                    list.push({ partes: parts, href: href });
                 }
             }
-            return results;
+            return list;
         });
 
-        console.log(`📊 Blocos brutos encontrados: ${partidasRaw.length}`);
+        console.log(`📊 Partidas detectadas na lista: ${linksPartidas.length}`);
         let enviados = 0;
+        let processadosLocal = new Set();
 
-        partidasRaw.sort((a, b) => a.partes.length - b.partes.length);
-        let processados = new Set();
+        // Limita o processamento a no máximo 5 jogos por ciclo para proteger o desempenho do Render
+        let contadorLote = 0;
 
-        for (let item of partidasRaw) {
+        for (let item of linksPartidas) {
+            if (contadorLote >= 5) break;
+
             let partes = item.partes;
-            let ligaContexto = item.ligaContexto;
-
             let tempo = partes.find(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l));
             let numeros = partes.filter(l => /^\d+$/.test(l));
-            
             if (numeros.length < 2) continue;
+
             let golsCasa = numeros[0];
             let golsFora = numeros[1];
             let placar = `${golsCasa} x ${golsFora}`;
@@ -145,10 +123,7 @@ async function varrerPartidasAoVivo() {
 
             if (textosLimpos.length < 2) continue;
 
-            let timeCasa = "";
-            let timeFora = "";
             let candidatosTimes = [];
-
             for (let i = textosLimpos.length - 1; i >= 0; i--) {
                 let txt = textosLimpos[i];
                 if (/^\d+([.,]\d+)?$/.test(txt)) continue;
@@ -157,46 +132,95 @@ async function varrerPartidasAoVivo() {
             }
 
             if (candidatosTimes.length < 2) continue;
-
-            timeCasa = candidatosTimes[0];
-            timeFora = candidatosTimes[1];
-
-            let liga = ligaContexto;
-            // Se a liga capturada for idêntica ao nome de um dos times, descarta e usa genérico
-            if (liga === timeCasa || liga === timeFora || liga.length > 45) {
-                liga = "Futebol Ao Vivo";
-            }
+            let timeCasa = candidatosTimes[0];
+            let timeFora = candidatosTimes[1];
 
             let timeCasaUp = timeCasa.toUpperCase();
             let timeForaUp = timeFora.toUpperCase();
-
             if (timeCasaUp === timeForaUp) continue;
-            if (timeCasaUp.includes('CORNER') || timeForaUp.includes('CORNER')) continue;
-            if (timeCasaUp.includes('BOTH') || timeForaUp.includes('BOTH')) continue;
-            if (timeCasaUp.includes('TV') || timeForaUp.includes('TV')) continue;
 
             let confronto = `${timeCasa} x ${timeFora}`;
             let chaveConfronto = confronto.toLowerCase().replace(/\s+/g, '');
 
-            if (processados.has(chaveConfronto)) continue;
+            if (processadosLocal.has(chaveConfronto)) continue;
             if (memoriaJogos.has(chaveConfronto)) continue;
-
-            processados.add(chaveConfronto);
+            processadosLocal.add(chaveConfronto);
             memoriaJogos.set(chaveConfronto, true);
 
-            let card = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
-            card += `🏆 <b>Liga:</b> ${liga}\n`;
+            contadorLote++;
+            console.log(`🔍 [LOTE ${contadorLote}/5] Coletando estatísticas de: ${confronto}`);
+
+            // Valores padrão caso a página interna demore ou mude o layout
+            let escanteiosCasa = "0";
+            let escanteiosFora = "0";
+            let pressaoCasa = "N/D";
+            let pressaoFora = "N/D";
+            let ataquesPerigososCasa = "0";
+            let ataquesPerigososFora = "0";
+
+            // Se o bot encontrou um link direto para a partida, ele entra para raspar as estatísticas
+            if (item.href) {
+                try {
+                    const pageJogo = await browser.newPage();
+                    await pageJogo.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
+                    await pageJogo.goto(item.href, { waitUntil: 'domcontentloaded', timeout: 20000 });
+                    await new Promise(r => setTimeout(r, 4000));
+
+                    // Raspa dados estatísticos profundos da página interna do jogo
+                    let stats = await pageJogo.evaluate(() => {
+                        let data = { escantes: [], ataques: [], pressoes: [] };
+                        let textosPagina = document.body.innerText.split('\n');
+                        
+                        // Varredura inteligente de termos-chave na página interna
+                        textosPagina.forEach((txt, idx) => {
+                            let tUp = txt.toUpperCase();
+                            if (tUp.includes('ESCANTEIOS') || tUp.includes('CORNERS') || tUp.includes('CANTOS')) {
+                                // Tenta capturar os números próximos nas linhas vizinhas
+                                for (let j = Math.max(0, idx - 2); j <= Math.min(textosPagina.length - 1, idx + 2); j++) {
+                                    let val = textosPagina[j].trim();
+                                    if (/^\d+$/.test(val)) data.escantes.push(val);
+                                }
+                            }
+                            if (tUp.includes('ATAQUES PERIGOSOS') || tUp.includes('ATTACKS')) {
+                                for (let j = Math.max(0, idx - 2); j <= Math.min(textosPagina.length - 1, idx + 2); j++) {
+                                    let val = textosPagina[j].trim();
+                                    if (/^\d+$/.test(val)) data.ataques.push(val);
+                                }
+                            }
+                        });
+                        return data;
+                    });
+
+                    if (stats.escantes.length >= 2) {
+                        escanteiosCasa = stats.escantes[0];
+                        escanteiosFora = stats.escantes[1];
+                    }
+                    if (stats.ataques.length >= 2) {
+                        ataquesPerigososCasa = stats.ataques[0];
+                        ataquesPerigososFora = stats.ataques[1];
+                    }
+
+                    await pageJogo.close();
+                } catch (e) {
+                    console.log(`⚠️ Falha ao abrir link interno de ${confronto}: ${e.message}`);
+                }
+            }
+
+            // Monta o Card Completo com Escanteios e Estatísticas solicitadas
+            let card = `🟢 <b>SokkerPRO Scout Ao Vivo</b>\n\n`;
             card += `⏱ <b>Tempo:</b> ${traduzirTempo(tempo)}\n`;
             card += `⚔️ <b>Confronto:</b> <code>${confronto}</code>\n`;
-            card += `⚽ <b>Placar:</b> <b>${placar}</b>`;
+            card += `⚽ <b>Placar:</b> <b>${placar}</b>\n\n`;
+            card += `🚩 <b>Escanteios:</b> ${escanteiosCasa} x ${escanteiosFora}\n`;
+            card += `⚡ <b>Ataques Perigosos:</b> ${ataquesPerigososCasa} x ${ataquesPerigososFora}\n`;
 
             await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
             enviados++;
-            console.log(`📤 CARD PERFEITO ENVIADO | [${liga}] ${confronto} (${placar})`);
-            await new Promise(r => setTimeout(r, 1000));
+            console.log(`📤 CARD ESTATÍSTICO ENVIADO | ${confronto} | Escanteios: ${escanteiosCasa}x${escanteiosFora}`);
+            await new Promise(r => setTimeout(r, 2000));
         }
 
-        console.log(`✅ Ciclo finalizado. ${enviados} novos cards enviados.`);
+        console.log(`✅ Ciclo finalizado. ${enviados} cards estatísticos enviados.`);
 
     } catch (erro) {
         console.error(`❌ Erro crítico: ${erro.message}`);
@@ -209,4 +233,4 @@ async function varrerPartidasAoVivo() {
 }
 
 varrerPartidasAoVivo();
-setInterval(varrerPartidasAoVivo, 120000);
+setInterval(varrerPartidasAoVivo, 180000);
