@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Filtro Definitivo ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Seletor Estruturado ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -25,7 +25,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Varredura com filtro anti-lixo e anti-falsos...");
+    console.log("🕒 [BOT] Varredura com extração de itens únicos...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -55,22 +55,25 @@ async function varrerPartidasAoVivo() {
             await new Promise(r => setTimeout(r, 1500));
         }
 
+        // Abordagem refinada: busca elementos menores que representam estritamente o card do jogo
         const partidas = await page.evaluate(() => {
             let listaJogos = [];
-            let elementos = document.querySelectorAll('div');
+            
+            // Procura elementos que costumam isolar cada partida individualmente
+            let elementos = document.querySelectorAll('tr, .match-item, .game-row, div');
 
             elementos.forEach(el => {
                 let texto = el.innerText ? el.innerText.trim() : '';
                 
-                // Valida se o bloco possui marcação de tempo de jogo
-                if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(texto)) {
+                // Valida se o bloco possui o tempo de jogo e se não é um container gigantesco (evita duplicação pai/filho)
+                if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(texto) && texto.length < 300) {
                     let linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                     
                     let temTempo = linhas.some(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l));
                     let numeros = linhas.filter(l => /^\d+$/.test(l));
 
-                    // Bloqueia blocos curtos demais ou sem dados suficientes de placar
-                    if (temTempo && numeros.length >= 2 && linhas.length >= 4) {
+                    // Garante que tem os dois times e o placar estruturado
+                    if (temTempo && numeros.length >= 2 && linhas.length >= 3 && linhas.length <= 12) {
                         let assinatura = linhas.join(' | ');
                         if (!listaJogos.some(j => j.assinatura === assinatura)) {
                             listaJogos.push({ assinatura, linhas });
@@ -82,14 +85,14 @@ async function varrerPartidasAoVivo() {
             return listaJogos.map(j => j.linhas);
         });
 
-        console.log(`📊 Partidas brutas capturadas: ${partidas.length}`);
+        console.log(`📊 Partidas estruturadas capturadas: ${partidas.length}`);
         let enviados = 0;
 
         for (let linhas of partidas) {
             let linhaTempo = linhas.find(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l));
             if (!linhaTempo) continue;
 
-            // Filtro avançado para ignorar lixo de layout, menus, propagandas e títulos genéricos
+            // Filtro rígido para ignorar nomes de países, ligas genéricas e lixos de layout
             let linhasLimpas = linhas.filter(l => {
                 let upper = l.toUpperCase();
                 return l.length > 2 && 
@@ -103,11 +106,9 @@ async function varrerPartidasAoVivo() {
                     !upper.includes('VISÃO') &&
                     !upper.includes('ODDS') &&
                     !upper.includes('LIGA') &&
-                    !upper.includes('VISUAL') &&
-                    !upper.includes('REPLAYS') &&
-                    !upper.includes('NO ADS') &&
-                    !upper.includes('JOGO') &&
-                    !upper.includes('PLACAR') &&
+                    !upper.includes('PREMIER LEAGUE') &&
+                    !upper.includes('RUSSIA') &&
+                    !upper.includes('UKRAINE') &&
                     !upper.includes('MEXICO') &&
                     !upper.includes('COLOMBIA') &&
                     !upper.includes('HONDURAS') &&
@@ -120,19 +121,20 @@ async function varrerPartidasAoVivo() {
             let timeCasa = linhasLimpas[0];
             let timeFora = linhasLimpas[1];
 
-            // Validações extras anti-falsos
+            // Validações de segurança para evitar que o país seja colocado como time (ex: RUSSIA x Premier League)
             if (timeCasa.toUpperCase() === timeFora.toUpperCase() || timeCasa.length < 3 || timeFora.length < 3) continue;
+            if (timeFora.toUpperCase().includes('PREMIER') || timeFora.toUpperCase().includes('LEAGUE') || timeFora.toUpperCase().includes('WOMEN')) continue;
             if (/^\d/.test(timeCasa) || /^\d/.test(timeFora)) continue;
 
             let confronto = `${timeCasa} x ${timeFora}`;
 
-            // Identifica a liga real
+            // Tenta resgatar a liga corretamente das linhas acima do tempo
             let indexTempo = linhas.indexOf(linhaTempo);
             let liga = "Futebol Ao Vivo";
             for (let i = 0; i < indexTempo; i++) {
                 let l = linhas[i];
                 let upperL = l.toUpperCase();
-                if (l.length > 3 && !/^\d+$/.test(l) && !l.includes('%') && !upperL.includes('VISÃO') && !upperL.includes('JOGO')) {
+                if (l.length > 3 && !/^\d+$/.test(l) && !l.includes('%') && !upperL.includes('VISÃO')) {
                     liga = l;
                     break;
                 }
