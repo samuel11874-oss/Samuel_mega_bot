@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - EscaScan Profissional V4 ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Scout Definitivo ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -26,7 +26,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando varredura com Escaneamento de Estatísticas (Limite: 5 jogos)...");
+    console.log("🕒 [BOT] Iniciando varredura profunda com Scout Detalhado...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -57,8 +57,7 @@ async function varrerPartidasAoVivo() {
             await new Promise(r => setTimeout(r, 1500));
         }
 
-        // Captura os links e dados básicos da lista principal para identificar as partidas
-        const linksPartidas = await page.evaluate(() => {
+        const dadosIniciais = await page.evaluate(() => {
             let list = [];
             let rows = document.querySelectorAll('div, tr, li, article');
             
@@ -76,25 +75,36 @@ async function varrerPartidasAoVivo() {
                 let words = parts.filter(l => !/^\d+$/.test(l) && !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l) && l.length > 2);
                 
                 if (hasTime && nums.length >= 2 && words.length >= 2 && parts.length < 25) {
-                    // Tenta achar um link clicable dentro ou próximo ao card
                     let linkEl = row.querySelector('a') || row.closest('a');
                     let href = linkEl ? linkEl.href : null;
                     
-                    list.push({ partes: parts, href: href });
+                    // Tenta capturar a liga local
+                    let ligaDetectada = "Futebol Ao Vivo";
+                    let prevEl = row.previousElementSibling;
+                    let tentativas = 0;
+                    while (prevEl && tentativas < 2) {
+                        let textoPrev = prevEl.innerText ? prevEl.innerText.trim().split('\n')[0] : '';
+                        if (textoPrev && textoPrev.length > 2 && textoPrev.length < 45 && !/\d+['"]/.test(textoPrev) && !/^\d+$/.test(textoPrev)) {
+                            ligaDetectada = textoPrev;
+                            break;
+                        }
+                        prevEl = prevEl.previousElementSibling;
+                        tentativas++;
+                    }
+
+                    list.push({ partes: parts, href: href, ligaContexto: ligaDetectada });
                 }
             }
             return list;
         });
 
-        console.log(`📊 Partidas detectadas na lista: ${linksPartidas.length}`);
+        console.log(`📊 Partidas detectadas: ${dadosIniciais.length}`);
         let enviados = 0;
         let processadosLocal = new Set();
-
-        // Limita o processamento a no máximo 5 jogos por ciclo para proteger o desempenho do Render
         let contadorLote = 0;
 
-        for (let item of linksPartidas) {
-            if (contadorLote >= 5) break;
+        for (let item of dadosIniciais) {
+            if (contadorLote >= 5) break; // Mantém o limite de 5 por ciclo para garantir estabilidade
 
             let partes = item.partes;
             let tempo = partes.find(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l));
@@ -135,9 +145,8 @@ async function varrerPartidasAoVivo() {
             let timeCasa = candidatosTimes[0];
             let timeFora = candidatosTimes[1];
 
-            let timeCasaUp = timeCasa.toUpperCase();
-            let timeForaUp = timeFora.toUpperCase();
-            if (timeCasaUp === timeForaUp) continue;
+            if (timeCasa.toUpperCase() === timeFora.toUpperCase()) continue;
+            if (timeCasa.includes('GOALS') || timeFora.includes('BOTH')) continue;
 
             let confronto = `${timeCasa} x ${timeFora}`;
             let chaveConfronto = confronto.toLowerCase().replace(/\s+/g, '');
@@ -148,79 +157,90 @@ async function varrerPartidasAoVivo() {
             memoriaJogos.set(chaveConfronto, true);
 
             contadorLote++;
-            console.log(`🔍 [LOTE ${contadorLote}/5] Coletando estatísticas de: ${confronto}`);
+            console.log(`🔍 [LOTE ${contadorLote}/5] Abrindo página de: ${confronto}`);
 
-            // Valores padrão caso a página interna demore ou mude o layout
             let escanteiosCasa = "0";
             let escanteiosFora = "0";
-            let pressaoCasa = "N/D";
-            let pressaoFora = "N/D";
-            let ataquesPerigososCasa = "0";
-            let ataquesPerigososFora = "0";
+            let ataquesCasa = "0";
+            let ataquesFora = "0";
 
-            // Se o bot encontrou um link direto para a partida, ele entra para raspar as estatísticas
             if (item.href) {
                 try {
                     const pageJogo = await browser.newPage();
                     await pageJogo.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
-                    await pageJogo.goto(item.href, { waitUntil: 'domcontentloaded', timeout: 20000 });
-                    await new Promise(r => setTimeout(r, 4000));
+                    await pageJogo.goto(item.href, { waitUntil: 'domcontentloaded', timeout: 25000 });
+                    await new Promise(r => setTimeout(r, 5000));
 
-                    // Raspa dados estatísticos profundos da página interna do jogo
-                    let stats = await pageJogo.evaluate(() => {
-                        let data = { escantes: [], ataques: [], pressoes: [] };
-                        let textosPagina = document.body.innerText.split('\n');
-                        
-                        // Varredura inteligente de termos-chave na página interna
-                        textosPagina.forEach((txt, idx) => {
-                            let tUp = txt.toUpperCase();
-                            if (tUp.includes('ESCANTEIOS') || tUp.includes('CORNERS') || tUp.includes('CANTOS')) {
-                                // Tenta capturar os números próximos nas linhas vizinhas
-                                for (let j = Math.max(0, idx - 2); j <= Math.min(textosPagina.length - 1, idx + 2); j++) {
-                                    let val = textosPagina[j].trim();
-                                    if (/^\d+$/.test(val)) data.escantes.push(val);
-                                }
-                            }
-                            if (tUp.includes('ATAQUES PERIGOSOS') || tUp.includes('ATTACKS')) {
-                                for (let j = Math.max(0, idx - 2); j <= Math.min(textosPagina.length - 1, idx + 2); j++) {
-                                    let val = textosPagina[j].trim();
-                                    if (/^\d+$/.test(val)) data.ataques.push(val);
-                                }
+                    // Varre a página interna buscando blocos estatísticos de cantos e ataques
+                    let estatisticasColetadas = await pageJogo.evaluate(() => {
+                        let resultadosTextos = [];
+                        let elementos = document.querySelectorAll('div, span, p, td, th');
+                        elementos.forEach(el => {
+                            let t = el.innerText ? el.innerText.trim() : '';
+                            if (t.length > 0 && t.length < 20) {
+                                resultadosTextos.push(t);
                             }
                         });
-                        return data;
+                        return resultadosTextos;
                     });
 
-                    if (stats.escantes.length >= 2) {
-                        escanteiosCasa = stats.escantes[0];
-                        escanteiosFora = stats.escantes[1];
-                    }
-                    if (stats.ataques.length >= 2) {
-                        ataquesPerigososCasa = stats.ataques[0];
-                        ataquesPerigososFora = stats.ataques[1];
+                    // Algoritmo para localizar os números de escanteios e ataques nas estatísticas internas
+                    for (let idx = 0; idx < estatisticasColetadas.length; idx++) {
+                        let txtUp = estatisticasColetadas[idx].toUpperCase();
+                        
+                        if (txtUp.includes('ESCANTEIO') || txtUp.includes('CANTOS') || txtUp === 'CORNER' || txtUp === 'CORNERS') {
+                            // Olha os elementos próximos para pegar os dois valores numéricos (Casa e Fora)
+                            let numsEncontrados = [];
+                            for (let k = Math.max(0, idx - 4); k <= Math.min(estatisticasColetadas.length - 1, idx + 4); k++) {
+                                if (/^\d+$/.test(estatisticasColetadas[k])) {
+                                    numsEncontrados.push(estatisticasColetadas[k]);
+                                }
+                            }
+                            if (numsEncontrados.length >= 2) {
+                                escanteiosCasa = numsEncontrados[0];
+                                escanteiosFora = numsEncontrados[1];
+                            }
+                        }
+
+                        if (txtUp.includes('ATAQUES PERIGOSOS') || txtUp.includes('ATTACKS')) {
+                            let numsAtaque = [];
+                            for (let k = Math.max(0, idx - 4); k <= Math.min(estatisticasColetadas.length - 1, idx + 4); k++) {
+                                if (/^\d+$/.test(estatisticasColetadas[k])) {
+                                    numsAtaque.push(estatisticasColetadas[k]);
+                                }
+                            }
+                            if (numsAtaque.length >= 2) {
+                                ataquesCasa = numsAtaque[0];
+                                ataquesFora = numsAtaque[1];
+                            }
+                        }
                     }
 
                     await pageJogo.close();
                 } catch (e) {
-                    console.log(`⚠️ Falha ao abrir link interno de ${confronto}: ${e.message}`);
+                    console.log(`⚠️ Erro ao rasprar estatísticas internas: ${e.message}`);
                 }
             }
 
-            // Monta o Card Completo com Escanteios e Estatísticas solicitadas
+            let liga = item.ligaContexto;
+            if (!liga || liga.length > 40) liga = "Futebol Ao Vivo";
+
+            // Monta o card completo solicitada
             let card = `🟢 <b>SokkerPRO Scout Ao Vivo</b>\n\n`;
+            card += `🏆 <b>Liga:</b> ${liga}\n`;
             card += `⏱ <b>Tempo:</b> ${traduzirTempo(tempo)}\n`;
             card += `⚔️ <b>Confronto:</b> <code>${confronto}</code>\n`;
             card += `⚽ <b>Placar:</b> <b>${placar}</b>\n\n`;
             card += `🚩 <b>Escanteios:</b> ${escanteiosCasa} x ${escanteiosFora}\n`;
-            card += `⚡ <b>Ataques Perigosos:</b> ${ataquesPerigososCasa} x ${ataquesPerigososFora}\n`;
+            card += `⚡ <b>Ataques Perigosos:</b> ${ataquesCasa} x ${ataquesFora}`;
 
             await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
             enviados++;
-            console.log(`📤 CARD ESTATÍSTICO ENVIADO | ${confronto} | Escanteios: ${escanteiosCasa}x${escanteiosFora}`);
+            console.log(`📤 CARD COMPLETO ENVIADO | ${confronto} | Cantos: ${escanteiosCasa}x${escanteiosFora}`);
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        console.log(`✅ Ciclo finalizado. ${enviados} cards estatísticos enviados.`);
+        console.log(`✅ Ciclo finalizado. ${enviados} cards enviados.`);
 
     } catch (erro) {
         console.error(`❌ Erro crítico: ${erro.message}`);
