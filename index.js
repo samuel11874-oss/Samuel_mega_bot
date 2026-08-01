@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Mega Cirúrgico V3 (TreeWalker) ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Versão Definitiva Anti-Odds ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -26,7 +26,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando varredura absoluta com TreeWalker (Ignorando renderização do servidor)...");
+    console.log("🕒 [BOT] Iniciando varredura com Blindagem Anti-Odds...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -59,11 +59,9 @@ async function varrerPartidasAoVivo() {
 
         const partidasRaw = await page.evaluate(() => {
             let results = [];
-            // Busca todos os blocos possíveis
             let rows = document.querySelectorAll('div, tr, li, article');
             
             for (let row of rows) {
-                // O SEGREDO: TreeWalker extrai os textos puros (nós) ignorando como o servidor formata
                 let walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT, null, false);
                 let parts = [];
                 let node;
@@ -74,12 +72,10 @@ async function varrerPartidasAoVivo() {
                     }
                 }
                 
-                // Verifica se esse bloco isolado tem as peças fundamentais de um jogo
                 let hasTime = parts.some(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l));
                 let nums = parts.filter(l => /^\d+$/.test(l));
                 let words = parts.filter(l => !/^\d+$/.test(l) && !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l) && l.length > 2);
                 
-                // Se tiver tempo, pelo menos 2 placares e 2 times (e não for a página inteira gigante)
                 if (hasTime && nums.length >= 2 && words.length >= 2 && parts.length < 25) {
                     results.push(parts);
                 }
@@ -90,66 +86,77 @@ async function varrerPartidasAoVivo() {
         console.log(`📊 Blocos brutos encontrados: ${partidasRaw.length}`);
         let enviados = 0;
 
-        // Ordena pelos arrays menores primeiro (garante que vamos processar os filhos perfeitos e ignorar os pais duplicados)
         partidasRaw.sort((a, b) => a.length - b.length);
-
         let processados = new Set();
 
         for (let partes of partidasRaw) {
             let tempo = partes.find(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l));
             let numeros = partes.filter(l => /^\d+$/.test(l));
             
+            if (numeros.length < 2) continue;
             let golsCasa = numeros[0];
             let golsFora = numeros[1];
             let placar = `${golsCasa} x ${golsFora}`;
 
-            // Limpa palavras de sistema
+            // BLINDAGEM ANTI-ODDS E ANTI-LIXO: Remove números decimais (ex: 5.00), avisos e rodapés
             let textosLimpos = partes.filter(p => {
                 let up = p.toUpperCase();
                 return p !== tempo && 
                        !/^\d+$/.test(p) && 
                        p.length > 2 &&
+                       !/^\d+[.,]\d+$/.test(p) && // Remove odds como 5.00, 2.37, 11.00
                        !up.includes('VISÃO') && 
                        !up.includes('ODDS') && 
                        !up.includes('LIVE') && 
+                       !up.includes('PLAY WITH RESPONSIBILITY') &&
+                       !up.includes('CORNERS') &&
+                       !up.includes('TV CHANNELS') &&
+                       !up.includes('NO TV') &&
                        !p.includes('%');
             });
 
             if (textosLimpos.length < 2) continue;
 
+            // Varre de trás para frente para pegar estritamente os dois últimos textos que NÃO sejam números decimais ou odds
             let timeCasa = "";
             let timeFora = "";
-            let liga = "Futebol Ao Vivo";
+            let candidatosTimes = [];
 
-            // Pegamos SEMPRE os dois últimos textos como sendo as equipes. O que sobrar pra trás assume como Liga.
-            timeCasa = textosLimpos[textosLimpos.length - 2];
-            timeFora = textosLimpos[textosLimpos.length - 1];
-            
-            if (textosLimpos.length >= 3) {
-                liga = textosLimpos[0]; 
+            for (let i = textosLimpos.length - 1; i >= 0; i--) {
+                let txt = textosLimpos[i];
+                // Ignora se parecer odd ou marcador numérico solto
+                if (/^\d+([.,]\d+)?$/.test(txt)) continue;
+                candidatosTimes.unshift(txt);
+                if (candidatosTimes.length === 2) break;
             }
 
-            // TRAVA DE SEGURANÇA ANTI-LIGAS/PAÍSES
-            // Impede a criação de cards absurdos como "AUSTRALIA x Uni Azzurri"
-            let paisesELigas = ['AUSTRALIA', 'RUSSIA', 'MEXICO', 'PANAMA', 'UNITED STATES', 'COLOMBIA', 'HONDURAS', 'UKRAINE', 'INDONESIA'];
-            
+            if (candidatosTimes.length < 2) continue;
+
+            timeCasa = candidatosTimes[0];
+            timeFora = candidatosTimes[1];
+
+            // A liga fica sendo o primeiro texto válido que sobrou antes dos times
+            let liga = "Futebol Ao Vivo";
+            for (let i = 0; i < textosLimpos.length; i++) {
+                let txt = textosLimpos[i];
+                if (txt !== timeCasa && txt !== timeFora && !/^\d+([.,]\d+)?$/.test(txt)) {
+                    liga = txt;
+                    break;
+                }
+            }
+
+            // Validações rigorosas finais contra falsos positivos
             let timeCasaUp = timeCasa.toUpperCase();
             let timeForaUp = timeFora.toUpperCase();
-            
-            let ehInvalido = false;
-            for (let invalido of paisesELigas) {
-                if (timeCasaUp === invalido || timeForaUp === invalido) ehInvalido = true;
-                // Corta qualquer bloco que tenha 'PREMIER LEAGUE' como um dos times
-                if (timeCasaUp.includes('PREMIER LEAGUE') || timeForaUp.includes('PREMIER LEAGUE')) ehInvalido = true;
-            }
-            
-            if (ehInvalido) continue;
+
             if (timeCasaUp === timeForaUp) continue;
+            if (timeCasaUp.includes('CORNER') || timeForaUp.includes('CORNER')) continue;
+            if (timeCasaUp.includes('BOTH') || timeForaUp.includes('BOTH')) continue;
+            if (timeCasaUp.includes('TV') || timeForaUp.includes('TV')) continue;
 
             let confronto = `${timeCasa} x ${timeFora}`;
             let chaveConfronto = confronto.toLowerCase().replace(/\s+/g, '');
 
-            // Bloqueio final de duplicidade no Telegram (Filtro Pai/Filho resolvido aqui)
             if (processados.has(chaveConfronto)) continue;
             if (memoriaJogos.has(chaveConfronto)) continue;
 
@@ -164,7 +171,7 @@ async function varrerPartidasAoVivo() {
 
             await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
             enviados++;
-            console.log(`📤 CARD PERFEITO ENVIADO | ${confronto} (${placar})`);
+            console.log(`📤 CARD LIMPO ENVIADO | ${confronto} (${placar})`);
             await new Promise(r => setTimeout(r, 1000));
         }
 
