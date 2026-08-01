@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Seletor Estruturado ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Mega Cirúrgico ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -17,6 +17,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 const memoriaJogos = new Map();
 
 function traduzirTempo(texto) {
+    if (!texto) return 'Desconhecido';
     let t = texto.toUpperCase();
     if (t.includes('HT') || t.includes('INTERVALO')) return 'Intervalo';
     if (t.includes('FT') || t.includes('FIM')) return 'Fim de Jogo';
@@ -25,7 +26,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Varredura com extração de itens únicos...");
+    console.log("🕒 [BOT] Iniciando MEGA INVESTIGAÇÃO e extração cirúrgica...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -47,121 +48,136 @@ async function varrerPartidasAoVivo() {
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando carregamento...");
-        await new Promise(r => setTimeout(r, 10000));
+        console.log("⏳ Aguardando carregamento e renderização...");
+        await new Promise(r => setTimeout(r, 8000));
 
         for (let i = 0; i < 3; i++) {
             await page.evaluate(() => window.scrollBy(0, 600));
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 1000));
         }
 
-        // Abordagem refinada: busca elementos menores que representam estritamente o card do jogo
-        const partidas = await page.evaluate(() => {
-            let listaJogos = [];
-            
-            // Procura elementos que costumam isolar cada partida individualmente
-            let elementos = document.querySelectorAll('tr, .match-item, .game-row, div');
+        // O SEGREDO CIRÚRGICO: Extração usando propriedades físicas de tela.
+        // Garante que só vai pegar a exata "faixa" do jogo e não a página ou menu inteiro.
+        const partidasRaw = await page.evaluate(() => {
+            let resultados = [];
+            let elementos = document.querySelectorAll('div, tr, li');
 
             elementos.forEach(el => {
-                let texto = el.innerText ? el.innerText.trim() : '';
-                
-                // Valida se o bloco possui o tempo de jogo e se não é um container gigantesco (evita duplicação pai/filho)
-                if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(texto) && texto.length < 300) {
-                    let linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                    
-                    let temTempo = linhas.some(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l));
-                    let numeros = linhas.filter(l => /^\d+$/.test(l));
+                let rect = el.getBoundingClientRect();
+                // Regra física: A linha de uma partida de celular tem entre 20 e 180 pixels de altura
+                if (rect.height > 15 && rect.height < 180 && rect.width > 50) {
+                    let texto = el.innerText ? el.innerText.trim() : '';
 
-                    // Garante que tem os dois times e o placar estruturado
-                    if (temTempo && numeros.length >= 2 && linhas.length >= 3 && linhas.length <= 12) {
-                        let assinatura = linhas.join(' | ');
-                        if (!listaJogos.some(j => j.assinatura === assinatura)) {
-                            listaJogos.push({ assinatura, linhas });
+                    // Confirmação de tempo (HT, Minutos, etc)
+                    if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(texto)) {
+
+                        // REGRA ANTI-DUPLICAÇÃO (Pai/Filho)
+                        // Checa se o elemento não tem nenhum filho validado. Queremos a 'folha' final do DOM.
+                        let isLeaf = true;
+                        let filhos = el.querySelectorAll('div, tr, li');
+                        for (let filho of filhos) {
+                            let fRect = filho.getBoundingClientRect();
+                            if (fRect.height > 15 && fRect.height < 180) {
+                                if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(filho.innerText || '')) {
+                                    isLeaf = false;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (isLeaf) {
+                            let linhas = texto.split('\n').map(t => t.trim()).filter(t => t.length > 0);
+                            // Se a linha isolada tem números (é o placar!), ela é válida
+                            if (linhas.some(l => /^\d+$/.test(l))) {
+                                resultados.push(linhas);
+                            }
                         }
                     }
                 }
             });
 
-            return listaJogos.map(j => j.linhas);
-        });
-
-        console.log(`📊 Partidas estruturadas capturadas: ${partidas.length}`);
-        let enviados = 0;
-
-        for (let linhas of partidas) {
-            let linhaTempo = linhas.find(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l));
-            if (!linhaTempo) continue;
-
-            // Filtro rígido para ignorar nomes de países, ligas genéricas e lixos de layout
-            let linhasLimpas = linhas.filter(l => {
-                let upper = l.toUpperCase();
-                return l.length > 2 && 
-                    !l.includes('%') && 
-                    !l.includes('.') && 
-                    !/^\d+$/.test(l) && 
-                    !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l) &&
-                    !upper.includes('MIN') &&
-                    !upper.includes('+') &&
-                    !upper.includes('LIVE') &&
-                    !upper.includes('VISÃO') &&
-                    !upper.includes('ODDS') &&
-                    !upper.includes('LIGA') &&
-                    !upper.includes('PREMIER LEAGUE') &&
-                    !upper.includes('RUSSIA') &&
-                    !upper.includes('UKRAINE') &&
-                    !upper.includes('MEXICO') &&
-                    !upper.includes('COLOMBIA') &&
-                    !upper.includes('HONDURAS') &&
-                    !upper.includes('PANAMA') &&
-                    !upper.includes('UNITED STATES');
+            // Limpa as duplicatas que o site repete no layout
+            let unicos = [];
+            let assinaturas = new Set();
+            resultados.forEach(res => {
+                let ass = res.join('|');
+                if (!assinaturas.has(ass)) {
+                    assinaturas.add(ass);
+                    unicos.push(res);
+                }
             });
 
-            if (linhasLimpas.length < 2) continue;
+            return unicos;
+        });
 
-            let timeCasa = linhasLimpas[0];
-            let timeFora = linhasLimpas[1];
+        console.log(`📊 Partidas filtradas fisicamente: ${partidasRaw.length}`);
+        let enviados = 0;
 
-            // Validações de segurança para evitar que o país seja colocado como time (ex: RUSSIA x Premier League)
-            if (timeCasa.toUpperCase() === timeFora.toUpperCase() || timeCasa.length < 3 || timeFora.length < 3) continue;
-            if (timeFora.toUpperCase().includes('PREMIER') || timeFora.toUpperCase().includes('LEAGUE') || timeFora.toUpperCase().includes('WOMEN')) continue;
-            if (/^\d/.test(timeCasa) || /^\d/.test(timeFora)) continue;
+        for (let linhas of partidasRaw) {
+            // 1. Extrai o TEMPO
+            let tempos = linhas.filter(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l));
+            let tempo = tempos.length > 0 ? tempos[0] : null;
+            if (!tempo) continue;
 
-            let confronto = `${timeCasa} x ${timeFora}`;
-
-            // Tenta resgatar a liga corretamente das linhas acima do tempo
-            let indexTempo = linhas.indexOf(linhaTempo);
-            let liga = "Futebol Ao Vivo";
-            for (let i = 0; i < indexTempo; i++) {
-                let l = linhas[i];
-                let upperL = l.toUpperCase();
-                if (l.length > 3 && !/^\d+$/.test(l) && !l.includes('%') && !upperL.includes('VISÃO')) {
-                    liga = l;
-                    break;
-                }
-            }
-
+            // 2. Extrai o PLACAR
             let numeros = linhas.filter(l => /^\d+$/.test(l));
             let golsCasa = numeros.length > 0 ? numeros[0] : "0";
             let golsFora = numeros.length > 1 ? numeros[1] : "0";
             let placar = `${golsCasa} x ${golsFora}`;
 
+            // 3. Limpa os LIXOS para encontrar os TIMES
+            let possiveisTextos = linhas.filter(l => {
+                let upper = l.toUpperCase();
+                return l.length > 2 &&
+                       !/^\d+$/.test(l) &&
+                       !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l) &&
+                       !upper.includes('VISÃO') &&
+                       !upper.includes('ODDS') &&
+                       !upper.includes('LIVE') &&
+                       !upper.includes('%');
+            });
+
+            if (possiveisTextos.length < 2) continue;
+
+            let timeCasa = "";
+            let timeFora = "";
+            let liga = "Futebol Ao Vivo";
+
+            // MATEMÁTICA REVERSA (RESOLVE O BUG DO "AUSTRALIA x Uni Azzurri")
+            // Se vieram 3 nomes (Ex: País, Time 1, Time 2), separamos o país para a Liga e pegamos os 2 times puros.
+            if (possiveisTextos.length >= 3) {
+                liga = possiveisTextos[0]; // Pega o cabeçalho vazado e joga no campo Liga
+                timeCasa = possiveisTextos[possiveisTextos.length - 2]; // O penúltimo é sempre a casa
+                timeFora = possiveisTextos[possiveisTextos.length - 1]; // O último é sempre o visitante
+            } else {
+                timeCasa = possiveisTextos[0];
+                timeFora = possiveisTextos[1];
+            }
+
+            // Proteção final: Impede de montar confronto bizarro
+            if (timeCasa === timeFora || timeCasa.length < 3 || timeFora.length < 3) continue;
+
+            let confronto = `${timeCasa} x ${timeFora}`;
+            
+            // Controle final de Não Duplicidade no Telegram
             let chaveConfronto = confronto.toLowerCase().replace(/\s+/g, '');
             if (memoriaJogos.has(chaveConfronto)) continue;
             memoriaJogos.set(chaveConfronto, true);
 
+            // MONTA O CARD PERFEITO
             let card = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
             card += `🏆 <b>Liga:</b> ${liga}\n`;
-            card += `⏱ <b>Tempo:</b> ${traduzirTempo(linhaTempo)}\n`;
+            card += `⏱ <b>Tempo:</b> ${traduzirTempo(tempo)}\n`;
             card += `⚔️ <b>Confronto:</b> <code>${confronto}</code>\n`;
             card += `⚽ <b>Placar:</b> <b>${placar}</b>`;
 
             await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
             enviados++;
-            console.log(`📤 Card Único Enviado | ${liga} | ${confronto} (${placar})`);
+            console.log(`📤 CIRÚRGICO ENVIADO | ${confronto} (${placar})`);
             await new Promise(r => setTimeout(r, 1000));
         }
 
-        console.log(`✅ Ciclo finalizado. ${enviados} cards enviados.`);
+        console.log(`✅ Ciclo investigativo finalizado. ${enviados} novos cards únicos.`);
 
     } catch (erro) {
         console.error(`❌ Erro crítico: ${erro.message}`);
