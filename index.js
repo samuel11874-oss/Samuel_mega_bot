@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Autenticado ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Login Direto ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -44,33 +44,50 @@ async function varrerPartidasAoVivo() {
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
 
-        console.log("🌐 [LOG] Acessando página de login do SokkerPRO...");
+        console.log("🌐 [LOG] Acessando SokkerPRO...");
         await page.goto('https://m.sokkerpro.com/', {
             waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
-        console.log("⏳ [LOG] Aguardando carregamento da tela inicial...");
-        await new Promise(r => setTimeout(r, 4000));
+        console.log("⏳ [LOG] Aguardando 5s para carregamento...");
+        await new Promise(r => setTimeout(r, 5000));
 
-        // Tenta preencher o login se os campos existirem na tela
-        const camposLogin = await page.$('input[type="email"], input[type="text"]');
-        if (camposLogin) {
-            console.log("🔑 [LOG] Realizando login automático...");
-            await page.type('input[type="email"], input[type="text"]', 'Samuel11874@gmail.com', { delay: 50 });
-            await page.type('input[type="password"]', 'Samuel00', { delay: 50 });
+        // Tenta preencher os campos de login diretamente
+        try {
+            console.log("🔑 [LOG] Tentando preencher e-mail e senha...");
+            await page.waitForSelector('input', { timeout: 5000 });
             
-            // Clica no botão de entrar (procura por botão de submit ou texto entrar)
             await page.evaluate(() => {
-                let botoes = Array.from(document.querySelectorAll('button, input[type="submit"]'));
-                let btn = botoes.find(b => b.innerText.toLowerCase().includes('entrar') || b.innerText.toLowerCase().includes('login') || b.type === 'submit');
-                if (btn) btn.click();
+                let inputs = document.querySelectorAll('input');
+                inputs.forEach(input => {
+                    if (input.type === 'email' || input.placeholder.toLowerCase().includes('email') || input.name.toLowerCase().includes('mail')) {
+                        input.value = 'Samuel11874@gmail.com';
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    if (input.type === 'password' || input.placeholder.toLowerCase().includes('senha')) {
+                        input.value = 'Samuel00';
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                });
             });
 
-            console.log("⏳ [LOG] Aguardando redirecionamento pós-login (8s)...");
+            console.log("🖱️ [LOG] Clicando no botão de entrar...");
+            await page.evaluate(() => {
+                let botoes = document.querySelectorAll('button, input[type="submit"], a');
+                for (let b of botoes) {
+                    let texto = b.innerText ? b.innerText.toLowerCase() : '';
+                    if (texto.includes('entrar') || texto.includes('login') || texto.includes('acessar')) {
+                        b.click();
+                        break;
+                    }
+                }
+            });
+
+            console.log("⏳ [LOG] Aguardando pós-login (8s)...");
             await new Promise(r => setTimeout(r, 8000));
-        } else {
-            console.log("ℹ️ [LOG] Já logado ou sessão ativa.");
+        } catch (e) {
+            console.log("ℹ️ [LOG] Campos de login não encontrados ou já logado.");
         }
 
         console.log("📜 [LOG] Realizando rolagem na página de jogos...");
