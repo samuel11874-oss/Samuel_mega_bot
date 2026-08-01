@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Mega Cirúrgico V2 (Lógica Pai-Filho) ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Mega Cirúrgico V3 (TreeWalker) ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -26,7 +26,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando varredura por Lógica de Texto Pai/Filho...");
+    console.log("🕒 [BOT] Iniciando varredura absoluta com TreeWalker (Ignorando renderização do servidor)...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -41,19 +41,15 @@ async function varrerPartidasAoVivo() {
         });
 
         const page = await browser.newPage();
-        
-        // Voltando para o desktop padrão para garantir que o menu lateral/oculto não esconda os jogos
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
 
         console.log("⏳ Navegando até o site...");
-        
-        // domcontentloaded impede que os dados ao vivo do site segurem o carregamento infinitamente
         await page.goto('https://m.sokkerpro.com/', {
             waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando renderização do JavaScript...");
+        console.log("⏳ Aguardando renderização do conteúdo...");
         await new Promise(r => setTimeout(r, 12000));
 
         for (let i = 0; i < 3; i++) {
@@ -62,101 +58,102 @@ async function varrerPartidasAoVivo() {
         }
 
         const partidasRaw = await page.evaluate(() => {
-            let resultados = [];
-            let elementos = document.querySelectorAll('div, tr, li, article');
-
-            elementos.forEach(el => {
-                let texto = el.innerText ? el.innerText.trim() : '';
-
-                // Verifica se tem tempo (Regex)
-                if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(texto)) {
-                    
-                    // NOVA REGRA DE DUPLICAÇÃO: Verifica se há um elemento interno (filho) com o mesmo tempo
-                    let ehPai = false;
-                    let filhos = el.querySelectorAll('div, tr, li');
-                    
-                    for (let filho of filhos) {
-                        let textoFilho = filho.innerText ? filho.innerText.trim() : '';
-                        // Se o filho também tem tempo e o texto dele é menor que o texto do pai
-                        if (textoFilho.length < texto.length && /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(textoFilho)) {
-                            ehPai = true; // Esse elemento 'el' é só a caixa grande externa. Ignorar!
-                            break;
-                        }
-                    }
-
-                    if (!ehPai) {
-                        // Achamos a caixa mais funda do DOM (A linha real do jogo!)
-                        let linhas = texto.split('\n').map(t => t.trim()).filter(t => t.length > 0);
-                        if (linhas.some(l => /^\d+$/.test(l))) {
-                            resultados.push(linhas);
-                        }
+            let results = [];
+            // Busca todos os blocos possíveis
+            let rows = document.querySelectorAll('div, tr, li, article');
+            
+            for (let row of rows) {
+                // O SEGREDO: TreeWalker extrai os textos puros (nós) ignorando como o servidor formata
+                let walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT, null, false);
+                let parts = [];
+                let node;
+                while (node = walker.nextNode()) {
+                    let val = node.nodeValue.trim();
+                    if (val && val.length > 0) {
+                        parts.push(val);
                     }
                 }
-            });
-
-            // Limpeza final de qualquer card idêntico gerado
-            let unicos = [];
-            let assinaturas = new Set();
-            resultados.forEach(res => {
-                let ass = res.join('|');
-                if (!assinaturas.has(ass)) {
-                    assinaturas.add(ass);
-                    unicos.push(res);
+                
+                // Verifica se esse bloco isolado tem as peças fundamentais de um jogo
+                let hasTime = parts.some(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l));
+                let nums = parts.filter(l => /^\d+$/.test(l));
+                let words = parts.filter(l => !/^\d+$/.test(l) && !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l) && l.length > 2);
+                
+                // Se tiver tempo, pelo menos 2 placares e 2 times (e não for a página inteira gigante)
+                if (hasTime && nums.length >= 2 && words.length >= 2 && parts.length < 25) {
+                    results.push(parts);
                 }
-            });
-
-            return unicos;
+            }
+            return results;
         });
 
-        console.log(`📊 Partidas capturadas por texto profundo: ${partidasRaw.length}`);
+        console.log(`📊 Blocos brutos encontrados: ${partidasRaw.length}`);
         let enviados = 0;
 
-        for (let linhas of partidasRaw) {
-            let tempos = linhas.filter(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l));
-            let tempo = tempos.length > 0 ? tempos[0] : null;
-            if (!tempo) continue;
+        // Ordena pelos arrays menores primeiro (garante que vamos processar os filhos perfeitos e ignorar os pais duplicados)
+        partidasRaw.sort((a, b) => a.length - b.length);
 
-            let numeros = linhas.filter(l => /^\d+$/.test(l));
-            let golsCasa = numeros.length > 0 ? numeros[0] : "0";
-            let golsFora = numeros.length > 1 ? numeros[1] : "0";
+        let processados = new Set();
+
+        for (let partes of partidasRaw) {
+            let tempo = partes.find(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l));
+            let numeros = partes.filter(l => /^\d+$/.test(l));
+            
+            let golsCasa = numeros[0];
+            let golsFora = numeros[1];
             let placar = `${golsCasa} x ${golsFora}`;
 
-            // Remove tempos e números para sobrar só Ligas e Times
-            let possiveisTextos = linhas.filter(l => {
-                let upper = l.toUpperCase();
-                return l.length > 2 &&
-                       !/^\d+$/.test(l) &&
-                       !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l) &&
-                       !upper.includes('VISÃO') &&
-                       !upper.includes('ODDS') &&
-                       !upper.includes('LIVE') &&
-                       !upper.includes('%');
+            // Limpa palavras de sistema
+            let textosLimpos = partes.filter(p => {
+                let up = p.toUpperCase();
+                return p !== tempo && 
+                       !/^\d+$/.test(p) && 
+                       p.length > 2 &&
+                       !up.includes('VISÃO') && 
+                       !up.includes('ODDS') && 
+                       !up.includes('LIVE') && 
+                       !p.includes('%');
             });
 
-            if (possiveisTextos.length < 2) continue;
+            if (textosLimpos.length < 2) continue;
 
             let timeCasa = "";
             let timeFora = "";
             let liga = "Futebol Ao Vivo";
 
-            // Matemática Reversa que impede Ligas de virarem Times
-            if (possiveisTextos.length >= 3) {
-                liga = possiveisTextos[0]; 
-                timeCasa = possiveisTextos[possiveisTextos.length - 2]; 
-                timeFora = possiveisTextos[possiveisTextos.length - 1]; 
-            } else {
-                timeCasa = possiveisTextos[0];
-                timeFora = possiveisTextos[1];
+            // Pegamos SEMPRE os dois últimos textos como sendo as equipes. O que sobrar pra trás assume como Liga.
+            timeCasa = textosLimpos[textosLimpos.length - 2];
+            timeFora = textosLimpos[textosLimpos.length - 1];
+            
+            if (textosLimpos.length >= 3) {
+                liga = textosLimpos[0]; 
             }
 
-            // Impede cards com nome de time malformado
-            if (timeCasa.toUpperCase() === timeFora.toUpperCase() || timeCasa.length < 3 || timeFora.length < 3) continue;
+            // TRAVA DE SEGURANÇA ANTI-LIGAS/PAÍSES
+            // Impede a criação de cards absurdos como "AUSTRALIA x Uni Azzurri"
+            let paisesELigas = ['AUSTRALIA', 'RUSSIA', 'MEXICO', 'PANAMA', 'UNITED STATES', 'COLOMBIA', 'HONDURAS', 'UKRAINE', 'INDONESIA'];
+            
+            let timeCasaUp = timeCasa.toUpperCase();
+            let timeForaUp = timeFora.toUpperCase();
+            
+            let ehInvalido = false;
+            for (let invalido of paisesELigas) {
+                if (timeCasaUp === invalido || timeForaUp === invalido) ehInvalido = true;
+                // Corta qualquer bloco que tenha 'PREMIER LEAGUE' como um dos times
+                if (timeCasaUp.includes('PREMIER LEAGUE') || timeForaUp.includes('PREMIER LEAGUE')) ehInvalido = true;
+            }
+            
+            if (ehInvalido) continue;
+            if (timeCasaUp === timeForaUp) continue;
 
             let confronto = `${timeCasa} x ${timeFora}`;
-            
-            // Impede duplicados no Telegram
             let chaveConfronto = confronto.toLowerCase().replace(/\s+/g, '');
+
+            // Bloqueio final de duplicidade no Telegram (Filtro Pai/Filho resolvido aqui)
+            if (processados.has(chaveConfronto)) continue;
             if (memoriaJogos.has(chaveConfronto)) continue;
+
+            processados.add(chaveConfronto);
             memoriaJogos.set(chaveConfronto, true);
 
             let card = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
@@ -167,7 +164,7 @@ async function varrerPartidasAoVivo() {
 
             await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
             enviados++;
-            console.log(`📤 CIRÚRGICO ENVIADO | ${confronto} (${placar})`);
+            console.log(`📤 CARD PERFEITO ENVIADO | ${confronto} (${placar})`);
             await new Promise(r => setTimeout(r, 1000));
         }
 
