@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Versão Cirúrgica Definitiva ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Versão Cirúrgica Final ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -26,7 +26,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando varredura com Captura Avançada de Ligas...");
+    console.log("🕒 [BOT] Iniciando varredura com Blindagem de Ligas Local...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -59,7 +59,6 @@ async function varrerPartidasAoVivo() {
 
         const partidasRaw = await page.evaluate(() => {
             let results = [];
-            // Varre os blocos principais de partidas (cards de jogos)
             let rows = document.querySelectorAll('div, tr, li, article');
             
             for (let row of rows) {
@@ -78,31 +77,30 @@ async function varrerPartidasAoVivo() {
                 let words = parts.filter(l => !/^\d+$/.test(l) && !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l) && l.length > 2);
                 
                 if (hasTime && nums.length >= 2 && words.length >= 2 && parts.length < 25) {
-                    // Tenta achar um título de liga nas proximidades superiores do DOM (elemento pai ou anterior)
+                    
+                    // CAPTURA LOCAL DE LIGA: Procura o nome do campeonato estritamente no elemento anterior imediato
                     let ligaDetectada = "Futebol Ao Vivo";
-                    let parent = row.parentElement;
+                    let prevEl = row.previousElementSibling;
                     let tentativas = 0;
                     
-                    while (parent && tentativas < 4) {
-                        let prev = parent.previousElementSibling;
-                        if (prev && prev.innerText && prev.innerText.trim().length > 2) {
-                            let textoPrev = prev.innerText.trim().split('\n')[0];
-                            if (textoPrev && textoPrev.length < 40 && !/\d+['"]/.test(textoPrev)) {
-                                ligaDetectada = textoPrev;
-                                break;
-                            }
+                    while (prevEl && tentativas < 2) {
+                        let textoPrev = prevEl.innerText ? prevEl.innerText.trim().split('\n')[0] : '';
+                        if (textoPrev && textoPrev.length > 2 && textoPrev.length < 45 && !/\d+['"]/.test(textoPrev) && !/^\d+$/.test(textoPrev)) {
+                            ligaDetectada = textoPrev;
+                            break;
                         }
-                        // Busca por títulos dentro do próprio bloco pai
-                        let headers = parent.querySelectorAll('h1, h2, h3, h4, span, div');
-                        for (let h of headers) {
-                            let t = h.innerText ? h.innerText.trim() : '';
-                            if (t.length > 2 && t.length < 40 && (t.includes(' - ') || t.includes('/') || h.className.includes('league') || h.className.includes('title') || h.className.includes('header'))) {
-                                ligaDetectada = t.split('\n')[0];
-                                break;
-                            }
-                        }
-                        parent = parent.parentElement;
+                        prevEl = prevEl.previousElementSibling;
                         tentativas++;
+                    }
+
+                    // Se não achou em cima, tenta varrer os textos internos que parecem nome de liga/país
+                    if (ligaDetectada === "Futebol Ao Vivo") {
+                        for (let p of parts) {
+                            if (p.length > 3 && p.length < 35 && (p.includes('-') || p.includes('/')) && !/\d/.test(p)) {
+                                ligaDetectada = p;
+                                break;
+                            }
+                        }
                     }
 
                     results.push({ partes: parts, ligaContexto: ligaDetectada });
@@ -164,14 +162,9 @@ async function varrerPartidasAoVivo() {
             timeFora = candidatosTimes[1];
 
             let liga = ligaContexto;
-            if (!liga || liga === "Futebol Ao Vivo") {
-                for (let i = 0; i < textosLimpos.length; i++) {
-                    let txt = textosLimpos[i];
-                    if (txt !== timeCasa && txt !== timeFora && !/^\d+([.,]\d+)?$/.test(txt)) {
-                        liga = txt;
-                        break;
-                    }
-                }
+            // Se a liga capturada for idêntica ao nome de um dos times, descarta e usa genérico
+            if (liga === timeCasa || liga === timeFora || liga.length > 45) {
+                liga = "Futebol Ao Vivo";
             }
 
             let timeCasaUp = timeCasa.toUpperCase();
