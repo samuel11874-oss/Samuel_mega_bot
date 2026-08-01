@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Anti-Duplicidade ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Filtro Definitivo ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -25,7 +25,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Varredura limpa e sem duplicidade de cards...");
+    console.log("🕒 [BOT] Varredura com filtro anti-lixo e anti-falsos...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -55,7 +55,6 @@ async function varrerPartidasAoVivo() {
             await new Promise(r => setTimeout(r, 1500));
         }
 
-        // Extração focada exclusivamente nos blocos que contêm confrontos reais (evitando cabeçalhos soltos)
         const partidas = await page.evaluate(() => {
             let listaJogos = [];
             let elementos = document.querySelectorAll('div');
@@ -63,18 +62,15 @@ async function varrerPartidasAoVivo() {
             elementos.forEach(el => {
                 let texto = el.innerText ? el.innerText.trim() : '';
                 
-                // O card real de um jogo no SokkerPRO sempre possui o formato de tempo e números de placar
+                // Valida se o bloco possui marcação de tempo de jogo
                 if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(texto)) {
                     let linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                     
-                    // Valida se tem exatamente estrutura de partida (tempo + placar numérico)
                     let temTempo = linhas.some(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l));
                     let numeros = linhas.filter(l => /^\d+$/.test(l));
 
-                    // Filtra blocos que são apenas títulos de países/ligas (que geravam o card falso)
-                    let ehApenasCabecalhoLiga = linhas.length < 5 || (linhas.length === 2 && linhas.some(l => l.includes(' x ')));
-
-                    if (temTempo && numeros.length >= 2 && !ehApenasCabecalhoLiga) {
+                    // Bloqueia blocos curtos demais ou sem dados suficientes de placar
+                    if (temTempo && numeros.length >= 2 && linhas.length >= 4) {
                         let assinatura = linhas.join(' | ');
                         if (!listaJogos.some(j => j.assinatura === assinatura)) {
                             listaJogos.push({ assinatura, linhas });
@@ -86,46 +82,57 @@ async function varrerPartidasAoVivo() {
             return listaJogos.map(j => j.linhas);
         });
 
-        console.log(`📊 Partidas reais filtradas: ${partidas.length}`);
+        console.log(`📊 Partidas brutas capturadas: ${partidas.length}`);
         let enviados = 0;
 
         for (let linhas of partidas) {
             let linhaTempo = linhas.find(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l));
             if (!linhaTempo) continue;
 
-            // Limpa as linhas para isolar os nomes dos times com precisão
-            let linhasLimpas = linhas.filter(l => 
-                l.length > 2 && 
-                !l.includes('%') && 
-                !l.includes('.') && 
-                !/^\d+$/.test(l) && 
-                !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l) &&
-                !l.toLowerCase().includes('min') &&
-                !l.toLowerCase().includes('+') &&
-                !l.toLowerCase().includes('live') &&
-                !l.toLowerCase().includes('visão') &&
-                !l.toLowerCase().includes('odds') &&
-                !l.toLowerCase().includes('liga') &&
-                !l.toLowerCase().includes('mexico') &&
-                !l.toLowerCase().includes('colombia')
-            );
+            // Filtro avançado para ignorar lixo de layout, menus, propagandas e títulos genéricos
+            let linhasLimpas = linhas.filter(l => {
+                let upper = l.toUpperCase();
+                return l.length > 2 && 
+                    !l.includes('%') && 
+                    !l.includes('.') && 
+                    !/^\d+$/.test(l) && 
+                    !/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l) &&
+                    !upper.includes('MIN') &&
+                    !upper.includes('+') &&
+                    !upper.includes('LIVE') &&
+                    !upper.includes('VISÃO') &&
+                    !upper.includes('ODDS') &&
+                    !upper.includes('LIGA') &&
+                    !upper.includes('VISUAL') &&
+                    !upper.includes('REPLAYS') &&
+                    !upper.includes('NO ADS') &&
+                    !upper.includes('JOGO') &&
+                    !upper.includes('PLACAR') &&
+                    !upper.includes('MEXICO') &&
+                    !upper.includes('COLOMBIA') &&
+                    !upper.includes('HONDURAS') &&
+                    !upper.includes('PANAMA') &&
+                    !upper.includes('UNITED STATES');
+            });
 
             if (linhasLimpas.length < 2) continue;
 
             let timeCasa = linhasLimpas[0];
             let timeFora = linhasLimpas[1];
-            
-            // Blindagem extra: se por acaso pegar um nome genérico de país/liga, descarta
+
+            // Validações extras anti-falsos
             if (timeCasa.toUpperCase() === timeFora.toUpperCase() || timeCasa.length < 3 || timeFora.length < 3) continue;
+            if (/^\d/.test(timeCasa) || /^\d/.test(timeFora)) continue;
 
             let confronto = `${timeCasa} x ${timeFora}`;
 
-            // Captura a liga real do topo do bloco
+            // Identifica a liga real
             let indexTempo = linhas.indexOf(linhaTempo);
             let liga = "Futebol Ao Vivo";
             for (let i = 0; i < indexTempo; i++) {
                 let l = linhas[i];
-                if (l.length > 3 && !/^\d+$/.test(l) && !l.includes('%') && !l.toLowerCase().includes('visão')) {
+                let upperL = l.toUpperCase();
+                if (l.length > 3 && !/^\d+$/.test(l) && !l.includes('%') && !upperL.includes('VISÃO') && !upperL.includes('JOGO')) {
                     liga = l;
                     break;
                 }
