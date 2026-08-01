@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Mega Cirúrgico (Desfibrilador ON) ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Mega Cirúrgico V2 (Lógica Pai-Filho) ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -26,10 +26,9 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando varredura Anti-Travamento...");
+    console.log("🕒 [BOT] Iniciando varredura por Lógica de Texto Pai/Filho...");
     let browser = null;
     try {
-        // Redução drástica do uso de RAM para o plano gratuito do Render não travar
         browser = await puppeteer.launch({
             headless: true,
             args: [
@@ -37,32 +36,26 @@ async function varrerPartidasAoVivo() {
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
-                '--no-zygote',
-                '--single-process',
-                '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process'
+                '--single-process'
             ]
         });
 
         const page = await browser.newPage();
         
-        // MUITO IMPORTANTE: Simular a tela de um iPhone para as medidas físicas funcionarem
-        await page.setViewport({ width: 375, height: 812, isMobile: true });
-        await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1');
+        // Voltando para o desktop padrão para garantir que o menu lateral/oculto não esconda os jogos
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
 
         console.log("⏳ Navegando até o site...");
         
-        // CORREÇÃO CRÍTICA: Mudar de 'networkidle2' para 'domcontentloaded'.
-        // Isso impede que os dados ao vivo do site segurem o carregamento infinitamente.
+        // domcontentloaded impede que os dados ao vivo do site segurem o carregamento infinitamente
         await page.goto('https://m.sokkerpro.com/', {
             waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando renderização na tela simulada...");
+        console.log("⏳ Aguardando renderização do JavaScript...");
         await new Promise(r => setTimeout(r, 12000));
 
-        // Scroll suave
         for (let i = 0; i < 3; i++) {
             await page.evaluate(() => window.scrollBy(0, 800));
             await new Promise(r => setTimeout(r, 1500));
@@ -73,37 +66,35 @@ async function varrerPartidasAoVivo() {
             let elementos = document.querySelectorAll('div, tr, li, article');
 
             elementos.forEach(el => {
-                let rect = el.getBoundingClientRect();
-                
-                // Medição ajustada para a tela do iPhone simulado
-                if (rect.height > 15 && rect.height < 250 && rect.width > 50) {
-                    let texto = el.innerText ? el.innerText.trim() : '';
+                let texto = el.innerText ? el.innerText.trim() : '';
 
-                    if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(texto)) {
-                        let isLeaf = true;
-                        let filhos = el.querySelectorAll('div, tr, li, article');
-                        
-                        for (let filho of filhos) {
-                            let fRect = filho.getBoundingClientRect();
-                            if (fRect.height > 15 && fRect.height < 250) {
-                                if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(filho.innerText || '')) {
-                                    isLeaf = false;
-                                    break;
-                                }
-                            }
+                // Verifica se tem tempo (Regex)
+                if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(texto)) {
+                    
+                    // NOVA REGRA DE DUPLICAÇÃO: Verifica se há um elemento interno (filho) com o mesmo tempo
+                    let ehPai = false;
+                    let filhos = el.querySelectorAll('div, tr, li');
+                    
+                    for (let filho of filhos) {
+                        let textoFilho = filho.innerText ? filho.innerText.trim() : '';
+                        // Se o filho também tem tempo e o texto dele é menor que o texto do pai
+                        if (textoFilho.length < texto.length && /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(textoFilho)) {
+                            ehPai = true; // Esse elemento 'el' é só a caixa grande externa. Ignorar!
+                            break;
                         }
+                    }
 
-                        if (isLeaf) {
-                            let linhas = texto.split('\n').map(t => t.trim()).filter(t => t.length > 0);
-                            if (linhas.some(l => /^\d+$/.test(l))) {
-                                resultados.push(linhas);
-                            }
+                    if (!ehPai) {
+                        // Achamos a caixa mais funda do DOM (A linha real do jogo!)
+                        let linhas = texto.split('\n').map(t => t.trim()).filter(t => t.length > 0);
+                        if (linhas.some(l => /^\d+$/.test(l))) {
+                            resultados.push(linhas);
                         }
                     }
                 }
             });
 
-            // Limpa as duplicatas que o site repete no layout
+            // Limpeza final de qualquer card idêntico gerado
             let unicos = [];
             let assinaturas = new Set();
             resultados.forEach(res => {
@@ -117,7 +108,7 @@ async function varrerPartidasAoVivo() {
             return unicos;
         });
 
-        console.log(`📊 Partidas filtradas fisicamente: ${partidasRaw.length}`);
+        console.log(`📊 Partidas capturadas por texto profundo: ${partidasRaw.length}`);
         let enviados = 0;
 
         for (let linhas of partidasRaw) {
@@ -130,6 +121,7 @@ async function varrerPartidasAoVivo() {
             let golsFora = numeros.length > 1 ? numeros[1] : "0";
             let placar = `${golsCasa} x ${golsFora}`;
 
+            // Remove tempos e números para sobrar só Ligas e Times
             let possiveisTextos = linhas.filter(l => {
                 let upper = l.toUpperCase();
                 return l.length > 2 &&
@@ -147,6 +139,7 @@ async function varrerPartidasAoVivo() {
             let timeFora = "";
             let liga = "Futebol Ao Vivo";
 
+            // Matemática Reversa que impede Ligas de virarem Times
             if (possiveisTextos.length >= 3) {
                 liga = possiveisTextos[0]; 
                 timeCasa = possiveisTextos[possiveisTextos.length - 2]; 
@@ -156,10 +149,12 @@ async function varrerPartidasAoVivo() {
                 timeFora = possiveisTextos[1];
             }
 
+            // Impede cards com nome de time malformado
             if (timeCasa.toUpperCase() === timeFora.toUpperCase() || timeCasa.length < 3 || timeFora.length < 3) continue;
 
             let confronto = `${timeCasa} x ${timeFora}`;
             
+            // Impede duplicados no Telegram
             let chaveConfronto = confronto.toLowerCase().replace(/\s+/g, '');
             if (memoriaJogos.has(chaveConfronto)) continue;
             memoriaJogos.set(chaveConfronto, true);
