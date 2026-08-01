@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Mega Cirúrgico ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Mega Cirúrgico (Desfibrilador ON) ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -26,9 +26,10 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando MEGA INVESTIGAÇÃO e extração cirúrgica...");
+    console.log("🕒 [BOT] Iniciando varredura Anti-Travamento...");
     let browser = null;
     try {
+        // Redução drástica do uso de RAM para o plano gratuito do Render não travar
         browser = await puppeteer.launch({
             headless: true,
             args: [
@@ -36,48 +37,55 @@ async function varrerPartidasAoVivo() {
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
-                '--single-process'
+                '--no-zygote',
+                '--single-process',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process'
             ]
         });
 
         const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
+        
+        // MUITO IMPORTANTE: Simular a tela de um iPhone para as medidas físicas funcionarem
+        await page.setViewport({ width: 375, height: 812, isMobile: true });
+        await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1');
 
+        console.log("⏳ Navegando até o site...");
+        
+        // CORREÇÃO CRÍTICA: Mudar de 'networkidle2' para 'domcontentloaded'.
+        // Isso impede que os dados ao vivo do site segurem o carregamento infinitamente.
         await page.goto('https://m.sokkerpro.com/', {
-            waitUntil: 'networkidle2',
+            waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando carregamento e renderização...");
-        await new Promise(r => setTimeout(r, 8000));
+        console.log("⏳ Aguardando renderização na tela simulada...");
+        await new Promise(r => setTimeout(r, 12000));
 
+        // Scroll suave
         for (let i = 0; i < 3; i++) {
-            await page.evaluate(() => window.scrollBy(0, 600));
-            await new Promise(r => setTimeout(r, 1000));
+            await page.evaluate(() => window.scrollBy(0, 800));
+            await new Promise(r => setTimeout(r, 1500));
         }
 
-        // O SEGREDO CIRÚRGICO: Extração usando propriedades físicas de tela.
-        // Garante que só vai pegar a exata "faixa" do jogo e não a página ou menu inteiro.
         const partidasRaw = await page.evaluate(() => {
             let resultados = [];
-            let elementos = document.querySelectorAll('div, tr, li');
+            let elementos = document.querySelectorAll('div, tr, li, article');
 
             elementos.forEach(el => {
                 let rect = el.getBoundingClientRect();
-                // Regra física: A linha de uma partida de celular tem entre 20 e 180 pixels de altura
-                if (rect.height > 15 && rect.height < 180 && rect.width > 50) {
+                
+                // Medição ajustada para a tela do iPhone simulado
+                if (rect.height > 15 && rect.height < 250 && rect.width > 50) {
                     let texto = el.innerText ? el.innerText.trim() : '';
 
-                    // Confirmação de tempo (HT, Minutos, etc)
                     if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(texto)) {
-
-                        // REGRA ANTI-DUPLICAÇÃO (Pai/Filho)
-                        // Checa se o elemento não tem nenhum filho validado. Queremos a 'folha' final do DOM.
                         let isLeaf = true;
-                        let filhos = el.querySelectorAll('div, tr, li');
+                        let filhos = el.querySelectorAll('div, tr, li, article');
+                        
                         for (let filho of filhos) {
                             let fRect = filho.getBoundingClientRect();
-                            if (fRect.height > 15 && fRect.height < 180) {
+                            if (fRect.height > 15 && fRect.height < 250) {
                                 if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(filho.innerText || '')) {
                                     isLeaf = false;
                                     break;
@@ -87,7 +95,6 @@ async function varrerPartidasAoVivo() {
 
                         if (isLeaf) {
                             let linhas = texto.split('\n').map(t => t.trim()).filter(t => t.length > 0);
-                            // Se a linha isolada tem números (é o placar!), ela é válida
                             if (linhas.some(l => /^\d+$/.test(l))) {
                                 resultados.push(linhas);
                             }
@@ -114,18 +121,15 @@ async function varrerPartidasAoVivo() {
         let enviados = 0;
 
         for (let linhas of partidasRaw) {
-            // 1. Extrai o TEMPO
             let tempos = linhas.filter(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT|INTERVALO)\b/i.test(l));
             let tempo = tempos.length > 0 ? tempos[0] : null;
             if (!tempo) continue;
 
-            // 2. Extrai o PLACAR
             let numeros = linhas.filter(l => /^\d+$/.test(l));
             let golsCasa = numeros.length > 0 ? numeros[0] : "0";
             let golsFora = numeros.length > 1 ? numeros[1] : "0";
             let placar = `${golsCasa} x ${golsFora}`;
 
-            // 3. Limpa os LIXOS para encontrar os TIMES
             let possiveisTextos = linhas.filter(l => {
                 let upper = l.toUpperCase();
                 return l.length > 2 &&
@@ -143,28 +147,23 @@ async function varrerPartidasAoVivo() {
             let timeFora = "";
             let liga = "Futebol Ao Vivo";
 
-            // MATEMÁTICA REVERSA (RESOLVE O BUG DO "AUSTRALIA x Uni Azzurri")
-            // Se vieram 3 nomes (Ex: País, Time 1, Time 2), separamos o país para a Liga e pegamos os 2 times puros.
             if (possiveisTextos.length >= 3) {
-                liga = possiveisTextos[0]; // Pega o cabeçalho vazado e joga no campo Liga
-                timeCasa = possiveisTextos[possiveisTextos.length - 2]; // O penúltimo é sempre a casa
-                timeFora = possiveisTextos[possiveisTextos.length - 1]; // O último é sempre o visitante
+                liga = possiveisTextos[0]; 
+                timeCasa = possiveisTextos[possiveisTextos.length - 2]; 
+                timeFora = possiveisTextos[possiveisTextos.length - 1]; 
             } else {
                 timeCasa = possiveisTextos[0];
                 timeFora = possiveisTextos[1];
             }
 
-            // Proteção final: Impede de montar confronto bizarro
-            if (timeCasa === timeFora || timeCasa.length < 3 || timeFora.length < 3) continue;
+            if (timeCasa.toUpperCase() === timeFora.toUpperCase() || timeCasa.length < 3 || timeFora.length < 3) continue;
 
             let confronto = `${timeCasa} x ${timeFora}`;
             
-            // Controle final de Não Duplicidade no Telegram
             let chaveConfronto = confronto.toLowerCase().replace(/\s+/g, '');
             if (memoriaJogos.has(chaveConfronto)) continue;
             memoriaJogos.set(chaveConfronto, true);
 
-            // MONTA O CARD PERFEITO
             let card = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
             card += `🏆 <b>Liga:</b> ${liga}\n`;
             card += `⏱ <b>Tempo:</b> ${traduzirTempo(tempo)}\n`;
@@ -177,12 +176,14 @@ async function varrerPartidasAoVivo() {
             await new Promise(r => setTimeout(r, 1000));
         }
 
-        console.log(`✅ Ciclo investigativo finalizado. ${enviados} novos cards únicos.`);
+        console.log(`✅ Ciclo finalizado. ${enviados} novos cards enviados.`);
 
     } catch (erro) {
         console.error(`❌ Erro crítico: ${erro.message}`);
     } finally {
-        if (browser) await browser.close();
+        if (browser) {
+            await browser.close().catch(() => {});
+        }
         console.log("========================================\n");
     }
 }
