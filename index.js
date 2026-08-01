@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Filtro Avançado ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Escanteios Ao Vivo ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -25,7 +25,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando ciclo com filtro avançado...");
+    console.log("🕒 [BOT] Iniciando varredura com captura otimizada de escanteios...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -47,7 +47,7 @@ async function varrerPartidasAoVivo() {
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando 10s para carregamento completo...");
+        console.log("⏳ Aguardando 10s para carregamento...");
         await new Promise(r => setTimeout(r, 10000));
 
         for (let i = 0; i < 4; i++) {
@@ -62,10 +62,10 @@ async function varrerPartidasAoVivo() {
             
             for (let i = 0; i < linhasTotal.length; i++) {
                 let linha = linhasTotal[i];
-                // Identifica o marcador de minutos (ex: 15', 30', HT)
+                // Procura o minuto do jogo (ex: 15', 30')
                 if (/^\d{1,3}'$/.test(linha) || linha === 'HT') {
-                    let inicio = Math.max(0, i - 4);
-                    let fim = Math.min(linhasTotal.length, i + 8);
+                    let inicio = Math.max(0, i - 2);
+                    let fim = Math.min(linhasTotal.length, i + 12);
                     let bloco = linhasTotal.slice(inicio, fim);
                     lista.push(bloco);
                 }
@@ -73,15 +73,15 @@ async function varrerPartidasAoVivo() {
             return lista;
         });
 
-        console.log(`📊 Partidas brutas capturadas: ${partidas.length}`);
+        console.log(`📊 Blocos de partidas encontrados: ${partidas.length}`);
         let enviados = 0;
 
         for (let linhas of partidas) {
             let tempo = linhas.find(l => /^\d{1,3}'$/.test(l) || l === 'HT') || "Ao Vivo";
             
-            // Ignora termos de navegação e cabeçalhos do site
-            let ignorar = ['finished', 'replays', 'placar', '1 x 2', 'all', 'live', 'upcoming', 'no ads', 'subscribe', 'pro', 'visual', 'new', 'ver mais'];
-            
+            // Ignora termos indesejados
+            let ignorar = ['mexico', 'united states', 'chile', 'colombia', 'ecuador', 'brazil', 'honduras', 'liga', 'division', 'mls', 'nwsl', 'amazonense', 'tercera', 'expansión', 'nacional', 'betplay', 'libertad', 'finished', 'replays', 'placar', '1 x 2', 'all', 'live', 'upcoming'];
+
             let possiveisTimes = linhas.filter(l => {
                 let lLower = l.toLowerCase();
                 return l.length > 2 && 
@@ -97,11 +97,14 @@ async function varrerPartidasAoVivo() {
                 let timeFora = possiveisTimes[1];
                 let confronto = `${timeCasa} x ${timeFora}`;
 
+                // Extração inteligente de números (procurando padrões de placar e escanteios)
                 let numeros = linhas.filter(l => /^\d+$/.test(l));
+                
+                // No SokkerPRO, os primeiros números costumam ser os gols e os seguintes os escanteios
                 let golsCasa = numeros.length > 0 ? numeros[0] : "0";
                 let golsFora = numeros.length > 1 ? numeros[1] : "0";
-                let escCasa = numeros.length > 2 ? numeros[2] : "0";
-                let escFora = numeros.length > 3 ? numeros[3] : "0";
+                let escCasa = numeros.length > 4 ? numeros[4] : (numeros.length > 2 ? numeros[2] : "0");
+                let escFora = numeros.length > 5 ? numeros[5] : (numeros.length > 3 ? numeros[3] : "0");
 
                 let placar = `${golsCasa} x ${golsFora}`;
                 let escanteios = `${escCasa} x ${escFora}`;
@@ -121,12 +124,12 @@ async function varrerPartidasAoVivo() {
 
                 await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
                 enviados++;
-                console.log(`📤 Alerta enviado limpo: ${confronto} (${placar}) - Escanteios: ${escanteios}`);
+                console.log(`📤 Alerta com Escanteios: ${confronto} (${placar}) - Escanteios: ${escanteios}`);
                 await new Promise(r => setTimeout(r, 1000));
             }
         }
 
-        console.log(`✅ Ciclo finalizado. ${enviados} alertas limpos enviados ao Telegram.`);
+        console.log(`✅ Ciclo finalizado. ${enviados} alertas enviados ao Telegram.`);
 
     } catch (erro) {
         console.error(`❌ Erro crítico: ${erro.message}`);
