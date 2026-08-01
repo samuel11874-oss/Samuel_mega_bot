@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Seletor Preciso ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Anti-Duplicidade ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -25,7 +25,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Varredura com extração precisa de cards...");
+    console.log("🕒 [BOT] Varredura limpa e sem duplicidade de cards...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -55,25 +55,26 @@ async function varrerPartidasAoVivo() {
             await new Promise(r => setTimeout(r, 1500));
         }
 
-        // Extração cirúrgica focada nas linhas de jogos do SokkerPRO
+        // Extração focada exclusivamente nos blocos que contêm confrontos reais (evitando cabeçalhos soltos)
         const partidas = await page.evaluate(() => {
             let listaJogos = [];
-            
-            // O site agrupa cada jogo ou bloco de partida. Vamos varrer elementos que contêm minutos de jogo.
             let elementos = document.querySelectorAll('div');
-            
+
             elementos.forEach(el => {
                 let texto = el.innerText ? el.innerText.trim() : '';
-                // Verifica se o bloco contém o formato padrão de tempo (ex: 45', 76', 90', etc) e tamanho ideal
-                if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(texto) && !texto.includes('TODOS') && !texto.includes('PRÓXIMOS')) {
+                
+                // O card real de um jogo no SokkerPRO sempre possui o formato de tempo e números de placar
+                if (/\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(texto)) {
                     let linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                     
-                    // Valida se o bloco tem linhas suficientes para formar um jogo real
+                    // Valida se tem exatamente estrutura de partida (tempo + placar numérico)
                     let temTempo = linhas.some(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l));
-                    let temPlacarNums = linhas.filter(l => /^\d+$/.test(l));
+                    let numeros = linhas.filter(l => /^\d+$/.test(l));
 
-                    if (temTempo && temPlacarNums.length >= 2 && linhas.length >= 4 && linhas.length <= 25) {
-                        // Evita duplicatas exatas de blocos aninhados
+                    // Filtra blocos que são apenas títulos de países/ligas (que geravam o card falso)
+                    let ehApenasCabecalhoLiga = linhas.length < 5 || (linhas.length === 2 && linhas.some(l => l.includes(' x ')));
+
+                    if (temTempo && numeros.length >= 2 && !ehApenasCabecalhoLiga) {
                         let assinatura = linhas.join(' | ');
                         if (!listaJogos.some(j => j.assinatura === assinatura)) {
                             listaJogos.push({ assinatura, linhas });
@@ -85,14 +86,14 @@ async function varrerPartidasAoVivo() {
             return listaJogos.map(j => j.linhas);
         });
 
-        console.log(`📊 Partidas válidas encontradas: ${partidas.length}`);
+        console.log(`📊 Partidas reais filtradas: ${partidas.length}`);
         let enviados = 0;
 
         for (let linhas of partidas) {
             let linhaTempo = linhas.find(l => /\b(\d{1,3}'|\d{1,3}\+\d+'|HT)\b/.test(l));
             if (!linhaTempo) continue;
 
-            // Limpa e valida as linhas de texto para isolar os nomes dos times
+            // Limpa as linhas para isolar os nomes dos times com precisão
             let linhasLimpas = linhas.filter(l => 
                 l.length > 2 && 
                 !l.includes('%') && 
@@ -103,28 +104,33 @@ async function varrerPartidasAoVivo() {
                 !l.toLowerCase().includes('+') &&
                 !l.toLowerCase().includes('live') &&
                 !l.toLowerCase().includes('visão') &&
-                !l.toLowerCase().includes('odds')
+                !l.toLowerCase().includes('odds') &&
+                !l.toLowerCase().includes('liga') &&
+                !l.toLowerCase().includes('mexico') &&
+                !l.toLowerCase().includes('colombia')
             );
 
             if (linhasLimpas.length < 2) continue;
 
-            // Os dois primeiros textos limpos após os filtros são estritamente os times
             let timeCasa = linhasLimpas[0];
             let timeFora = linhasLimpas[1];
+            
+            // Blindagem extra: se por acaso pegar um nome genérico de país/liga, descarta
+            if (timeCasa.toUpperCase() === timeFora.toUpperCase() || timeCasa.length < 3 || timeFora.length < 3) continue;
+
             let confronto = `${timeCasa} x ${timeFora}`;
 
-            // Tenta achar a liga (geralmente as primeiras linhas antes dos times)
+            // Captura a liga real do topo do bloco
             let indexTempo = linhas.indexOf(linhaTempo);
             let liga = "Futebol Ao Vivo";
             for (let i = 0; i < indexTempo; i++) {
                 let l = linhas[i];
-                if (l.length > 3 && !/^\d+$/.test(l) && !l.includes('%') && !l.toLowerCase().includes('vião')) {
+                if (l.length > 3 && !/^\d+$/.test(l) && !l.includes('%') && !l.toLowerCase().includes('visão')) {
                     liga = l;
                     break;
                 }
             }
 
-            // Extração correta dos gols/placar
             let numeros = linhas.filter(l => /^\d+$/.test(l));
             let golsCasa = numeros.length > 0 ? numeros[0] : "0";
             let golsFora = numeros.length > 1 ? numeros[1] : "0";
@@ -142,7 +148,7 @@ async function varrerPartidasAoVivo() {
 
             await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
             enviados++;
-            console.log(`📤 Enviado com Sucesso | ${liga} | ${confronto} (${placar})`);
+            console.log(`📤 Card Único Enviado | ${liga} | ${confronto} (${placar})`);
             await new Promise(r => setTimeout(r, 1000));
         }
 
