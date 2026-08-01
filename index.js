@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Mercado de Escanteios ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Scanner Direto ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -25,7 +25,7 @@ function traduzirTempo(texto) {
 
 async function varrerPartidasAoVivo() {
     console.log("\n========================================");
-    console.log("🕒 [BOT] Iniciando varredura focada em Escanteios...");
+    console.log("🕒 [BOT] Iniciando varredura na home do SokkerPRO...");
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -43,58 +43,60 @@ async function varrerPartidasAoVivo() {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
 
         await page.goto('https://m.sokkerpro.com/', {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'networkidle2',
             timeout: 60000
         });
 
-        console.log("⏳ Aguardando 10s para carregamento...");
+        console.log("⏳ Aguardando renderização dos cards...");
         await new Promise(r => setTimeout(r, 10000));
 
-        for (let i = 0; i < 4; i++) {
-            await page.evaluate(() => window.scrollBy(0, 500));
-            await new Promise(r => setTimeout(r, 1000));
+        // Rola a página para baixo para disparar lazy-loads se houverem
+        for (let i = 0; i < 3; i++) {
+            await page.evaluate(() => window.scrollBy(0, 600));
+            await new Promise(r => setTimeout(r, 1500));
         }
 
-        // Extração avançada mapeando a estrutura dos cards do SokkerPRO do print
-        const partidas = await page.evaluate(() => {
-            let lista = [];
-            // Cada card de jogo na listagem costuma estar agrupado em containers
-            let cards = document.querySelectorAll('div');
-            
-            cards.forEach(card => {
-                let texto = card.innerText ? card.innerText.trim() : '';
-                // Procura blocos que contenham minuto ativo (ex: 35', 69', 4') e dados de pressão/odds
-                if (/\b\d{1,3}'\b/.test(texto) && (texto.includes('%') || texto.includes('AO VIVO'))) {
+        // Extrai o texto visível de todos os elementos estruturados da página
+        const dadosPartidas = await page.evaluate(() => {
+            let blocos = document.querySelectorAll('article, section, [class*="match"], [class*="game"], div');
+            let resultados = [];
+
+            blocos.forEach(el => {
+                let texto = el.innerText ? el.innerText.trim() : '';
+                // Procura blocos que tenham o formato de tempo ao vivo (ex: 35', 76', etc)
+                if (/\d{1,3}'/.test(texto) && texto.split('\n').length >= 4 && texto.length < 400) {
                     let linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                    if (linhas.length >= 5 && !lista.includes(linhas)) {
-                        lista.push(linhas);
+                    if (!resultados.some(r => r.join('|') === linhas.join('|'))) {
+                        resultados.push(linhas);
                     }
                 }
             });
-            return lista;
+
+            return resultados;
         });
 
-        console.log(`📊 Jogos capturados: ${partidas.length}`);
+        console.log(`📊 Partidas capturadas: ${dadosPartidas.length}`);
         let enviados = 0;
 
-        for (let linhas of partidas) {
-            let linhaTempo = linhas.find(l => /\b\d{1,3}'\b/.test(l));
+        for (let linhas of dadosPartidas) {
+            let linhaTempo = linhas.find(l => /\d{1,3}'/.test(l));
             if (!linhaTempo) continue;
 
-            // Identifica a liga (geralmente vem logo acima do confronto nos prints do SokkerPRO)
             let indexTempo = linhas.indexOf(linhaTempo);
-            let liga = indexTempo > 1 ? linhas[indexTempo - 2] : "Futebol Ao Vivo";
-            if (liga.length < 3 || liga.includes('%') || /^\d+$/.test(liga)) {
-                liga = "Futebol Ao Vivo - Ao Vivo";
+            
+            // Tenta pegar a liga nas linhas acima do tempo
+            let liga = indexTempo >= 2 ? linhas[indexTempo - 2] : (indexTempo >= 1 ? linhas[indexTempo - 1] : "Futebol Ao Vivo");
+            if (liga.length < 3 || /^\d+$/.test(liga) || liga.includes('%')) {
+                liga = "Futebol Ao Vivo";
             }
 
-            // Filtra os times válidos do bloco
+            // Filtra os times
             let times = linhas.filter(l => 
                 l.length > 2 && 
                 !l.includes('%') && 
                 !l.includes('.') && 
                 !/^\d+$/.test(l) && 
-                !/\b\d{1,3}'\b/.test(l) &&
+                !/\d{1,3}'/.test(l) &&
                 !l.toLowerCase().includes('live') &&
                 !l.toLowerCase().includes('todos') &&
                 !l.toLowerCase().includes('próximos') &&
@@ -107,49 +109,28 @@ async function varrerPartidasAoVivo() {
             let timeFora = times[1];
             let confronto = `${timeCasa} x ${timeFora}`;
 
-            // Extração de placar e estatísticas de escanteios quando disponíveis na visão rápida
+            // Extração de placar
             let numeros = linhas.filter(l => /^\d+$/.test(l));
             let golsCasa = numeros.length > 0 ? numeros[0] : "0";
             let golsFora = numeros.length > 1 ? numeros[1] : "0";
-            
-            // Estimativa/Captura de escanteios baseada na posição dos dados do card
-            let escCasa = numeros.length > 3 ? numeros[2] : "0";
-            let escFora = numeros.length > 4 ? numeros[3] : "0";
 
             let placar = `${golsCasa} x ${golsFora}`;
-            let escanteios = `${escCasa} x ${escFora}`;
 
             let chave = confronto.toLowerCase().replace(/\s+/g, '');
-            if (memoriaJogos.get(chave) === placar && memoriaJogos.get(chave + '_esc') === escanteios) {
+            if (memoriaJogos.get(chave) === placar) {
                 continue; 
             }
             memoriaJogos.set(chave, placar);
-            memoriaJogos.set(chave + '_esc', escanteios);
 
-            // Análise rápida de mercado de escanteios baseada no momento da partida
-            let minNum = parseInt(linhaTempo);
-            let analiseMercado = "Aguardando pressão ideal para entrada.";
-            if (!isNaN(minNum)) {
-                if (minNum >= 75) {
-                    analiseMercado = "🔥 **Oportunidade de Cantos Limite!** Jogo na reta final com alta tendência de pressão e bolas paradas.";
-                } else if (minNum >= 35 && minNum <= 45) {
-                    analiseMercado = "⚡ **Fim de 1º Tempo:** Atenção a pressão exercida para mercado de escanteios antes do intervalo.";
-                } else {
-                    analiseMercado = "📊 Jogo em desenvolvimento, monitorando volume ofensivo e cantos.";
-                }
-            }
-
-            let card = `🚩 <b>Alerta de Escanteios - SokkerPRO</b>\n\n`;
+            let card = `🟢 <b>SokkerPRO Ao Vivo</b>\n\n`;
             card += `🏆 <b>Liga:</b> ${liga}\n`;
             card += `⏱ <b>Tempo:</b> ${traduzirTempo(linhaTempo)}\n`;
             card += `⚔️ <b>Confronto:</b> <code>${confronto}</code>\n`;
-            card += `⚽ <b>Placar:</b> <b>${placar}</b>\n`;
-            card += `🚩 <b>Escanteios Atuais:</b> <b>${escanteios}</b>\n\n`;
-            card += `💡 <b>Análise de Mercado:</b>\n${analiseMercado}`;
+            card += `⚽ <b>Placar:</b> <b>${placar}</b>`;
 
             await bot.sendMessage(CHAT_ID, card, { parse_mode: 'HTML' }).catch(() => {});
             enviados++;
-            console.log(`📤 Alerta de Escanteios Enviado | ${confronto} (${linhaTempo}) - Escanteios: ${escanteios}`);
+            console.log(`📤 Alerta Enviado | ${liga} | ${confronto} (${placar})`);
             await new Promise(r => setTimeout(r, 1000));
         }
 
