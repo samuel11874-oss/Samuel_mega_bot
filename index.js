@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
-app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Scanner Destravado ⚽🚩</h2>'));
+app.get('/', (req, res) => res.send('<h2>Bot SokkerPRO - Autenticado ⚽🚩</h2>'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`));
 
@@ -44,18 +44,38 @@ async function varrerPartidasAoVivo() {
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
 
-        console.log("🌐 [LOG] Acessando https://m.sokkerpro.com/ ...");
+        console.log("🌐 [LOG] Acessando página de login do SokkerPRO...");
         await page.goto('https://m.sokkerpro.com/', {
             waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
-        console.log("⏳ [LOG] Página aberta. Aguardando 6 segundos para renderização inicial...");
-        await new Promise(r => setTimeout(r, 6000));
+        console.log("⏳ [LOG] Aguardando carregamento da tela inicial...");
+        await new Promise(r => setTimeout(r, 4000));
 
-        console.log("📜 [LOG] Realizando rolagem na página...");
-        for (let i = 0; i < 2; i++) {
-            await page.evaluate(() => window.scrollBy(0, 400));
+        // Tenta preencher o login se os campos existirem na tela
+        const camposLogin = await page.$('input[type="email"], input[type="text"]');
+        if (camposLogin) {
+            console.log("🔑 [LOG] Realizando login automático...");
+            await page.type('input[type="email"], input[type="text"]', 'Samuel11874@gmail.com', { delay: 50 });
+            await page.type('input[type="password"]', 'Samuel00', { delay: 50 });
+            
+            // Clica no botão de entrar (procura por botão de submit ou texto entrar)
+            await page.evaluate(() => {
+                let botoes = Array.from(document.querySelectorAll('button, input[type="submit"]'));
+                let btn = botoes.find(b => b.innerText.toLowerCase().includes('entrar') || b.innerText.toLowerCase().includes('login') || b.type === 'submit');
+                if (btn) btn.click();
+            });
+
+            console.log("⏳ [LOG] Aguardando redirecionamento pós-login (8s)...");
+            await new Promise(r => setTimeout(r, 8000));
+        } else {
+            console.log("ℹ️ [LOG] Já logado ou sessão ativa.");
+        }
+
+        console.log("📜 [LOG] Realizando rolagem na página de jogos...");
+        for (let i = 0; i < 3; i++) {
+            await page.evaluate(() => window.scrollBy(0, 500));
             await new Promise(r => setTimeout(r, 1000));
         }
 
